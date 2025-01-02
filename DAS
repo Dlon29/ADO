@@ -1,0 +1,47 @@
+<asp:BoundField HeaderText="Catg" DataField="Category" SortExpression="Category">
+                                                        <ItemStyle Width="10%" HorizontalAlign="Center"></ItemStyle>
+                                                    </asp:BoundField> 
+
+
+function ValidateECMT530() {
+        
+
+        //Filter checked rows               
+        var chkLength = $("#<%= gvEuroclearDashboard.ClientID%> input[id*='chkECInclude']:enabled:checked").length;
+
+        if (chkLength == 0) {
+            alert(GetMessageKeyValue('SelectRecord'));
+            return false;
+        }
+
+        //Filter checked rows       
+        var filteredRowList = $("#gvEuroclearDashboard tr").has("input[id*='chkECInclude']:enabled:checked");
+
+      
+        var category = filteredRowList.has("input[id$='Category'];
+   
+
+        //find MT530 switch status as 'manual' in list which is filtered with 'NotSent' MT530 swift status
+        var manualList = notsentMT530SwiftStatusList.has("input[id$='hdnECMT530SwitchStatus'][value='" + MT530SwitchStatus.toUpperCase() + "']")
+
+        if (notsentSwiftStatusList.length > 0 || notSettledNewLoan.length > 0) {
+            alert(GetMessageKeyValue('ValidateOnSwiftMT530AcctSwitch'));
+            return false;
+        }
+
+        if (notsentSwiftStatusList.length > 0 || notSettledReturnLoan.length > 0) {
+            alert(GetMessageKeyValue('ValidateOnSwiftMT530AcctSwitch'));
+            return false;
+        }
+
+        if (otherMT530SwiftStatusList.length > 0 || MT530switchStatusList.length > 0) {
+            alert(GetMessageKeyValue('ValidateOnMT530Swift'));
+        }
+
+        if (manualList.length == 0) {
+            return false;
+        }
+        else {
+            return confirm(GetMessageKeyValue("ConfirmMT530SwiftCreation"));
+        }
+    }
