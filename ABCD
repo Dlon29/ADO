@@ -1,6 +1,6 @@
 IF(@Identifier = 'SWIFT')
 BEGIN			
-    -- Insert all records into SettlementSwiftMsg with the filter for Toe in ('OSL', 'CSD') and also handle other conditions
+    -- Insert records where Toe is in ('OSL', 'CSD') and only one record per BGNREF in SettlementSwiftMsg
     INSERT INTO dbo.SettlementSwiftMsg
     (
         SettlementStatusHeaderID,
@@ -8,7 +8,7 @@ BEGIN
         ModifiedBy,
         ModifiedDate
     )
-    SELECT DISTINCT
+    SELECT
         @SettlementStatusHeaderID,
         swift.Items,
         @ModifiedBy,
@@ -23,10 +23,18 @@ BEGIN
     ) AS XmlData
     WHERE 
         XmlData.Toe IN ('OSL', 'CSD')  -- Filter for Toe in ('OSL', 'CSD')
-    
-    -- Also insert the rest of the BGNREFs that do not have Toe in ('OSL', 'CSD')
-    UNION
-    SELECT DISTINCT
+    GROUP BY
+        swift.Items  -- Ensures only one record is inserted per SwiftMsgID
+  
+    -- Insert records for BGNREFs where Toe is NOT in ('OSL', 'CSD')
+    INSERT INTO dbo.SettlementSwiftMsg
+    (
+        SettlementStatusHeaderID,
+        SwiftMsgID,
+        ModifiedBy,
+        ModifiedDate
+    )
+    SELECT
         @SettlementStatusHeaderID,
         swift.Items,
         @ModifiedBy,
