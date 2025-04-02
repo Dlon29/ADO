@@ -1,4 +1,4 @@
-protected void btnECMT530_click(object sender, EventArgs e)
+ protected void btnECMT530_click(object sender, EventArgs e)
         {
             string bgnRef = string.Empty;
             string acctNbr = string.Empty;
@@ -31,7 +31,25 @@ protected void btnECMT530_click(object sender, EventArgs e)
             string prefixAcctSwitch = string.Empty;
             string Toe = string.Empty;
             List<string> validToesForMT530 = new List<string> { "OSL", "CSD", "RSL" };
+            List<string> validToesForMT530atOnce = new List<string> { "OSL", "CSD" };
+            List<string> checkedBgnRefsforMT530 = new List<string>();
             
+            foreach (GridViewRow row in gvEuroclearDashboard.Rows)
+            {
+                if (((CheckBox)row.FindControl(ControlIDEuroclear.chkECInclude.ToString())).Checked)
+                {
+                    string checkedBgnRef = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value;
+                    string CheckedToe = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECToe.ToString()))).Value.Trim().ToUpper();
+
+
+                    if (!checkedBgnRefsforMT530.Contains(checkedBgnRef) && (validToesForMT530atOnce.Contains(CheckedToe, StringComparer.OrdinalIgnoreCase)))
+                    {
+                        checkedBgnRefsforMT530.Add(checkedBgnRef);
+                    }
+
+                }
+            }
+
 
             CheckBox check = new CheckBox();
             bool IsDeliver = false;
@@ -64,7 +82,8 @@ protected void btnECMT530_click(object sender, EventArgs e)
                     if (check.Checked
                         && (MT530SwitchStatus == enumSwitchStatus.MANUAL.ToString())
                         && (MT530SwiftStatus == SWIFT_STATUS_NOTSENT)
-                        && (validToesForMT530.Contains(Toe, StringComparer.OrdinalIgnoreCase)))
+                        && (validToesForMT530.Contains(Toe, StringComparer.OrdinalIgnoreCase))
+                        && checkedBgnRefsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value))
                     {
                         hdnSettlementDate = GetDateTime((row.FindControl(ControlIDEuroclear.hdnECSettlementDate.ToString()) as HiddenField).Value).ToString("MM/dd/yyyy");
                         hdnClientFICCID = (row.FindControl(ControlIDEuroclear.hdnECClientFICCID.ToString()) as HiddenField).Value;
@@ -157,32 +176,3 @@ protected void btnECMT530_click(object sender, EventArgs e)
                 return;
             }
         }
-
-
-
-/*
-        List<string> validToesForMT530atOnce = new List<string> { "OSL", "CSD" };
-        List<string> checkedBgnRefsforMT530 = new List<string>();
-           
-            // Populate the sets with distinct BgnRef and EuroclearAcct of checked rows
-            foreach (GridViewRow row in gvEuroclearDashboard.Rows)
-            {
-                if (((CheckBox) row.FindControl(ControlIDEuroclear.chkECInclude.ToString())).Checked)
-                {
-                    string checkedBgnRef = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value;
-                    
-
-                    if (!checkedBgnRefsforMT530.Contains(checkedBgnRef))
-                    {
-                        checkedBgnRefsforMT530.Add(checkedBgnRef);
-                    }
-
-}
-            }
-
-            (
-                    checkedBgnRefsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value)
-            )
-
-             && (validToesForMT530atOnce.Contains(Toe, StringComparer.OrdinalIgnoreCase)))
-        */
