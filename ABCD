@@ -1,178 +1,312 @@
- protected void btnECMT530_click(object sender, EventArgs e)
-        {
-            string bgnRef = string.Empty;
-            string acctNbr = string.Empty;
-            string acctGrpID = string.Empty;
-            string txnSeqNbr = string.Empty;
-            string notes = string.Empty;
-            string fedStatus = string.Empty;
-            string MT530SwitchStatus = string.Empty;
-            string MT530SwiftStatus = string.Empty;
-            string secCode = string.Empty;
-            string hdnClientFICCID = string.Empty;
-            string hdnTripartyRepoBankName = string.Empty;
-            string hdnSettlementDate = string.Empty;
-            string hdnCUSIP = string.Empty;
-            string hdnIsFICCMatched = string.Empty;
-            string hdnTripartyRepo = string.Empty;
-            string ficcSwiftMsgID = string.Empty;
-            string tradeTypeVal = string.Empty;
-            string citiAcct = string.Empty;
-            string euroclearAcct = string.Empty;
-            StringBuilder RFDFswiftMsgId;
-            XElement xml = new XElement("Txnlist");
+CREATE PROC [dbo].[p_GenerateAutoReleaseSwitchMessage]
+(
+	@pAppID INT,
+	@pBatchRunDate DATETIME,
+	@pSWIFTMsgSaveStatusID INT,
+	@pEventCode VARCHAR(100)
+)
+AS 
+BEGIN 
+	SET NOCOUNT ON;
 
-            string swiftRefNo = string.Empty;
-            string suffixSEME_D = string.Empty;
-            string suffixMsgFunction_S = string.Empty;
-            string suffixMsgFunction_R = string.Empty;
-            string suffixPREV_Release_Hold_G1 = string.Empty;
-            string prefixPREV_Release_Hold_G1 = string.Empty;
-            string prefixAcctSwitch = string.Empty;
-            string Toe = string.Empty;
-            List<string> validToesForMT530 = new List<string> { "OSL", "CSD", "RSL" };
-            List<string> validToesForMT530atOnce = new List<string> { "OSL", "CSD" };
-            List<string> checkedBgnRefsforMT530 = new List<string>();
-            
-            foreach (GridViewRow row in gvEuroclearDashboard.Rows)
-            {
-                if (((CheckBox)row.FindControl(ControlIDEuroclear.chkECInclude.ToString())).Checked)
-                {
-                    string checkedBgnRef = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value;
-                    string CheckedToe = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECToe.ToString()))).Value.Trim().ToUpper();
+	DECLARE @SwiftMsgId INT 
+	DECLARE @SwiftMsgIDs AS VARCHAR(500)
+	DECLARE @MT530 VARCHAR(5) 	
+	DECLARE @SwiftMsgType AS VARCHAR(5)
+	
+	DECLARE @Preparation_date DATETIME 
+	DECLARE @SWIFT_XML XML 	 		
+	DECLARE @AccountSwitchNotRequired VARCHAR(500)
+	DECLARE @REC_BICCODE INT
+	DECLARE @MT530_BIC INT				
+	DECLARE @Settlement_XML VARCHAR(MAX)
+	DECLARE @Max AS INT
+	DECLARE @CurrentID AS INT	 	
+	DECLARE @SWITCH_SEME_D_SUFFIX AS VARCHAR(5)
+	DECLARE @MSG_FUNCTION_RELEASE_ON_HOLD AS VARCHAR(5)
+	DECLARE @MSG_FUNCTION_SWITCH AS VARCHAR(5)		
+	DECLARE @EuroclearDepots AS VARCHAR (MAX) = ''	
+	DECLARE @CategoryPULL VARCHAR(4) = 'PULL'
+	DECLARE @TOE_OPEN_NEW_LOAN_OR_BORROW VARCHAR(4) = 'OSL'
+	DECLARE @TOE_CONFIRM_SETTLEMENT_DATE VARCHAR(4) = 'CSD'
+	DECLARE @TOE_RETURN_LOAN_OR_BORROW VARCHAR(4) = 'RSL'
+	DECLARE @EUROCLEAR_IDENTIFIER AS INT = 2
+	DECLARE @EuroclearMT530SwitchStatus AS INT = 2  --1 - Switch Status, 2 - MT530 Switch Status, 3 - Cancel SwitchStatus
+													
+	SELECT @EuroclearDepots = dbo.f_GetDomainLookupValue('EUROCLEAR_DEPOTS', 'EUROCLEAR_DEPOTS_LIST')     
+	SELECT ClearAgentNbr = Parameter     
+	INTO #TMP_EURO_CLEARING_AGENT    
+	FROM dbo.f_ParseParameters( @EuroclearDepots )  
+
+	SET @SwiftMsgId=-1      
+	SET @MT530='MT530' 	
+	
+	--BEGIN SWIFT CONFIGURATIONS
+	SET @Preparation_date=GETDATE()
+	
+	SELECT @AccountSwitchNotRequired	 = dbo.f_GetDomainLookupValue('SWIFT_TAG_CONSTANTS_EUROCLEAR', 'EUROCLEAR_ACCT_SWITCH_NOT_REQUIRED')									  		
+	SELECT @MSG_FUNCTION_RELEASE_ON_HOLD = dbo.f_GetDomainLookupValue('SWIFT_TAG_CONSTANTS_EUROCLEAR', 'MSG_FUNCTION_RELEASE_ON_HOLD')
+	SELECT @SWITCH_SEME_D_SUFFIX		 = dbo.f_GetDomainLookupValue('SWIFT_TAG_CONSTANTS_EUROCLEAR', 'SWITCH_SEME_D_SUFFIX')
+	SELECT @MSG_FUNCTION_SWITCH			 = dbo.f_GetDomainLookupValue('SWIFT_TAG_CONSTANTS_EUROCLEAR', 'MSG_FUNCTION_SWITCH')	
+	
+	/*-------------------------------Insert Table Schema into temp table #TMP_OPERATION_SHEET -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_SWIFTBICCodes') IS NULL 
+	BEGIN
+		SELECT * 
+		INTO #TMP_SWIFTBICCodes
+		FROM LAVA.dbo.f_CreateSWIFTBICCodeSchema()
+
+		EXEC LAVA.DBO.p_Swift_GetBICCodes NULL, NULL
+	END
+
+	SELECT
+		 @MT530_BIC = CASE WHEN ( Identifier = 'RECEIVER' ) AND ( SwiftMsgTypeCode = @MT530 ) AND ( EventCode = @pEventCode ) THEN InstitutionId 
+						   ELSE @MT530_BIC
+				      END		 
+	FROM 
+		#TMP_SWIFTBICCodes
+
+	SELECT @REC_BICCODE = @MT530_BIC	
+
+	--END SWIFT CONFIGURATIONS
+
+	CREATE TABLE #TMP_SWIFT_OPS 
+	( 
+		ID					INT IDENTITY(1,1), 
+		BGNREF				VARCHAR(12),
+		SettlementDate		DATETIME,
+		TradeDate			DATETIME,
+		DeliverReceive		VARCHAR(20),
+		SecurityCode		VARCHAR(50),
+		SecurityDesc		VARCHAR(100),
+		Amount				NUMERIC(13,0),
+		Quantity			NUMERIC(13,0),		
+		EuroclearAccount	VARCHAR(5),
+		TransactionId		VARCHAR(11),
+		ClientFICCID		VARCHAR(10),
+		IsFICCMatched		CHAR(1),
+		AcctNbr				VARCHAR(12),
+		AcctGrpID			INT,
+		TripartyRepoBankName VARCHAR(100),
+		TripartyRepo		CHAR(1),
+		TradeType			VARCHAR(100),
+		FICCTrade			CHAR(1),
+		GenerateSWIFT		CHAR(1),
+		FedStatus			VARCHAR(20),
+		Notes				VARCHAR(MAX),
+		SwiftReferenceNbr	VARCHAR(16),
+		Category			VARCHAR(10)
+	)
+
+	SELECT 
+		TagName, TagValue, TagCode, CompPosition, InstanceNumber, SwiftMsgTypeSeqID, SeqInstanceNumber,SwiftMsgType
+	INTO 
+		#TMP_MT_TAGS
+	FROM   
+		dbo.MTTagComponent 
+	WHERE  
+		SwiftMsgType = @MT530 AND
+		EventCode = @pEventCode		
+
+     --Get all the transactions from SP or table to generate swift message
+	IF OBJECT_ID('tempdb..#TMP_OPERATION_SHEET') IS NULL 
+	BEGIN
+		SELECT * 
+		INTO #TMP_OPERATION_SHEET
+		FROM LAVA.dbo.f_CreateOperationSheetSchema()
+	END
+
+	EXEC LAVA.dbo.p_GetOperationSheet @BatchRunDate = @pBatchRunDate, @DepoInd = @EuroclearDepots, @Identifier = @EUROCLEAR_IDENTIFIER	  			
+
+	--MT530
+	INSERT INTO #TMP_SWIFT_OPS
+	(
+		BGNREF, SettlementDate, TradeDate, DeliverReceive, SecurityCode, SecurityDesc, Amount, Quantity, EuroclearAccount, TransactionId, ClientFICCID, 
+		IsFICCMatched, AcctNbr, AcctGrpID, TripartyRepoBankName, TripartyRepo, TradeType, FICCTrade, GenerateSWIFT, FedStatus, Notes, SwiftReferenceNbr, Category	
+	)
+	SELECT
+		 BGNREF,
+		 SettlementDate,
+		 TradeDate,
+		 DeliverReceive,
+		 SecCode,
+		 SecurityDesc,
+		 Amount = SettlementAmount,
+		 Quantity = FaceAmount,		 
+		 EuroclearAccount,
+		 '',
+		 '',
+		 IsFICCMatched,
+		 AcctNbr,
+		 AcctGrpID,
+		 TripartyRepoBankName,
+		 TripartyRepo,
+		 TradeType,
+		 'N',
+		 CASE WHEN EuroclearAccount IN (SELECT Items FROM dbo.f_Split(@AccountSwitchNotRequired,','))
+			  THEN 'N' 
+			  WHEN ISNULL(EuroclearAccount,'') = ''
+			  THEN 'N'
+			  ELSE 'Y' 
+		 END,
+		 FedStatus,
+		 '',
+		 SwiftReferenceNumber,
+		 Category
+	FROM 
+		#TMP_OPERATION_SHEET
+	WHERE
+		( LTRIM(RTRIM((UPPER(MT530SwitchStatus)))) = 'AUTO' ) AND
+		( LTRIM(RTRIM(UPPER(MT530SwiftStatus))) = 'NOT SENT' ) AND		
+		( TOE IN (@TOE_OPEN_NEW_LOAN_OR_BORROW, @TOE_CONFIRM_SETTLEMENT_DATE, @TOE_RETURN_LOAN_OR_BORROW) ) AND
+		( Category = @CategoryPULL )		
+
+	SELECT @CurrentID = MIN(ID) 
+	FROM #TMP_SWIFT_OPS
+	
+	SELECT @Max = MAX(ID) 
+	FROM #TMP_SWIFT_OPS
+	
+
+	SELECT MTMSGTYPE = @SwiftMsgType , 
+		   IS_SWAP_ACCTS = CONVERT(BIT,0) 
+	INTO #TMP_SWIFT_MSG
+	WHERE ( 1 = 0 )
+
+    WHILE ( @CurrentID  <= @Max ) 
+    BEGIN 
+		SET ROWCOUNT 0
+
+		BEGIN TRY
+			
+			--IF Euroclear Account Is Set up for Account and is Segregated
+			IF EXISTS (SELECT 1 FROM #TMP_SWIFT_OPS 
+					   WHERE ( GenerateSWIFT = 'Y' ) AND ( ID = @CurrentID ) )		
+			BEGIN
+
+				SET @SwiftMsgIDs = ''
+				TRUNCATE TABLE #TMP_SWIFT_MSG
+		
+				SELECT  
+					@SwiftMsgType= @MT530
+				FROM
+					#TMP_SWIFT_OPS
+				WHERE 
+					( ID = @CurrentID )
+				
+
+				INSERT INTO #TMP_SWIFT_MSG  (  MTMSGTYPE, IS_SWAP_ACCTS  )
+				SELECT MTMSGTYPE = @SwiftMsgType, IS_SWAP_ACCTS = 0 				
+
+				--Added for unique swift reference for two sided switches                
+
+				WHILE EXISTS ( SELECT * FROM #TMP_SWIFT_MSG ) 
+				BEGIN
+					
+					SELECT TOP 1 @SwiftMsgType = MTMSGTYPE
+					FROM #TMP_SWIFT_MSG 
+
+					DELETE FROM #TMP_SWIFT_MSG 
+					WHERE ( MTMSGTYPE = @SwiftMsgType )
 
 
-                    if (!checkedBgnRefsforMT530.Contains(checkedBgnRef) && (validToesForMT530atOnce.Contains(CheckedToe, StringComparer.OrdinalIgnoreCase)))
-                    {
-                        checkedBgnRefsforMT530.Add(checkedBgnRef);
-                    }
+					--XML Generation
+					SET 
+						@SWIFT_XML=(SELECT 
+											TagName,														  
+											(
+											CASE T.tagvalue 
+													WHEN 'REFERENCE_NUMBER_ACCTSWITCH' THEN L.SwiftReferenceNbr + @MSG_FUNCTION_RELEASE_ON_HOLD																							
+													WHEN 'PREPARATION_DATE'			   THEN (SELECT CONVERT(VARCHAR(10), @Preparation_date,112))	
+													WHEN 'CUST_SEGREGATED_ACCOUNT'	   THEN L.EuroclearAccount																							
+													WHEN 'PREVIOUS_MESSAGE_REFERENCE'  THEN L.SwiftReferenceNbr + @MSG_FUNCTION_SWITCH + @SWITCH_SEME_D_SUFFIX											
+													ELSE T.tagvalue                   
+											END		
+									) TagValue,          
+									TagCode,         
+									CompPosition, 
+									InstanceNumber, 
+									SwiftMsgTypeSeqId,
+									SeqInstanceNumber 
+								FROM   
+									#TMP_SWIFT_OPS AS L, 
+									#TMP_MT_TAGS AS T
+								WHERE  
+									( ID = @CurrentID ) AND 
+									( T.SwiftMsgType = @SwiftMsgType )
 
-                }
-            }
+								FOR XML RAW ('TblTagComp'), 
+								ROOT('DocumentElement'), 
+								ELEMENTS 
+								) 					
+					
 
+					EXEC p_InsertUpdateSwiftMsgData 
+							@pMsgType=@SwiftMsgType, 
+							@pReferenceId='2', 
+							@pExpectedSendDate=@Preparation_date, 
+							@pUserId='SYSTEM', 
+							@pXMLSwiftMessageData=@SWIFT_XML, 
+							@pDestinationId=null, 
+							@pSwiftMsgRecipientInstitutionId=@REC_BICCODE, 
+							@pAppId=@pAppID, 
+							@pMessageStatusId=@pSWIFTMsgSaveStatusID, 
+							@pSwiftMsgId=@SwiftMsgId output 			 
+					
+					SET @SwiftMsgIDs = CASE WHEN ( @SwiftMsgIDs = '' ) THEN @SwiftMsgIDs 
+											ELSE @SwiftMsgIDs + ',' 
+									   END + CONVERT(VARCHAR(25),@SwiftMsgId )
+				END
 
-            CheckBox check = new CheckBox();
-            bool IsDeliver = false;
-            _logger.Info("Swift generation started");
+				SET	@Settlement_XML=
+								(
+									SELECT
+										BGNREF,
+										AcctNbr,
+										AcctGrpID,
+										ClientFICCID,
+										TripartyRepoBankName,
+										SecurityCode AS SecCode,
+										TripartyRepo AS IsTriparty,
+										IsFICCMatched AS IsFICC,
+										CONVERT(VARCHAR(10),SettlementDate,101) AS SettlementDate,
+										TradeType,
+										'' AS CitiAccount,										
+										@SwiftMsgIDs AS SwiftMsgID,
+										FedStatus = CASE TMP_SWIFT.FedStatus WHEN 'Settled' THEN 1 
+																			 WHEN 'Failed' THEN 2 
+																			 ELSE 0 END,
+										TMP_SWIFT.Notes,										
+										TransactionID,
+										TMP_SWIFT.EuroclearAccount AS EuroclearAccount,
+										@EuroclearMT530SwitchStatus AS EuroclearSwitchStatus
+									FROM
+										#TMP_SWIFT_OPS AS TMP_SWIFT
+									WHERE
+										TMP_SWIFT.ID = @CurrentID                                   
+									FOR XML RAW('FieldName'),
+									ROOT('Txnlist')
+								)
 
-            if (ValidateSwiftStatus(enumSwiftAction.MT530) == false)     //Verifying if another user has already been processed the swift messages.
-            {
-                return;
-            }
+				EXEC p_SaveData_OperationsDashboard 
+						@BatchDate=@pBatchRunDate,
+						@ModifiedBy='SYSTEM',
+						@Identifier='SWIFT',
+						@Txnlist=@Settlement_XML,
+						@DashboardIdentifier = @EUROCLEAR_IDENTIFIER
 
-            prefixAcctSwitch = Convert.ToString(ViewState[Prefix_Acct_Switch]);
-            suffixMsgFunction_R = Convert.ToString(ViewState[Msg_Function_Release_On_Hold_Suffix]);
-            suffixMsgFunction_S = Convert.ToString(ViewState[Msg_Function_Switch_Suffix]);
-            suffixSEME_D = Convert.ToString(ViewState[SwiftRef_D_Suffix]);
-            suffixPREV_Release_Hold_G1 = Convert.ToString(ViewState[PREV_Release_Hold_Suffix_G1]);
-            prefixPREV_Release_Hold_G1 = Convert.ToString(ViewState[PREV_Release_Hold_Prefix_G1]);
+				SET @Settlement_XML = '' 
+			END
+		END TRY
+		BEGIN CATCH	
+			EXEC p_GetOutputMessage 0,''  
+		END CATCH
+		
+		SET @CurrentID = @CurrentID + 1
+	END 
 
+	DROP TABLE #TMP_MT_TAGS 	
+	DROP TABLE #TMP_SWIFT_OPS
 
-            foreach (GridViewRow row in gvEuroclearDashboard.Rows)
-            {
-                try
-                {
-                    check = (CheckBox)row.FindControl(ControlIDEuroclear.chkECInclude.ToString());
-                    MT530SwitchStatus = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECMT530SwitchStatus.ToString()))).Value.Trim().ToUpper();
-                    MT530SwiftStatus = ((Label)(row.Cells[(int)grdEuroclear.MT530SwiftStatus].FindControl(ControlIDEuroclear.lblECMT530SwiftStatus.ToString()))).Text.Trim().ToUpper();
-                    Toe = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECToe.ToString()))).Value.Trim().ToUpper();
-
-                    SwiftMessageGeneration swiftMsg = new SwiftMessageGeneration(enumSeggregatedAcctBank.EUROCLEAR);
-
-                    if (check.Checked
-                        && (MT530SwitchStatus == enumSwitchStatus.MANUAL.ToString())
-                        && (MT530SwiftStatus == SWIFT_STATUS_NOTSENT)
-                        && (validToesForMT530.Contains(Toe, StringComparer.OrdinalIgnoreCase))
-                        && checkedBgnRefsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value))
-                    {
-                        hdnSettlementDate = GetDateTime((row.FindControl(ControlIDEuroclear.hdnECSettlementDate.ToString()) as HiddenField).Value).ToString("MM/dd/yyyy");
-                        hdnClientFICCID = (row.FindControl(ControlIDEuroclear.hdnECClientFICCID.ToString()) as HiddenField).Value;
-                        hdnCUSIP = (row.FindControl(ControlIDEuroclear.hdnECCUSIP.ToString()) as HiddenField).Value;
-                        hdnIsFICCMatched = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECIsFICCMatched.ToString())).Value.Trim();
-                        hdnTripartyRepo = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECTripartyRepo.ToString())).Value.Trim();
-                        acctNbr = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECAcctNbr.ToString())).Value;
-                        acctGrpID = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECAcctGrpID.ToString())).Value;
-                        notes = ((TextBox)row.FindControl(ControlIDEuroclear.txtECNotes.ToString())).Text;
-                        fedStatus = (row.Cells[(int)grdEuroclear.FedStatus].Text.Trim() == enumFedStatus.Settled.ToString() ? enumFedStatus.Settled.GetHashCode().ToString()
-                                    : (row.Cells[(int)grdEuroclear.FedStatus].Text.Trim() == enumFedStatus.Failed.ToString() ? enumFedStatus.Failed.GetHashCode().ToString()
-                                    : string.Empty));
-                        secCode = ((HyperLink)row.FindControl(ControlIDEuroclear.lnkECSecCode.ToString())).Text.Trim();
-                        hdnTripartyRepoBankName = (row.FindControl(ControlIDEuroclear.hdnECTripartyRepoBankName.ToString()) as HiddenField).Value;
-                        IsDeliver = row.Cells[(int)grdEuroclear.DeliverReceive].Text.Trim() == enumDeliverReceive.DELIVER.ToString() ? true : false;
-                        bgnRef = (row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString()) as HiddenField).Value;
-                        citiAcct = Server.HtmlDecode(Convert.ToString((row.Cells[(int)grdEuroclear.CitiAccount]).Text)).Trim();
-                        euroclearAcct = Server.HtmlDecode(Convert.ToString((row.Cells[(int)grdEuroclear.EuroclearAccount]).Text)).Trim();
-                        tradeTypeVal = (row.Cells[(int)grdEuroclear.TradeType].Text.Trim());
-                        swiftRefNo = (row.FindControl(ControlIDEuroclear.hdnECSwiftReferenceNumber.ToString()) as HiddenField).Value;
-                        swiftMsg.Rate = GetDecimal((row.FindControl(ControlIDEuroclear.hdnECInterestPayable.ToString()) as HiddenField).Value);
-                        swiftMsg.MaturityDate = GetDateTime((row.FindControl(ControlIDEuroclear.hdnECMaturityDate.ToString()) as HiddenField).Value);
-                        swiftMsg.TradeDate = GetDateTime((row.FindControl(ControlIDEuroclear.hdnECTradeDate.ToString()) as HiddenField).Value);
-                        swiftMsg.SettleDate = GetDateTime((row.FindControl(ControlIDEuroclear.hdnECSettlementDate.ToString()) as HiddenField).Value);
-                        swiftMsg.TradeAmount = GetDecimal((row.FindControl(ControlIDEuroclear.hdnECSettlementAmount.ToString()) as HiddenField).Value);
-                        swiftMsg.SecurityID = (row.FindControl(ControlIDEuroclear.hdnECCUSIP.ToString()) as HiddenField).Value;
-                        swiftMsg.SecurityDescription = (row.FindControl(ControlIDEuroclear.hdnECSecDesc.ToString()) as HiddenField).Value;
-                        swiftMsg.OrderCount = GetDecimal((row.Cells[(int)grdEuroclear.FaceAmount].Text.Trim()));
-                        swiftMsg.SegregatedAccount = euroclearAcct;
-                        swiftMsg.FICCParticipantID = (row.FindControl(ControlIDEuroclear.hdnECClientFICCID.ToString()) as HiddenField).Value;
-                        swiftMsg.Category = (row.Cells[(int)grdEuroclear.Category].Text.Trim());
-                        swiftMsg.SeggregatedAcctBank = enumSeggregatedAcctBank.EUROCLEAR; //TODO: Need to set thisbased on depot(ClearAgentNbr)
-                        swiftMsg.SwiftAction = enumSwiftAction.MT530;
-
-                        RFDFswiftMsgId = new StringBuilder();
-
-                        swiftMsg.SwiftReferenceNumber = swiftRefNo + suffixMsgFunction_R;
-                        string prevSwiftRefNo = swiftRefNo.Substring(0, swiftRefNo.Length - 5) + suffixPREV_Release_Hold_G1;
-                        swiftMsg.SwiftPrevReferenceNumber = (swiftMsg.Category == enumLoanCategory.NEW.ToString() ? prevSwiftRefNo.Replace(prefixAcctSwitch, prefixPREV_Release_Hold_G1) : swiftRefNo + suffixMsgFunction_S + suffixSEME_D);
-
-                        RFDFswiftMsgId.Append(swiftMsg.GenerateMT530SwiftMessage(false));
-
-                        _logger.InfoFormat("Swift message generated with SWIFTMessageId {0}.", RFDFswiftMsgId.ToString());
-
-                        xml.Add(new XElement(FieldName,
-                           new XAttribute(BGNREF, bgnRef),
-                           new XAttribute(AcctNbr, acctNbr),
-                           new XAttribute(AcctGrpID, acctGrpID),
-                           new XAttribute(ClientFICCID, hdnClientFICCID),
-                           new XAttribute(TripartyRepoBankName, hdnTripartyRepoBankName),
-                           new XAttribute(IsTriparty, hdnTripartyRepo),
-                           new XAttribute(IsFICC, hdnIsFICCMatched),
-                           new XAttribute(SecCode, secCode),
-                           new XAttribute(SettlementDate, hdnSettlementDate),
-                           new XAttribute(TradeType, tradeTypeVal),
-                           new XAttribute(CitiAccount, string.Empty),              // CitiAccount not needed hence passing empty                           
-                           new XAttribute(SwiftMsgID, RFDFswiftMsgId),
-                           new XAttribute(Fed_Status, fedStatus),
-                           new XAttribute(Notes, notes),
-                           new XAttribute(EuroclearAccount, euroclearAcct),
-                           new XAttribute(EuroclearSwitchStatus, (int)enumSwiftAction.MT530)
-                       ));
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _ErrorString = new StringBuilder();
-                    _ErrorString.Append(ex.Message);
-                    _show_info_row = _ErrorInfoNone;
-                    _show_error_row = _ErrorInfoBlank;
-                    _logger.Error(ex);
-                    return;
-                }
-            }
-
-            _logger.Info("Swift generation end");
-
-            try
-            {
-                //Update SwiftMsg ID in SettlementStatus Swift table with swift message id
-                UpdateECSettlementStatus(xml);
-            }
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(ex.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                _logger.Error(ex);
-                return;
-            }
-        }
+	SET NOCOUNT OFF; 
+END 
