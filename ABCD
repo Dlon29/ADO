@@ -157,3 +157,32 @@ protected void btnECMT530_click(object sender, EventArgs e)
                 return;
             }
         }
+
+
+
+/*
+        List<string> validToesForMT530atOnce = new List<string> { "OSL", "CSD" };
+        List<string> checkedBgnRefsforMT530 = new List<string>();
+           
+            // Populate the sets with distinct BgnRef and EuroclearAcct of checked rows
+            foreach (GridViewRow row in gvEuroclearDashboard.Rows)
+            {
+                if (((CheckBox) row.FindControl(ControlIDEuroclear.chkECInclude.ToString())).Checked)
+                {
+                    string checkedBgnRef = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value;
+                    
+
+                    if (!checkedBgnRefsforMT530.Contains(checkedBgnRef))
+                    {
+                        checkedBgnRefsforMT530.Add(checkedBgnRef);
+                    }
+
+}
+            }
+
+            (
+                    checkedBgnRefsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value)
+            )
+
+             && (validToesForMT530atOnce.Contains(Toe, StringComparer.OrdinalIgnoreCase)))
+        */
