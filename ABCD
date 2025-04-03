@@ -64,3 +64,50 @@ foreach (GridViewRow row in gvEuroclearDashboard.Rows)
         _ErrorString = new StringBuilder();
         _ErrorString.Append(ex.Message);
         _show_info_row = _ErrorInfoNone;
+
+
+
+
+
+
+Dictionary<"<BGNREF>.<ECACCT>">
+ 
+string BGNREFECAcctkey = string.format ( "{0}.{1}", BGNREF, ECAcct );
+ 
+If !Dictionary.contains ( BGNREFECAcctkey ) 		
+
+{
+
+	Dictionary.Add( BGNREFECAcctkey, 0 )  	--Initialize SwiftMSgid to 0
+
+}
+ 
+..
+
+..
+
+..
+ 
+If Dictionary.contains ( BGNREFECAcctkey) 
+
+{
+
+	if Dictionary[BGNREFECAcctkey] = 0 
+
+	{
+
+		SwiftMsgID = GenerateMT530 () 
+
+		Dictionary[BGNREFECAcctkey] = SwiftMsgID
+
+	}
+
+	else
+
+	{
+
+		SwiftMsgID = Dictionary[BGNREFECAcctkey] 
+
+	}
+
+}
