@@ -1,1 +1,96 @@
-hI
+/* If swift is generated from dashboard, insert records into settlement swift table */
+IF(@Identifier = 'SWIFT')
+BEGIN
+    -- Check if @DashboardIdentifier is 2 (Euroclear Settlement Operations View)
+    IF(@DashboardIdentifier = 2)
+    BEGIN
+        -- For TradeType IN ('OSL', 'CSD'), insert unique records for same BGNREF
+        IF EXISTS (
+            SELECT 1
+            FROM @TempXMLTable
+            WHERE TradeType IN ('OSL', 'CSD')
+            AND BGNREF = (SELECT BGNREF FROM @TempXMLTable WHERE ID = @ID)
+        )
+        BEGIN
+            -- Insert unique SwiftMsgID for this BGNREF with TradeType in ('OSL', 'CSD')
+            INSERT INTO dbo.SettlementSwiftMsg
+            (
+                SettlementStatusHeaderID,
+                SwiftMsgID,
+                ModifiedBy,
+                ModifiedDate
+            )
+            SELECT DISTINCT
+                @SettlementStatusHeaderID,
+                swift.Items,
+                @ModifiedBy,
+                GETDATE()
+            FROM
+                dbo.f_Split(@SwiftMsgID,',') swift
+            WHERE EXISTS (
+                SELECT 1
+                FROM @TempXMLTable
+                WHERE BGNREF = (SELECT BGNREF FROM @TempXMLTable WHERE ID = @ID)
+                AND TradeType IN ('OSL', 'CSD')
+            )
+        END
+        ELSE
+        BEGIN
+            -- If TradeType is NOT in ('OSL', 'CSD'), insert multiple records (as was done before)
+            IF NOT EXISTS 
+            (
+                SELECT 1 
+                FROM SettlementSwiftMsg AS TMP_SWIFT_MSG
+                INNER JOIN dbo.f_Split(@SwiftMsgID,',') AS TMP_SWIFTMSG_ID
+                    ON ( TMP_SWIFT_MSG.SwiftMsgID  = TMP_SWIFTMSG_ID.Items ) 
+                WHERE 
+                    ( SettlementStatusHeaderID =  @SettlementStatusHeaderID ) 
+            )								
+            BEGIN
+                INSERT INTO dbo.SettlementSwiftMsg
+                (
+                    SettlementStatusHeaderID,
+                    SwiftMsgID,
+                    ModifiedBy,
+                    ModifiedDate
+                )
+                SELECT
+                    @SettlementStatusHeaderID,
+                    swift.Items,
+                    @ModifiedBy,
+                    GETDATE()
+                FROM
+                    dbo.f_Split(@SwiftMsgID,',') swift				
+            END
+        END
+    END
+    ELSE
+    BEGIN
+        -- If @DashboardIdentifier is NOT 2, insert multiple records (as it was before)
+        IF NOT EXISTS 
+        (
+            SELECT 1 
+            FROM SettlementSwiftMsg AS TMP_SWIFT_MSG
+            INNER JOIN dbo.f_Split(@SwiftMsgID,',') AS TMP_SWIFTMSG_ID
+                ON ( TMP_SWIFT_MSG.SwiftMsgID  = TMP_SWIFTMSG_ID.Items ) 
+            WHERE 
+                ( SettlementStatusHeaderID =  @SettlementStatusHeaderID ) 
+        )								
+        BEGIN
+            INSERT INTO dbo.SettlementSwiftMsg
+            (
+                SettlementStatusHeaderID,
+                SwiftMsgID,
+                ModifiedBy,
+                ModifiedDate
+            )
+            SELECT
+                @SettlementStatusHeaderID,
+                swift.Items,
+                @ModifiedBy,
+                GETDATE()
+            FROM
+                dbo.f_Split(@SwiftMsgID,',') swift				
+        END
+    END
+END
