@@ -70,44 +70,83 @@ foreach (GridViewRow row in gvEuroclearDashboard.Rows)
 
 
 
-Dictionary<"<BGNREF>.<ECACCT>">
- 
-string BGNREFECAcctkey = string.format ( "{0}.{1}", BGNREF, ECAcct );
- 
-If !Dictionary.contains ( BGNREFECAcctkey ) 		
+// Dictionary to store the SwiftMsgID using the concatenated key
+Dictionary<string, string> swiftMsgDict = new Dictionary<string, string>();
 
+foreach (GridViewRow row in gvEuroclearDashboard.Rows)
 {
+    try
+    {
+        // Retrieve values from the row (same as before)
+        string BGNREF = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value;
+        string ECAcct = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECEuroclearAccount.ToString())).Value;
+        string category = ((HiddenField)row.FindControl(ControlIDEuroclear.hdnECCategory.ToString())).Value.Trim().ToUpper();
 
-	Dictionary.Add( BGNREFECAcctkey, 0 )  	--Initialize SwiftMSgid to 0
+        // Construct the string key (BGNREF.ECAcct.Category)
+        string BGNREFECAcctCategoryKey = string.Format("{0}.{1}.{2}", BGNREF, ECAcct, category);
 
+        // Check if the key already exists in the dictionary
+        if (!swiftMsgDict.ContainsKey(BGNREFECAcctCategoryKey))
+        {
+            // If it doesn't exist, initialize with a placeholder value (e.g., "0")
+            swiftMsgDict[BGNREFECAcctCategoryKey] = "0";  // Indicates that SwiftMsgID is not generated yet
+        }
+
+        // Check if the key exists and whether SwiftMsgID needs to be generated
+        string currentSwiftMsgID = string.Empty;
+        if (swiftMsgDict[BGNREFECAcctCategoryKey] == "0")
+        {
+            // Generate a new SwiftMsgID since it's not generated yet
+            currentSwiftMsgID = swiftMsg.GenerateMT530SwiftMessage(false).ToString();
+            swiftMsgDict[BGNREFECAcctCategoryKey] = currentSwiftMsgID;  // Store the generated SwiftMsgID
+        }
+        else
+        {
+            // If the SwiftMsgID is already generated, reuse it
+            currentSwiftMsgID = swiftMsgDict[BGNREFECAcctCategoryKey];
+        }
+
+        // Add the generated SwiftMsgID to your XML or perform other processing
+        RFDFswiftMsgId.Append(currentSwiftMsgID);
+        _logger.InfoFormat("Swift message generated with SWIFTMessageId {0}.", RFDFswiftMsgId.ToString());
+
+        // Add the data to your XML (as done in the original solution)
+        xml.Add(new XElement(FieldName,
+            new XAttribute(BGNREF, BGNREF),
+            new XAttribute(AcctNbr, acctNbr),
+            new XAttribute(AcctGrpID, acctGrpID),
+            new XAttribute(ClientFICCID, hdnClientFICCID),
+            new XAttribute(TripartyRepoBankName, hdnTripartyRepoBankName),
+            new XAttribute(IsTriparty, hdnTripartyRepo),
+            new XAttribute(IsFICC, hdnIsFICCMatched),
+            new XAttribute(SecCode, secCode),
+            new XAttribute(SettlementDate, hdnSettlementDate),
+            new XAttribute(TradeType, tradeTypeVal),
+            new XAttribute(CitiAccount, string.Empty),              // CitiAccount not needed hence passing empty
+            new XAttribute(SwiftMsgID, RFDFswiftMsgId),
+            new XAttribute(Fed_Status, fedStatus),
+            new XAttribute(Notes, notes),
+            new XAttribute(EuroclearAccount, euroclearAcct),
+            new XAttribute(EuroclearSwitchStatus, (int)enumSwiftAction.MT530),
+            new XAttribute(TOE, Toe)
+        ));
+    }
+    catch (Exception ex)
+    {
+        _ErrorString = new StringBuilder();
+        _ErrorString.Append(ex.Message);
+        _show_info_row = _ErrorInfoNone;
+        _show_error_row = _ErrorInfoBlank;
+        _logger.Error(ex);
+        return;
+    }
 }
- 
-..
 
-..
+// After processing all rows
+_logger.Info("Swift generation end");
 
-..
- 
-If Dictionary.contains ( BGNREFECAcctkey) 
-
+// Update SwiftMsg ID in SettlementStatus Swift table with swift message ID
+try
 {
-
-	if Dictionary[BGNREFECAcctkey] = 0 
-
-	{
-
-		SwiftMsgID = GenerateMT530 () 
-
-		Dictionary[BGNREFECAcctkey] = SwiftMsgID
-
-	}
-
-	else
-
-	{
-
-		SwiftMsgID = Dictionary[BGNREFECAcctkey] 
-
-	}
-
-}
+    // Update SwiftMsg ID in SettlementStatus Swift table with swift message ID
+    UpdateECSettlement
