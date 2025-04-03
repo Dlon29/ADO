@@ -1,4 +1,357 @@
-IF(@Identifier = 'SWIFT')
+CREATE PROCEDURE [dbo].[p_SaveData_OperationsDashboard]
+(		
+	@Identifier	VARCHAR(10) = '',
+	@BatchDate	DATETIME,
+	@Txnlist	VARCHAR(MAX) = '',	
+	@ModifiedBy	VARCHAR(20),
+	@DashboardIdentifier INT = 1		--1 : Settlement Ops View, 2 - Euroclear Settlement Ops View
+)
+AS
+BEGIN
+	
+		SET NOCOUNT ON;
+		DECLARE @SettlementStatusHeaderID INT = 0
+		DECLARE @ID INT
+		DECLARE @Min INT
+		DECLARE @Max INT
+		DECLARE @SwiftMsgID VARCHAR(MAX)
+		DECLARE @FED_STATUS_OPEN INT = 0
+		DECLARE @FED_STATUS_SETTLED INT = 1
+		DECLARE @FED_STATUS_FAILED  INT = 2
+		DECLARE @SettlementOpsView INT = 1
+		DECLARE @EuroclearSettOpsView INT = 2
+
+		DECLARE @TempXMLTable TABLE 
+		(	
+			ID						INT IDENTITY(1,1),
+			AsOfDate				VARCHAR(10),	
+			BGNREF					VARCHAR(12),
+			AcctNbr					VARCHAR(12),
+			AcctGrpID				INT,
+			ClientFICCID			VARCHAR(10),
+			TripartyRepoBankName	VARCHAR(100) NULL,
+			SecCode					VARCHAR(12),
+			IsTriparty				VARCHAR(2),
+			IsFICC					VARCHAR(2),
+			SettlementDate			DATETIME,
+			TradeType				VARCHAR(50),
+			CitiAccount				VARCHAR(20) DEFAULT NULL,
+			SwiftMsgID				VARCHAR(MAX),
+			FedStatus				INT DEFAULT NULL,			
+			Notes					VARCHAR(MAX) DEFAULT NULL,
+			TransactionID			VARCHAR(11) DEFAULT NULL,
+			RRLinkRefNbr			VARCHAR(8) DEFAULT NULL,			
+			EuroclearAccount		VARCHAR(5) DEFAULT NULL,
+			EuroclearSwitchStatus   INT NULL,
+			IsEuroclear				BIT NULL
+		)
+
+		DECLARE  @hdoc INT, @IsFICC VARCHAR(2),@IsTriparty VARCHAR(2), @TradeType VARCHAR(50), @FedStatus INT, 
+		@Notes VARCHAR(MAX),@TransactionID VARCHAR(11), @RRLinkRefNbr VARCHAR(8), @EuroclearSwitchStatus INT, @IsEuroclear BIT
+
+		IF(@Txnlist != '')
+		BEGIN
+			
+			EXEC SP_XML_PREPAREDOCUMENT @hdoc OUTPUT, @Txnlist			
+
+			/* Insert selected TxnRefNbr for Inserting and updating records in Temp Table table*/
+			INSERT INTO @TempXMLTable
+			(
+				AsOfDate,
+				BGNREF,
+				AcctNbr,
+				AcctGrpID,
+				ClientFICCID,
+				TripartyRepoBankName,
+				SecCode,
+				IsTriparty,
+				IsFICC,
+				SettlementDate,
+				TradeType,
+				CitiAccount,
+				SwiftMsgID,
+				FedStatus,
+				Notes,
+				TransactionID,
+				RRLinkRefNbr,				
+				EuroclearAccount,
+				EuroclearSwitchStatus,
+				IsEuroclear
+			)
+			SELECT
+				CONVERT(VARCHAR(10),@BatchDate, 101),
+				BGNREF,
+				AcctNbr,
+				AcctGrpID,
+				ClientFICCID,
+				TripartyRepoBankName,
+				SecCode,
+				IsTriparty,
+				IsFICC,				
+				SettlementDate,
+				TradeType,
+				CitiAccount,
+				SwiftMsgID,
+				FedStatus,
+				Notes,
+				TransactionID,
+				CASE WHEN ISNULL(RRLinkRefNbr, '') = '' THEN NULL ELSE RRLinkRefNbr END AS RRLinkRefNbr,				
+				EuroclearAccount,
+				EuroclearSwitchStatus,
+				IsEuroclear
+			FROM 
+				OPENXML(@hdoc, '/Txnlist/FieldName', 1)
+				WITH
+				(									
+					BGNREF			VARCHAR(12),
+					AcctNbr			VARCHAR(12),
+					AcctGrpID		INT,
+					ClientFICCID	VARCHAR(10),
+					TripartyRepoBankName	VARCHAR(100),
+					SecCode			VARCHAR(12),					
+					IsTriparty		VARCHAR(2),
+					IsFICC			VARCHAR(2),
+					SettlementDate	VARCHAR(10),
+					TradeType		VARCHAR(50),
+					CitiAccount		VARCHAR(20),
+					SwiftMsgID		VARCHAR(MAX),
+					FedStatus		INT,			
+					Notes			VARCHAR(MAX),
+					TransactionID	VARCHAR(11),
+					RRLinkRefNbr	VARCHAR(8),					
+					EuroclearAccount VARCHAR(5),
+					EuroclearSwitchStatus INT,
+					IsEuroclear			  BIT
+				)
+
+			EXEC SP_XML_REMOVEDOCUMENT @hdoc
+		END
+	
+		/*Insert data into Settlement History table for the selected transaction number. Repos - AsOfDate, BGNREF, AcctNbr will be unique */		
+	SELECT @Max = Max(ID) FROM @TempXMLTable
+	SELECT @Min = Min(ID) FROM @TempXMLTable
+	 
+	SET @Min = 1
+	WHILE @Max >= @Min
+	BEGIN
+		SELECT @ID = ID FROM @TempXMLTable WHERE ID = @Min
+
+		SELECT 
+			@SwiftMsgID = SwiftMsgID,
+			@IsFICC = IsFICC,
+			@IsTriparty = IsTriparty ,
+			@TradeType = TradeType ,
+			@SettlementStatusHeaderID = 0,
+			@FedStatus = 0,
+			@EuroclearSwitchStatus = 0,
+			@Notes = '',
+			@TransactionID = TransactionID,
+			@RRLinkRefNbr = RRLinkRefNbr,
+			@IsEuroclear = ISNULL(IsEuroclear, 0)
+		FROM 
+			@TempXMLTable 
+		WHERE 
+			ID = @ID
+	
+		/*Below logic to fetch existing records based on the selected records from dashboard*/		
+		SELECT
+			@SettlementStatusHeaderID = ISNULL(HeaderID,0),
+			@FedStatus = temp.FedStatus,
+			@EuroclearSwitchStatus = temp.EuroclearSwitchStatus,
+			@Notes = temp.Notes
+		FROM
+			dbo.SettlementStatus SettStatus
+		INNER JOIN 
+			@TempXMLTable temp
+		ON 				 
+			( SettStatus.AsOfDate = temp.AsOfDate ) AND
+			( SettStatus.SecCode = temp.SecCode ) AND
+			( SettStatus.SettlementDate = temp.SettlementDate )	
+			AND
+			(
+				(
+					( @IsFICC = 'Y' )
+					AND ( SettStatus.ClientFICCID = temp.ClientFICCID )
+					AND ( 
+							(( ISNULL(temp.TransactionID,'') = '' )  AND ( ISNULL(SettStatus.BGNREF, '') = '' ))	--Switches
+							OR 
+							(
+								( ISNULL(temp.TransactionID,'') != '' ) AND 
+								( ISNULL(temp.TransactionID,'') = ISNULL(SettStatus.TransactionID,'') ) AND 
+								( ISNULL(SettStatus.BGNREF, '') = ISNULL(temp.BGNREF,''))
+							)																						--DVP/RVP
+						)
+				)
+				OR
+				(
+					@IsTriparty = 'Y' 
+					AND SettStatus.TripartyRepoBankName = temp.TripartyRepoBankName
+					AND ( ISNULL(SettStatus.CitiAccount,'') = ISNULL(temp.CitiAccount,'') ) 	
+				)
+				OR
+				(
+					@IsFICC = 'N' 
+					AND @IsTriparty = 'N' 
+					AND SettStatus.BGNREF = temp.BGNREF 
+					AND SettStatus.AcctNbr = temp.AcctNbr
+					AND (
+							( @DashboardIdentifier = @SettlementOpsView AND @IsEuroclear = 1 AND @TradeType NOT IN( 'Securities Lending') AND ( ISNULL(SettStatus.EuroclearAccount,'') = ISNULL(temp.EuroclearAccount,'') ) )
+							OR
+							( @DashboardIdentifier = @SettlementOpsView AND @IsEuroclear = 0 AND ( ISNULL(SettStatus.CitiAccount,'') = ISNULL(temp.CitiAccount,'') ) )
+							OR 
+							( @DashboardIdentifier = @EuroclearSettOpsView AND @TradeType NOT IN( 'Securities Lending') AND ( ISNULL(SettStatus.EuroclearAccount,'') = ISNULL(temp.EuroclearAccount,'') ) )
+						)
+				)
+				OR
+				(
+					@TradeType IN( 'Securities Lending')					
+					AND SettStatus.BGNREF = temp.BGNREF 
+					AND SettStatus.AcctNbr = CASE WHEN (@DashboardIdentifier = @EuroclearSettOpsView) OR (@DashboardIdentifier = @SettlementOpsView AND @IsEuroclear = 1) THEN temp.AcctNbr 
+												  ELSE SettStatus.AcctNbr 
+												  END
+					AND SettStatus.AcctGrpID = temp.AcctGrpID
+					AND (
+							( @DashboardIdentifier = @SettlementOpsView AND @IsEuroclear = 1 AND ( ISNULL(SettStatus.EuroclearAccount,'') = ISNULL(temp.EuroclearAccount,'') ) )
+							OR
+							( @DashboardIdentifier = @SettlementOpsView AND @IsEuroclear = 0 AND ( ISNULL(SettStatus.CitiAccount,'') = ISNULL(temp.CitiAccount,'') ) )
+							OR 
+							( @DashboardIdentifier = @EuroclearSettOpsView AND ( ISNULL(SettStatus.EuroclearAccount,'') = ISNULL(temp.EuroclearAccount,'') ) )
+						)
+				)			
+			)
+		WHERE 
+			ID = @ID 
+		
+				
+		/* Insert into settlement status history table*/
+		INSERT INTO dbo.SettlementStatusHist
+		(
+			HeaderID,
+			AsOfDate,
+			BGNREF,
+			AcctNbr,
+			AcctGrpID,
+			ClientFICCID,
+			TripartyRepoBankName,
+			SecCode,
+			SettlementDate,
+			CitiAccount,
+			FEDStatus,			
+			Notes,
+			TransactionID,
+			DateMarkedAsFailed,
+			RRLinkRefNbr,
+			ModifiedBy,
+			ModifiedDate,
+			EuroclearAccount,
+			EuroclearSwitchStatus
+		)
+		SELECT
+			TSETSTATUS.HeaderID,
+			TSETSTATUS.AsOfDate,
+			TSETSTATUS.BGNREF,
+			TSETSTATUS.AcctNbr,
+			TSETSTATUS.AcctGrpID,
+			TSETSTATUS.ClientFICCID,
+			TSETSTATUS.TripartyRepoBankName,
+			TSETSTATUS.SecCode,
+			TSETSTATUS.SettlementDate,
+			TSETSTATUS.CitiAccount,
+			TSETSTATUS.FEDStatus,			
+			TSETSTATUS.Notes,
+			TSETSTATUS.TransactionID,
+			TSETSTATUS.DateMarkedAsFailed,
+			TSETSTATUS.RRLinkRefNbr,
+			TSETSTATUS.ModifiedBy,
+			TSETSTATUS.ModifiedDate,
+			TSETSTATUS.EuroclearAccount,
+			TSETSTATUS.EuroclearSwitchStatus
+		FROM
+			SettlementStatus AS TSETSTATUS
+		WHERE
+			( HeaderID = @SettlementStatusHeaderID )
+			
+		/* If record is new , insert into settlement status table else update the existing record*/
+		/*if multiple RVP/DVP swift is generated , Settlement status table will have only one unique record, 
+		multiple swiftmsg id will be inserted in settlementswift table. Header ID will be unique for these records in both the tables.
+		*/
+		IF(@SettlementStatusHeaderID = 0)
+		BEGIN
+			INSERT INTO dbo.SettlementStatus
+			(
+				AsOfDate,
+				BGNREF,
+				AcctNbr,
+				AcctGrpID,			
+				ClientFICCID,
+				TripartyRepoBankName,
+				SecCode,
+				SettlementDate,
+				CitiAccount,
+				FEDStatus,			
+				Notes,
+				TransactionID,
+				DateMarkedAsFailed,
+				RRLinkRefNbr,
+				ModifiedBy,
+				ModifiedDate,
+				EuroclearAccount,
+				EuroclearSwitchStatus
+			)
+			SELECT 
+				@BatchDate,
+				CASE WHEN ( @IsFICC = 'N' ) AND ( @IsTriparty = 'N')		  THEN BGNREF
+					 WHEN ( @IsFICC = 'Y' ) AND ( ISNULL(TransactionID,'') != '' ) THEN BGNREF
+					 ELSE NULL END,
+				CASE WHEN ((@IsFICC = 'N' AND @IsTriparty = 'N' AND @TradeType NOT IN( 'Securities Lending')) OR (@DashboardIdentifier = @EuroclearSettOpsView)) THEN AcctNbr ELSE NULL END,
+				CASE WHEN @TradeType IN( 'Securities Lending') THEN AcctGrpID ELSE NULL END,			
+				CASE WHEN @IsFICC = 'Y' THEN ClientFICCID ELSE NULL END,
+				CASE WHEN @IsTriparty = 'Y' THEN TripartyRepoBankName ELSE NULL END,
+				SecCode,
+				SettlementDate,
+				CASE WHEN CitiAccount = '' THEN NULL ELSE CitiAccount END,
+				FEDStatus,			
+				Notes,
+				TransactionID,
+				DateMarkedAsFailed = CASE WHEN ( FedStatus = @FED_STATUS_FAILED ) THEN @BatchDate
+										  ELSE NULL END, 
+				RRLinkRefNbr,
+				@ModifiedBy,
+				GETDATE(),
+				CASE WHEN EuroclearAccount = '' THEN NULL ELSE EuroclearAccount END,
+				EuroclearSwitchStatus
+			FROM
+				@TempXMLTable
+			WHERE 
+				ID = @ID
+
+			SET @SettlementStatusHeaderID = @@IDENTITY
+		END
+		ELSE
+		BEGIN				
+			UPDATE
+				TSETLSTATUS
+			SET				
+				FEDStatus = @FedStatus,	
+				EuroclearSwitchStatus = CASE WHEN @Identifier = 'SWIFT' AND @DashboardIdentifier = @EuroclearSettOpsView THEN @EuroclearSwitchStatus ELSE EuroclearSwitchStatus END,
+				DateMarkedAsFailed = CASE WHEN ( TSETLSTATUS.DateMarkedAsFailed IS NULL ) AND ( @FedStatus = @FED_STATUS_FAILED ) THEN 
+												@BatchDate
+										  WHEN ( TSETLSTATUS.DateMarkedAsFailed IS NOT NULL ) AND ( @FedStatus IN (@FED_STATUS_SETTLED, @FED_STATUS_OPEN) ) THEN 
+												TSETLSTATUS.DateMarkedAsFailed
+									ELSE
+										TSETLSTATUS.DateMarkedAsFailed									
+									END,
+				Notes = @Notes,
+				ModifiedBy = @ModifiedBy,
+				ModifiedDate = GETDATE()
+			FROM
+				dbo.SettlementStatus AS TSETLSTATUS
+			WHERE
+				( HeaderID = @SettlementStatusHeaderID )
+		END
+
+		/*If swift is generated from dashboard, insert records into settlement swift table*/
+		IF(@Identifier = 'SWIFT')
 		BEGIN			
 			IF NOT EXISTS 
 			(
@@ -23,39 +376,11 @@ IF(@Identifier = 'SWIFT')
 					@ModifiedBy,
 					GETDATE()
 				FROM
-					dbo.f_Split(@SwiftMsgID,',') swift
-					INNER JOIN OPENXML(@hdoc, '/Txnlist/FieldName', 1)
-					WITH
-					(
-					    BGNREF VARCHAR(12),
-					    Toe VARCHAR(3)  
-					) AS XmlData
-					WHERE 
-					    XmlData.Toe IN ('OSL', 'CSD')  
-					GROUP BY
-					    swift.Items  
-
-
-					INSERT INTO dbo.SettlementSwiftMsg
-				(
-					SettlementStatusHeaderID,
-					SwiftMsgID,
-					ModifiedBy,
-					ModifiedDate
-				)
-				SELECT
-					@SettlementStatusHeaderID,
-					swift.Items,
-					@ModifiedBy,
-					GETDATE()
-				FROM
-					dbo.f_Split(@SwiftMsgID,',') swift
-					INNER JOIN OPENXML(@hdoc, '/Txnlist/FieldName', 1)
-					WITH
-					(
-					    BGNREF VARCHAR(12),
-					    Toe VARCHAR(3)  
-					) AS XmlData
-					WHERE 
-					    XmlData.Toe NOT IN ('OSL', 'CSD') 
+					dbo.f_Split(@SwiftMsgID,',') swift				
 			END
+		END
+
+		SET @Min = @Min + 1
+
+	END
+END
