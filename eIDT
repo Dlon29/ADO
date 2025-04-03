@@ -30,10 +30,15 @@ protected void btnECMT530_click(object sender, EventArgs e)
             string prefixPREV_Release_Hold_G1 = string.Empty;
             string prefixAcctSwitch = string.Empty;
             string Toe = string.Empty;
-            List<string> validToesForMT530 = new List<string> { "OSL", "CSD", "RSL" };
-            List<string> validToesForMT530atOnce = new List<string> { "OSL", "CSD" };
-            List<string> checkedBgnRefsforMT530 = new List<string>();
-            List<string> checkedEuroclearAcctsforMT530 = new List<string>();
+            string category = string.Empty;
+            string currentSwiftMsgID = string.Empty;
+            string lastBgnRef = string.Empty;
+            string lastEuroclearAcct = string.Empty;
+            string lastSwiftMsgId = string.Empty;
+
+            List<string> validToesForMT530 = new List<string> { "OSL", "CSD", "RSL" };            
+            List<string> UncheckedBgnRefsMT530 = new List<string>();
+            List<string> UncheckedEuroclearAcctsMT530 = new List<string>();
 
             CheckBox check = new CheckBox();
             bool IsDeliver = false;
@@ -50,8 +55,7 @@ protected void btnECMT530_click(object sender, EventArgs e)
             suffixSEME_D = Convert.ToString(ViewState[SwiftRef_D_Suffix]);
             suffixPREV_Release_Hold_G1 = Convert.ToString(ViewState[PREV_Release_Hold_Suffix_G1]);
             prefixPREV_Release_Hold_G1 = Convert.ToString(ViewState[PREV_Release_Hold_Prefix_G1]);
-
-
+            
             foreach (GridViewRow row in gvEuroclearDashboard.Rows)
             {
                 try
@@ -60,6 +64,7 @@ protected void btnECMT530_click(object sender, EventArgs e)
                     MT530SwitchStatus = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECMT530SwitchStatus.ToString()))).Value.Trim().ToUpper();
                     MT530SwiftStatus = ((Label)(row.Cells[(int)grdEuroclear.MT530SwiftStatus].FindControl(ControlIDEuroclear.lblECMT530SwiftStatus.ToString()))).Text.Trim().ToUpper();
                     Toe = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECToe.ToString()))).Value.Trim().ToUpper();
+                    category = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECCategory.ToString()))).Value.Trim().ToUpper();
 
                     if (((CheckBox)row.FindControl(ControlIDEuroclear.chkECInclude.ToString())).Checked)
                     {
@@ -68,22 +73,22 @@ protected void btnECMT530_click(object sender, EventArgs e)
                         string CheckedToe = ((HiddenField)(row.FindControl(ControlIDEuroclear.hdnECToe.ToString()))).Value.Trim().ToUpper();
 
 
-                        if (!checkedBgnRefsforMT530.Contains(checkedBgnRef) && (validToesForMT530atOnce.Contains(CheckedToe, StringComparer.OrdinalIgnoreCase)))
+                        if (!UncheckedBgnRefsMT530.Contains(checkedBgnRef) && (category == enumLoanCategory.NEW.ToString()))
                         {
-                            checkedBgnRefsforMT530.Add(checkedBgnRef);
+                            UncheckedBgnRefsMT530.Add(checkedBgnRef);
                         }
 
-                        if (!string.IsNullOrEmpty(checkedEuroclearAcct) && !checkedEuroclearAcctsforMT530.Contains(checkedEuroclearAcct) && (validToesForMT530atOnce.Contains(CheckedToe, StringComparer.OrdinalIgnoreCase)))
+                        if (!string.IsNullOrEmpty(checkedEuroclearAcct) && !UncheckedEuroclearAcctsMT530.Contains(checkedEuroclearAcct) && (category == enumLoanCategory.NEW.ToString()))
                         {
-                            checkedEuroclearAcctsforMT530.Add(checkedEuroclearAcct);
+                            UncheckedEuroclearAcctsMT530.Add(checkedEuroclearAcct);
                         }
 
                     }
 
                     SwiftMessageGeneration swiftMsg = new SwiftMessageGeneration(enumSeggregatedAcctBank.EUROCLEAR);
 
-                    if ((check.Checked || (checkedBgnRefsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value)
-                                          && checkedEuroclearAcctsforMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECEuroclearAccount.ToString())).Value)))
+                    if ((check.Checked || (UncheckedBgnRefsMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECBGNREF.ToString())).Value)
+                                          && UncheckedEuroclearAcctsMT530.Contains(((HiddenField)row.FindControl(ControlIDEuroclear.hdnECEuroclearAccount.ToString())).Value)))
                         && (MT530SwitchStatus == enumSwitchStatus.MANUAL.ToString())
                         && (MT530SwiftStatus == SWIFT_STATUS_NOTSENT)
                         && (validToesForMT530.Contains(Toe, StringComparer.OrdinalIgnoreCase)))
@@ -126,8 +131,20 @@ protected void btnECMT530_click(object sender, EventArgs e)
                         swiftMsg.SwiftReferenceNumber = swiftRefNo + suffixMsgFunction_R;
                         string prevSwiftRefNo = swiftRefNo.Substring(0, swiftRefNo.Length - 5) + suffixPREV_Release_Hold_G1;
                         swiftMsg.SwiftPrevReferenceNumber = (swiftMsg.Category == enumLoanCategory.NEW.ToString() ? prevSwiftRefNo.Replace(prefixAcctSwitch, prefixPREV_Release_Hold_G1) : swiftRefNo + suffixMsgFunction_S + suffixSEME_D);
+                        
+                        if (category != enumLoanCategory.NEW.ToString() || lastEuroclearAcct != euroclearAcct || lastBgnRef != bgnRef)
+                        {
+                            currentSwiftMsgID = swiftMsg.GenerateMT530SwiftMessage(false).ToString();
+                            lastSwiftMsgId = currentSwiftMsgID;
+                            lastBgnRef = bgnRef;
+                            lastEuroclearAcct = euroclearAcct;
+                        }
+                        else 
+                        {
+                            currentSwiftMsgID = lastSwiftMsgId;                            
+                        }
 
-                        RFDFswiftMsgId.Append(swiftMsg.GenerateMT530SwiftMessage(false));
+                        RFDFswiftMsgId.Append(currentSwiftMsgID);
 
                         _logger.InfoFormat("Swift message generated with SWIFTMessageId {0}.", RFDFswiftMsgId.ToString());
 
