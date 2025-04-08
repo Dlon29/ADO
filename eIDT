@@ -12,6 +12,18 @@
         </table>
     </td>
 </tr>
+
+<Font class = "SectionLineHeader">File Upload Summary</Font>
+
+FONT.SectionLineHeader
+	{
+		FONT-WEIGHT:600;
+		FONT-SIZE: x-small;
+		COLOR:Teal;
+		FONT-FAMILY: ARIAL, HELVETICA;
+		BACKGROUND-COLOR: transparent;
+		TEXT-DECORATION: none
+	}
 	
 
 
