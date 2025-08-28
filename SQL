@@ -1,0 +1,26 @@
+TempMessages Table
+CREATE TABLE TempMessages (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    MessageContent NVARCHAR(MAX),
+    ReceivedAt DATETIME
+);
+
+Example Final Table
+CREATE TABLE FinalMessages (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    MessageContent NVARCHAR(MAX),
+    ProcessedAt DATETIME
+);
+
+Stored Procedure: ProcessMessages
+CREATE PROCEDURE dbo.ProcessMessages
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO FinalMessages (MessageContent, ProcessedAt)
+    SELECT MessageContent, GETDATE()
+    FROM TempMessages;
+
+    DELETE FROM TempMessages;
+END
