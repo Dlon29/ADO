@@ -4,9 +4,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Subscriber
@@ -15,20 +14,46 @@ namespace Subscriber
     {
         private readonly ISubscriber _subscriber;
         private readonly ILogger<SubscriberWorker> _logger;
+        private readonly MessageProcessor _messageProcessor;
         protected IBMMQConnectionSettings _ibmMQSettings;
-        public SubscriberWorker(IOptions<IBMMQConnectionSettings> ibmMQSettings, ISubscriber subscriber, ILogger<SubscriberWorker> logger)
+
+        public SubscriberWorker(IOptions<IBMMQConnectionSettings> ibmMQSettings,
+                                ISubscriber subscriber,
+                                MessageProcessor messageProcessor,
+                                ILogger<SubscriberWorker> logger)
         {
             _ibmMQSettings = ibmMQSettings.Value;
             _subscriber = subscriber;
+            _messageProcessor = messageProcessor;
             _logger = logger;
         }
 
         protected override async Task ExecuteAsync(CancellationToken ct)
         {
             _logger.LogInformation("Subscriber started, listening to " + _ibmMQSettings.Queue);
+
+            // ✅ Hook the message received event before starting listening
+            _subscriber.MQMessageReceived += (sender, args) =>
+            {
+                try
+                {
+                    string msg = Encoding.UTF8.GetString(args.MessageBody);
+                    _logger.LogInformation("Message received from MQ: {Message}", msg);
+
+                    _messageProcessor.HandleMessage(msg);
+
+                    args.IsAcknowledge = true; // acknowledge if needed
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error while processing message");
+                    args.IsRejectMessage = true;
+                }
+            };
+
             _subscriber.StartListening();
 
-            while(!ct.IsCancellationRequested)
+            while (!ct.IsCancellationRequested)
             {
                 if (_logger.IsEnabled(LogLevel.Information))
                 {
@@ -37,7 +62,5 @@ namespace Subscriber
                 await Task.Delay(1000, ct);
             }
         }
-
     }
 }
-
