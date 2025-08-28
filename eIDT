@@ -1,1 +1,43 @@
+using Messaging;
+using Messaging.IBMMQ;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Subscriber
+{
+    public class SubscriberWorker : BackgroundService
+    {
+        private readonly ISubscriber _subscriber;
+        private readonly ILogger<SubscriberWorker> _logger;
+        protected IBMMQConnectionSettings _ibmMQSettings;
+        public SubscriberWorker(IOptions<IBMMQConnectionSettings> ibmMQSettings, ISubscriber subscriber, ILogger<SubscriberWorker> logger)
+        {
+            _ibmMQSettings = ibmMQSettings.Value;
+            _subscriber = subscriber;
+            _logger = logger;
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken ct)
+        {
+            _logger.LogInformation("Subscriber started, listening to " + _ibmMQSettings.Queue);
+            _subscriber.StartListening();
+
+            while(!ct.IsCancellationRequested)
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Subscriber Worker running at: {time}", DateTimeOffset.Now);
+                }
+                await Task.Delay(1000, ct);
+            }
+        }
+
+    }
+}
 
