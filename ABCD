@@ -1,4 +1,29 @@
-,
-  "ConnectionStrings": {
-    "Default": "Server=YOUR_SQL_SERVER;Database=YOUR_DB;User Id=your_user;Password=your_password;"
-  }
+public async Task InsertAsync(Payload msg, DateTime receivedAtUtc, string source, CancellationToken ct)
+{
+    try
+    {
+        Console.WriteLine("Opening DB connection...");
+
+        using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync(ct);  // If this throws, we will catch it
+
+        Console.WriteLine("Connection opened.");
+
+        using var cmd = new SqlCommand("dbo.p_Staging_Insert", conn);
+        cmd.CommandType = CommandType.StoredProcedure;
+
+        cmd.Parameters.Add("@CorrelationId", SqlDbType.NVarChar, 100).Value = msg.CorrelationId;
+        cmd.Parameters.Add("@Body", SqlDbType.VarChar, -1).Value = msg.Body;
+        cmd.Parameters.Add("@Source", SqlDbType.NVarChar, 50).Value = source;
+        cmd.Parameters.Add("@EnqueueUtc", SqlDbType.DateTime).Value = receivedAtUtc;
+
+        Console.WriteLine("Executing stored procedure...");
+        await cmd.ExecuteNonQueryAsync(ct);
+        Console.WriteLine("Insert completed.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("❌ EXCEPTION during DB insert:");
+        Console.WriteLine(ex.ToString());
+    }
+}
