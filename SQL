@@ -1077,8 +1077,15 @@ BEGIN
   
 END  
 
-"ConnectionStrings": {
-  "Sql": "Server=THWDBD11.smtbusa.us,4433;Database=LAVA;User ID=appuser;Password=Madison527;Encrypt=True;TrustServerCertificate=True"
+Console.WriteLine("Opening DB connection...");
+try
+{
+    await conn.OpenAsync(ct).ConfigureAwait(false);
+    Console.WriteLine("Connection opened.");
 }
-
+catch (Exception ex)
+{
+    Console.WriteLine($"OpenAsync exception: {ex.Message}");
+}
+Console.WriteLine("After OpenAsync.");
 
