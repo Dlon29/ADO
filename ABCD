@@ -27,3 +27,6 @@ public async Task InsertAsync(Payload msg, DateTime receivedAtUtc, string source
         Console.WriteLine(ex.ToString());
     }
 }
+
+
+sqlcmd -S THWDBD11.smtbusa.us,4433 -U appuser -P Madison527 -d LAVA
