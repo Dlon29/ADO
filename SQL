@@ -1077,11 +1077,8 @@ BEGIN
   
 END  
 
-<connectionStrings>
-    <add name="dbConBaNCS" connectionString="Data Source=(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=10.30.29.176)(PORT=5521))(CONNECT_DATA=(SERVICE_NAME=BANCSQA2)));User Id=LAVA;Password=MsVPqx294;"/>
-    <add name="lava" connectionString="Initial Catalog=lava;Data Source=THWDBD10.smtbusa.us,4433;User ID=appuser;Password=Madison527;Encrypt=true;TrustServerCertificate=true" />
-    <!--<add name="lava" connectionString="Initial Catalog=lava;Data Source=THWDBD11.smtbusa.us,4433;User ID=AppUser;Password=Madison527;Integrated Security=false;Encrypt=true;TrustServerCertificate=true" />-->
-    <!--<add name="LAVA" connectionString="Initial Catalog=lava;Data Source=THWDBQ15.smtbusa.us,4433;User ID=LAVAWebuser;Password=L@^a$qLcApW38;Encrypt=true;TrustServerCertificate=true;" />-->    
-    <!--<add name="LAVA" connectionString="Initial Catalog=lava;Data Source=AVWDBU02.smtbusa.unotepadzs,4433;User ID=LAVAWebuser;Password=L@^a$qLU@TW38;Integrated Security=false;Encrypt=true;TrustServerCertificate=true;Connection Timeout=600" providerName="System.Data.SqlClient"/>-->
-  </connectionStrings>
+"ConnectionStrings": {
+  "Sql": "Server=THWDBD11.smtbusa.us,4433;Database=LAVA;User ID=appuser;Password=Madison527;Encrypt=True;TrustServerCertificate=True"
+}
+
 
