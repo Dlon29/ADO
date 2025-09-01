@@ -1,26 +1,1079 @@
-TempMessages Table
-CREATE TABLE TempMessages (
-    Id INT IDENTITY(1,1) PRIMARY KEY,
-    MessageContent NVARCHAR(MAX),
-    ReceivedAt DATETIME
-);
+I have created this project in .Net 8, follwing is the structure:
 
-Example Final Table
-CREATE TABLE FinalMessages (
-    Id INT IDENTITY(1,1) PRIMARY KEY,
-    MessageContent NVARCHAR(MAX),
-    ProcessedAt DATETIME
-);
+MessageProcessing.Process:
 
-Stored Procedure: ProcessMessages
-CREATE PROCEDURE dbo.ProcessMessages
-AS
-BEGIN
-    SET NOCOUNT ON;
+Debouncetimer.cs:
 
-    INSERT INTO FinalMessages (MessageContent, ProcessedAt)
-    SELECT MessageContent, GETDATE()
-    FROM TempMessages;
+using MessageProcessing.Shared.Interface;
+using MessageProcessing.Shared.Models;
+using Microsoft.Extensions.Options;
 
-    DELETE FROM TempMessages;
-END
+namespace MessageProcessing.Process
+{
+    public class DebounceTimer: IDebounceNotifier, IDisposable
+    {
+        private readonly TimeSpan _timeout;
+        private readonly IETLTrigger _etl;
+        private readonly object _lock = new object();
+        private Timer _timer;
+
+        public DebounceTimer(IOptions<EtlOptions> opts, IETLTrigger etl)
+        {
+            _timeout = TimeSpan.FromSeconds(opts.Value.TimeoutSeconds);
+            _etl = etl;
+        }
+
+        public void Signal()
+        {
+            lock (_lock)
+            {
+                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _timer = new Timer(OnElapsed, null, _timeout, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        private async void OnElapsed(object obj)
+        {
+            await _etl.TriggerAsync(CancellationToken.None);
+        }
+
+        public void Dispose()
+        {
+           _timer?.Dispose();
+        }
+    }
+}
+
+
+ETLProcess.cs:
+
+using MessageProcessing.Shared.Interface;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace MessageProcessing.Process
+{
+    public class MessageProcessor : IETLTrigger
+    {
+        private readonly ILogger<MessageProcessor> _logger;
+        private readonly string _connString;
+        public MessageProcessor(IConfiguration cfg, ILogger<MessageProcessor> logger) 
+        {
+            _connString = cfg.GetConnectionString("Sql");
+            _logger = logger;
+        }
+        public async Task TriggerAsync(CancellationToken ct)
+        {
+            _logger.LogInformation("Debounce elapsed - running ETL Process...");
+            using var conn = new SqlConnection(_connString);
+            using var cmd = new SqlCommand("dbo.p_Process_ETL", conn) { CommandType = System.Data.CommandType.StoredProcedure };
+            conn.OpenAsync(ct);
+
+            try
+            {
+                cmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("{0} {1}", "Error while ETL Process " + ex.Message, ex.StackTrace);
+            }
+
+            _logger.LogInformation("ETL Process Completed");
+
+        }
+    }
+}
+
+
+MessageProcessing.Publisher:
+
+appsettings.json:
+
+{
+  "IBMMQConnectionSettings": {
+    "HostName": "HBWCDP01",
+    "Port": 1411,
+    "QueueManager": "CDS.OUT.LOCAL.DEV",
+    "Queue": "CASHMOV.REQUEST",
+    "Channel": "CDS.INTERNAL.SVRCONN",
+    "UserID": "cdsmquser",
+    "Password": "Welcome@0924",
+    "CertificateStore": "",
+    "CipherSpec": "",
+    "CipherSuite": "",
+    "ReconnectWaitInterval": 30
+  }
+}
+
+Program.cs:
+
+using Messaging.IBMMQ;
+using Messaging.IBMMQ.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+var host = Host.CreateDefaultBuilder(args)
+.ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
+.ConfigureServices((ctx, services) =>
+{
+    services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
+    services.AddTransient<IPublisher, IBMMQPublisher>();
+    //services.AddTransient<IBMMQClient>();
+}).ConfigureLogging(logging =>
+{
+    logging.ClearProviders();
+    logging.AddConsole();
+    logging.SetMinimumLevel(LogLevel.Information);
+})
+.Build();
+
+var client = host.Services.GetRequiredService<IPublisher>();
+await client.Publish(new Payload
+{
+    CorrelationId = "Test1",
+    Body = "Hello World"
+}, CancellationToken.None);
+
+
+MessageProcessing.Shared:
+
+IDBWriter.cs:
+
+using Messaging.IBMMQ.Shared.Models;
+
+namespace MessageProcessing.Shared.Interface
+{
+    public interface IDBWriter
+    {
+        Task InsertAsync(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct);
+    }
+}
+
+IDebounceNotifier.cs:
+
+namespace MessageProcessing.Shared.Interface
+{
+    public interface IDebounceNotifier
+    {
+        void Signal();
+    }
+}
+
+IETLTrigger.cs:
+
+namespace MessageProcessing.Shared.Interface
+{
+    public interface IETLTrigger
+    {
+        Task TriggerAsync(CancellationToken ct = default);
+    }
+}
+
+
+ETLOptions.cs:
+
+namespace MessageProcessing.Shared.Models
+{
+    public class EtlOptions
+    {
+        public int TimeoutSeconds { get; set; }  
+    }
+}
+
+
+MessageProcessing.Subscriber:
+
+apsettings.json:
+
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.Hosting.Lifetime": "Information"
+    }
+  },
+
+  "IBMMQConnectionSettings": {
+    "HostName": "HBWCDP01",
+    "Port": 1411,
+    "QueueManager": "CDS.OUT.LOCAL.DEV",
+    "Queue": "CASHMOV.REQUEST",
+    "Channel": "CDS.INTERNAL.SVRCONN",
+    "UserID": "cdsmquser",
+    "Password": "Welcome@0924",
+    "CertificateStore": "",
+    "CipherSpec": "",
+    "CipherSuite": "",
+    "ReconnectWaitInterval": 30
+  },
+  "ConnectionStrings": {
+    "Sql": "Server=THWDBD11,4433;Database=LAVA;uid=appuser; pwd=Madison527;"
+  },
+  "Etl": {
+    "TimeoutSeconds": 20
+  }
+}
+
+
+DBWriter.cs:
+
+using MessageProcessing.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Data.SqlClient;
+
+namespace MessageProcessing.Subscriber
+{
+    public class DBWriter : IDBWriter
+    {
+        private readonly ILogger<DBWriter> _logger;
+        private readonly string _connString;
+        public DBWriter(IConfiguration cfg, ILogger<DBWriter> logger)
+        {
+            _connString = cfg.GetConnectionString("Sql");
+            _logger = logger;
+        }
+        public async Task InsertAsync(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct)
+        {
+            using var conn = new SqlConnection(_connString);
+            using var cmd = new SqlCommand("dbo.p_Staging_Insert", conn) { CommandType = System.Data.CommandType.StoredProcedure };
+
+            cmd.Parameters.AddWithValue("@CorrelationId", msg.CorrelationId);
+            cmd.Parameters.AddWithValue("@Body", msg.Body);
+            cmd.Parameters.AddWithValue("@Source", source);
+            cmd.Parameters.AddWithValue("@EnqueueUtc", enqueueUtc);
+
+            conn.OpenAsync(ct);
+
+            try
+            {
+                 cmd.ExecuteNonQueryAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("{0} {1}", "Error while staging insert " + ex.Message, ex.StackTrace);
+            }
+
+        }
+    }
+}
+
+
+Program.cs:
+
+using MediatR;
+using MessageProcessing.Process;
+using MessageProcessing.Shared.Interface;
+using MessageProcessing.Shared.Models;
+using MessageProcessing.Subscriber;
+using Messaging.IBMMQ;
+using Messaging.IBMMQ.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using MessagingProcessing.Handler;
+
+var host = Host.CreateDefaultBuilder(args)
+.ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
+.ConfigureServices((ctx, services) =>
+{
+    services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
+    services.Configure<EtlOptions>(ctx.Configuration.GetSection("Etl"));
+    //services.AddTransient<IBMMQClient>();
+    services.AddTransient<ISubscriber, IBMMQSubscriber>();
+    services.AddTransient<Messaging.IBMMQ.Shared.Interface.IPublisher, IBMMQPublisher>();
+    services.AddTransient<IDBWriter, DBWriter>();
+    services.AddTransient<IDebounceNotifier, DebounceTimer>();
+    services.AddTransient<IETLTrigger, MessageProcessor>();
+    services.AddMediatR(typeof(ProcessRequestCommandHandler).Assembly);
+    services.AddHostedService<SubscriberWorker>();
+}).ConfigureLogging(logging =>
+{
+    logging.ClearProviders();
+    logging.AddConsole();
+    logging.SetMinimumLevel(LogLevel.Information);
+})
+.Build();
+
+await host.StartAsync();
+
+
+SubscriberWorker.cs:
+
+using MediatR;
+using Messaging.IBMMQ.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using MessagingProcessing.Handler;
+using Microsoft.Extensions.Options;
+
+namespace MessageProcessing.Subscriber
+{
+    public class SubscriberWorker : BackgroundService
+    {
+        private readonly ILogger<SubscriberWorker> _logger;
+        private readonly ISubscriber _subscriber;
+        private readonly IMediator _mediator;
+        protected IBMMQConnectionSettings _ibmMQSettings;
+
+        public SubscriberWorker(ILogger<SubscriberWorker> logger, IMediator mediator, IOptions<IBMMQConnectionSettings> ibmMQSettings, ISubscriber subscriber)
+        {
+            _logger = logger;
+            _mediator = mediator;
+            _ibmMQSettings = ibmMQSettings.Value;
+            _subscriber = subscriber;
+        }
+
+        protected override async Task ExecuteAsync(CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                _logger.LogInformation("Subscriber started, listening to {Queue}", _ibmMQSettings.Queue);
+
+                await foreach (Payload msg in _subscriber.ReadMessages(ct))
+                {
+                    _logger.LogInformation("Received message {CorrelationId}", msg.CorrelationId);
+                    await _mediator.Send(new ProcessRequestCommand(msg), ct);
+                }
+            }
+        }
+    }
+}
+
+
+Messaging.IBMMQ:
+
+IBMMQClient.cs:
+
+using IBM.WMQ;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Collections;
+
+namespace Messaging.IBMMQ
+{
+    public abstract class IBMMQClient : IDisposable
+    {
+        protected string _host;
+        protected string _queueMgrName;
+        protected string _queueName;
+        protected string _channelName;
+        protected MQQueueManager _queueMgr;
+        protected MQQueue _queue;
+        //private static ILog _logger = LogManager.GetLogger(typeof(IBMMQClient));
+        private readonly ILogger<IBMMQClient> _logger;
+        protected IBMMQConnectionSettings _ibmMQSettings;
+
+
+        #region Constructor
+        public IBMMQClient(IOptions<IBMMQConnectionSettings> opts, ILogger<IBMMQClient> logger)
+        {
+            try
+            {
+                _ibmMQSettings = opts.Value;
+                _logger = logger;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQClient");
+                throw;
+            }
+        }
+        #endregion
+
+        #region Methods
+        
+        public virtual void Connect()
+        {
+            try
+            {
+
+                if ((_queueMgr != null) && (_queueMgr.OpenStatus == true) &&
+                    (_queue != null) && (_queue.IsOpen))
+                {
+                    return;
+                }
+
+                Hashtable connectionProperties = new Hashtable();
+                connectionProperties.Add(MQC.HOST_NAME_PROPERTY, _ibmMQSettings.HostName);
+                connectionProperties.Add(MQC.CHANNEL_PROPERTY, _ibmMQSettings.Channel);
+                connectionProperties.Add(MQC.TRANSPORT_PROPERTY, MQC.TRANSPORT_MQSERIES_MANAGED);
+                connectionProperties.Add(MQC.PORT_PROPERTY, _ibmMQSettings.Port);
+
+                if (!string.IsNullOrEmpty(_ibmMQSettings.UserID))
+                {
+                    connectionProperties.Add(MQC.USER_ID_PROPERTY, _ibmMQSettings.UserID);
+                }
+
+                if (!string.IsNullOrEmpty(_ibmMQSettings.Password))
+                {
+                    connectionProperties.Add(MQC.PASSWORD_PROPERTY, _ibmMQSettings.Password);
+                }
+
+
+                if (!string.IsNullOrEmpty(_ibmMQSettings.CertificateStore))
+                {
+                    connectionProperties.Add(MQC.SSL_CERT_STORE_PROPERTY, _ibmMQSettings.CertificateStore);
+
+                    if (!string.IsNullOrEmpty(_ibmMQSettings.CipherSpec))
+                    {
+                        connectionProperties.Add(MQC.SSL_CIPHER_SPEC_PROPERTY, _ibmMQSettings.CipherSpec);
+                    }
+
+                    if (!string.IsNullOrEmpty(_ibmMQSettings.CipherSuite))
+                    {
+                        connectionProperties.Add(MQC.SSL_CIPHER_SUITE_PROPERTY, _ibmMQSettings.CipherSuite);
+                    }
+                }
+
+                _queueMgr = new MQQueueManager(_ibmMQSettings.QueueManager, connectionProperties);
+                _logger.LogDebug("Connected to queue manager. {0}", _ibmMQSettings.QueueManager);
+
+                _queueName = _ibmMQSettings.Queue;
+                _queue = _queueMgr.AccessQueue(_queueName, MQC.MQOO_INPUT_AS_Q_DEF + MQC.MQOO_OUTPUT + MQC.MQOO_FAIL_IF_QUIESCING);
+                _logger.LogDebug("Connected to queue. {0}", _ibmMQSettings.Queue);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("{0} {1}", ex.Message, ex.StackTrace);
+
+                throw;
+            }
+        }
+
+        public virtual void Disconnect()
+        {
+            if (_queue != null)
+            {
+
+                try
+                {
+                    _logger.LogInformation("Disconnecting IBM MQ client.");
+                    _queue.Close();
+
+                    _logger.LogInformation("IBM MQ queue {0} successfully closed", _queue.Name.Trim());
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("{0} {1}", ex.Message, ex.StackTrace);
+                }
+            }
+
+            if (_queueMgr != null)
+            {
+                try
+                {
+
+                    _queueMgr.Disconnect();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("{0} {1}", ex.Message, ex.StackTrace);
+                }
+
+                try
+                {
+                    _queueMgr.Close();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("{0} {1}", ex.Message, ex.StackTrace);
+                }
+                _logger.LogInformation("IBM MQ queue manager successfully disconnected.");
+            }
+        }
+
+        public virtual void Reconnect()
+        {
+            try
+            {
+                _logger.LogDebug("Reconnect interval is set at {0}.", this._ibmMQSettings.ReconnectWaitInterval);
+                this.Disconnect();
+                this.ApplyDelayOnReconnect();
+                //this.Connect();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQClient");
+            }
+        }
+
+        private void ApplyDelayOnReconnect()
+        {
+            try
+            {
+                if (this._ibmMQSettings.ReconnectWaitInterval > 0)
+                {
+                    Thread.Sleep(new TimeSpan(0, 0, this._ibmMQSettings.ReconnectWaitInterval));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQClient");
+            }
+        }
+        #endregion
+
+        public void Dispose()
+        {
+            this.Disconnect();
+            _queueMgr = null;
+            _queue = null;
+        }
+    }
+}
+
+IBMMQPublisher.cs:
+
+using IBM.WMQ;
+using Messaging.IBMMQ.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text;
+using System.Timers;
+
+namespace Messaging.IBMMQ
+{
+    public class IBMMQPublisher : IBMMQClient, IPublisher
+    {
+        //private static ILog _logger = LogManager.GetLogger(typeof(IBMMQPublisher));
+        private readonly ILogger<IBMMQPublisher> _logger;
+        private System.Timers.Timer _idleTimeout;
+
+
+        #region Constructor
+        public IBMMQPublisher(IOptions<IBMMQConnectionSettings> ibmMQSettings, ILogger<IBMMQPublisher> logger) : base(ibmMQSettings, logger)
+        {
+            try
+            {
+                _logger = logger;
+                _idleTimeout = new System.Timers.Timer();
+                _idleTimeout.AutoReset = true;
+                _idleTimeout.Elapsed += (object sender, ElapsedEventArgs e) =>
+                {
+                    this.DisableIdleTimeout();
+                    this.Disconnect();
+                };
+
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+                throw;
+            }
+        }
+
+        #endregion
+
+        public string HostName
+        {
+            get
+            {
+                return _ibmMQSettings.HostName;
+            }
+        }
+
+        private void DisableIdleTimeout()
+        {
+            try
+            {
+                _idleTimeout.Enabled = false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+                throw;
+            }
+        }
+
+        private void EnableIdleTimeout()
+        {
+            try
+            {
+                if (_ibmMQSettings.IdleTimeout <= 0)
+                {
+                    return;
+                }
+                _idleTimeout.Interval = _ibmMQSettings.IdleTimeout * 1000;
+                _idleTimeout.Enabled = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+                throw;
+            }
+        }
+
+        public void Publish(string messageBody)
+        {
+            try
+            {
+                this.DisableIdleTimeout();
+                this.Connect();
+                MQMessage mqMessage = new MQMessage();
+                mqMessage.CharacterSet = 37;
+                mqMessage.Encoding = 273;
+                mqMessage.Write(Encoding.ASCII.GetBytes(messageBody));
+
+                MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+                _queue.Put(mqMessage, mqPutOptions);
+
+                _logger.LogInformation("Successfully published message to {0}", _queueName);
+                _logger.LogDebug("MessageBody : {0}", messageBody);
+
+                this.EnableIdleTimeout();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+                throw;
+            }
+        }
+
+        public Task Publish(Payload msg, CancellationToken ct)
+        {
+            try
+            {
+                this.DisableIdleTimeout();
+
+                Connect();
+
+                MQMessage mqMessage = new MQMessage();
+                mqMessage.CharacterSet = 1208;
+                mqMessage.Encoding = 273;
+                mqMessage.Write(Encoding.UTF8.GetBytes(msg.Body));
+
+                if (!string.IsNullOrEmpty(msg.CorrelationId))
+                    mqMessage.CorrelationId = Encoding.UTF8.GetBytes(msg.CorrelationId);
+                //mqMessage.WriteString(msg.Body);
+
+                MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+                _queue.Put(mqMessage, mqPutOptions);
+
+                _logger.LogInformation("Successfully published message to {0}", _queueName);
+                _logger.LogDebug("MessageBody : {0}", msg.Body);
+
+                this.EnableIdleTimeout();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+                throw;
+            }
+            return Task.CompletedTask;
+        }
+
+
+
+        public string QueueName
+        {
+            get { return _queueName; }
+        }
+    }
+}
+
+
+IBMMQSubscriber.cs:
+
+using IBM.WMQ;
+using Messaging.IBMMQ.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SMTBUSA.Messaging.Consumer;
+using System.Runtime.CompilerServices;
+using System.Text;
+
+namespace Messaging.IBMMQ
+{
+    public class IBMMQSubscriber : IBMMQClient, ISubscriber
+    {
+        private Task _listenTask = null;
+        private CancellationTokenSource _cancelListenTokenSource = new CancellationTokenSource();
+        public event MQConsumer.MQMessageReceivedHandler MQMessageReceived;
+
+        //private static ILog _logger = LogManager.GetLogger(typeof(IBMMQSubscriber));
+        private readonly ILogger<IBMMQSubscriber> _logger;
+
+        #region Constructor
+        public IBMMQSubscriber(IOptions<IBMMQConnectionSettings> ibmMQSettings, ILogger<IBMMQSubscriber> logger) : base(ibmMQSettings, logger)
+        {
+            _logger = logger;
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        }
+        #endregion 
+
+        public string HostName
+        {
+            get
+            {
+                return _ibmMQSettings.HostName;
+            }
+        }
+
+        public string QueueName
+        {
+            get { return _queueName; }
+        }
+        public void StartListening()
+        {
+            try
+            {
+
+                if ((_listenTask != null) && (_listenTask.Status == TaskStatus.Running))
+                {
+                    return;
+                }
+
+                CancellationToken cancelListenToken = _cancelListenTokenSource.Token;
+
+                _listenTask = Task.Factory.StartNew(() =>
+                {
+                    try
+                    {
+                        this.Connect();
+
+                        while (true)
+                        {
+                            cancelListenToken.ThrowIfCancellationRequested();
+                            ConsumeMessages();
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogInformation("IBM MQ Subscriber no longer listening to messages on {0}", _ibmMQSettings.Queue);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
+                        throw;
+                    }
+                }, cancelListenToken);
+
+                //_listenTask.Start();
+            }
+
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
+                throw;
+            }
+        }
+
+        public void StopListening()
+        {
+            try
+            {
+                _cancelListenTokenSource.Cancel();
+
+                this.Disconnect();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
+                throw;
+            }
+        }
+
+        public void ConsumeMessages()
+        {
+            try
+            {
+                this.Connect();
+
+                while (true)
+                {
+                    MQMessage incomingMsg = new MQMessage();
+                    incomingMsg.CorrelationId = MQC.MQMI_NONE;
+                    incomingMsg.MessageId = MQC.MQMI_NONE;
+
+                    try
+                    {
+                        _logger.LogDebug("Checking IBM MQ for messages. Queue: {0}", _queue.Name);
+                        MQGetMessageOptions mqGetMsgOptions = new MQGetMessageOptions() { Options = MQC.MQGMO_WAIT }; //accept the defaults
+                        _queue.Get(incomingMsg, mqGetMsgOptions);
+                    }
+                    catch (MQException mqException)
+                    {
+                        if (mqException.Reason != MQC.MQRC_NO_MSG_AVAILABLE)
+                        {
+                            _logger.LogWarning(mqException, _queue.Name);
+                        }
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
+                        break;
+                    }
+
+
+                    if (incomingMsg == null)
+                    {
+                        break;
+                    }
+
+                    if ((incomingMsg != null) && (MQMessageReceived != null))
+                    {
+                        string msgText = incomingMsg.ReadString(incomingMsg.MessageLength);
+                        _logger.LogInformation("IBM MQ subscriber message detected. Character set: {0}, Encoding: {1}", incomingMsg.CharacterSet, incomingMsg.Encoding);
+                        _logger.LogDebug("IBM MQ message received : {0}", msgText);
+                        MQMessageReceived(this, new MQMessageReceivedArgs() { MessageBody = System.Text.Encoding.UTF8.GetBytes(msgText) });
+                    }
+                }
+
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
+                throw;
+            }
+            finally
+            {
+                this.Disconnect();
+            }
+        }
+
+        public async IAsyncEnumerable<Payload> ReadMessages([EnumeratorCancellation] CancellationToken ct)
+        {
+            Connect();
+
+            var msg = new MQMessage();
+            msg.CorrelationId = MQC.MQMI_NONE;
+            msg.MessageId = MQC.MQMI_NONE;
+
+            Encoding encoding;
+            string corr = string.Empty;
+
+            while (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    _logger.LogInformation("Checking IBM MQ for messages. Queue: {0}", _queue.Name);
+                    var getOpts = new MQGetMessageOptions() { Options = MQC.MQGMO_WAIT }; //accept the defaults;
+                    _queue.Get(msg, getOpts);
+                }
+                catch (MQException mqException)
+                {
+                    if (mqException.Reason != MQC.MQRC_NO_MSG_AVAILABLE)
+                    {
+                        _logger.LogWarning(mqException, "Unexpected MQ Error");
+                    }
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unexpected MQ Error");
+                    break;
+                }
+
+                switch (msg.CharacterSet)
+                {
+                    case 37:    // EBCDIC
+                        encoding = Encoding.GetEncoding(37);
+                        break;
+                    case 1200:  // UTF-16 LE
+                        encoding = Encoding.Unicode;
+                        break;
+                    case 1201:  // UTF-16 BE
+                        encoding = Encoding.BigEndianUnicode;
+                        break;
+                    case 1208:  // UTF-8
+                        encoding = Encoding.UTF8;
+                        break;
+                    default:
+                        encoding = Encoding.ASCII;
+                        break;
+                }
+                byte[] buffer = new byte[msg.MessageLength];
+                msg.ReadFully(ref buffer);
+
+                string body = encoding.GetString(buffer).TrimEnd('\0');
+                //var body = msg.ReadString(msg.MessageLength);
+
+                if (msg.CorrelationId != null && msg.CorrelationId.Length > 0)
+                    corr = Encoding.UTF8.GetString(msg.CorrelationId).TrimEnd('\0');
+
+                _logger.LogInformation("IBM MQ subscriber message detected. Character set: {0}, Encoding: {1}", msg.CharacterSet, msg.Encoding);
+                _logger.LogDebug("IBM MQ message received : {0}", body);
+
+
+                yield return new Payload { CorrelationId = corr, Body = body };
+            }
+
+        }
+    }
+}
+
+
+Messaging.IBMMQ.Shared:
+
+IPublisher.cs:
+
+using Messaging.IBMMQ.Shared.Models;
+
+namespace Messaging.IBMMQ.Shared.Interface
+{
+    public interface IPublisher
+    {
+        string HostName { get; }
+        string QueueName { get; }
+        void Connect();
+        void Disconnect();
+        void Publish(string messageBody);
+        Task Publish(Payload msg, CancellationToken ct);
+    }
+}
+
+ISubscriber.cs:
+
+using Messaging.IBMMQ.Shared.Models;
+using SMTBUSA.Messaging.Consumer;
+
+namespace Messaging.IBMMQ.Shared.Interface
+{
+    public interface ISubscriber
+    {
+        event MQConsumer.MQMessageReceivedHandler MQMessageReceived;
+        string HostName { get; }
+        string QueueName { get; }
+        void ConsumeMessages();
+        void Connect();
+        void StartListening();
+        void StopListening();
+        IAsyncEnumerable<Payload> ReadMessages(CancellationToken ct);
+    }
+}
+
+IBMMQConnectionSettings.cs:
+
+namespace Messaging.IBMMQ.Shared.Models
+{
+    public class IBMMQConnectionSettings
+    {
+        public string HostName { get; set; }
+        public int Port { get; set; }
+        public string QueueManager { get; set; }
+        public string Queue { get; set; }
+        public string Channel { get; set; }
+
+        public string UserID { get; set; }
+        public string Password { get; set; }
+
+        public string CertificateStore { get; set; }
+        public string CipherSpec { get; set; }
+        public string CipherSuite { get; set; }
+
+        public int ReconnectWaitInterval { get; set; }
+        public int IdleTimeout { get; set; }
+    }
+}
+
+Payload.cs:
+
+namespace Messaging.IBMMQ.Shared.Models
+{
+    public class Payload
+    {
+        public string CorrelationId { get; set; }
+        public string Body { get; set; }
+    }
+}
+
+
+MessageProcessing.Handler:
+
+EventArgs.cs:
+
+namespace MessagingProcessing.Handler
+{
+    public class VerifyScheduleEventArgs : EventArgs
+    {
+        public bool CanExecute { get; set; }
+    }
+}
+
+ProcessRequestCommand.cs:
+
+using MediatR;
+using Messaging.IBMMQ.Shared.Models;
+
+namespace MessagingProcessing.Handler
+{
+    public record ProcessRequestCommand(Payload Message) : IRequest;
+}
+
+ProcessRequestCommandHandler.cs:
+
+using MediatR;
+using MessageProcessing.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+
+
+namespace MessagingProcessing.Handler
+{
+    public class ProcessRequestCommandHandler : IRequestHandler<ProcessRequestCommand>
+    {
+        private readonly IDBWriter _dbWriter;
+        private readonly IPublisher _publisher;
+        private readonly IDebounceNotifier _debounce;
+
+        public ProcessRequestCommandHandler(IDBWriter dbWriter, IDebounceNotifier debounce, IPublisher publisher)
+        {
+            _dbWriter = dbWriter;
+            _debounce = debounce;
+            _publisher = publisher;
+        }
+        public async Task<Unit> Handle(ProcessRequestCommand cmd, CancellationToken ct)
+        {
+            await _dbWriter.InsertAsync(cmd.Message, DateTime.Now, "IBM MQ", ct);
+            _debounce.Signal();
+            var result = $"Processed at {DateTime.UtcNow:o}";
+            //await _publisher.Publish(new Payload
+            //{
+            //    CorrelationId = cmd.Message.CorrelationId,
+            //    Body = cmd.Message.Body
+            //}, ct);
+            return Unit.Value;
+        }
+    }
+}
+
+
+dbo.p_Staging_Insert:
+
+CREATE PROCEDURE [dbo].[p_Staging_Insert]  
+(   
+ @CorrelationId NVARCHAR(100),  
+ @Body VARCHAR(MAX),  
+ @Source VARCHAR(50),  
+ @EnqueueUtc DATETIME   
+)  
+AS  
+BEGIN  
+ SET NOCOUNT ON;  
+  
+ IF NOT EXISTS (SELECT 1 FROM [dbo].IncomingStaging WHERE MessageId = @CorrelationId)  
+ BEGIN  
+  INSERT INTO dbo.IncomingStaging   
+  (  
+   MessageId,   
+   Body,   
+   [Source],   
+   EnqueueUtc  
+  )  
+  VALUES   
+  (  
+   @CorrelationId,   
+   @Body,   
+   @Source,   
+   @EnqueueUtc  
+  )  
+ END  
+   
+  
+END  
+
