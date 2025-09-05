@@ -1,66 +1,35 @@
-using Messaging;
-using Messaging.IBMMQ;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using System;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
+IBMMQPublisher.cs
 
-namespace Subscriber
+using System.Text.Json;
+
+public Task Publish(Payload msg, CancellationToken ct)
 {
-    public class SubscriberWorker : BackgroundService
+    try
     {
-        private readonly ISubscriber _subscriber;
-        private readonly ILogger<SubscriberWorker> _logger;
-        private readonly MessageProcessor _messageProcessor;
-        protected IBMMQConnectionSettings _ibmMQSettings;
+        this.DisableIdleTimeout();
+        Connect();
 
-        public SubscriberWorker(IOptions<IBMMQConnectionSettings> ibmMQSettings,
-                                ISubscriber subscriber,
-                                MessageProcessor messageProcessor,
-                                ILogger<SubscriberWorker> logger)
-        {
-            _ibmMQSettings = ibmMQSettings.Value;
-            _subscriber = subscriber;
-            _messageProcessor = messageProcessor;
-            _logger = logger;
-        }
+        string json = JsonSerializer.Serialize(msg);  // Serialize entire Payload
+        MQMessage mqMessage = new MQMessage();
+        mqMessage.CharacterSet = 1208; // UTF-8
+        mqMessage.Encoding = 273;
+        mqMessage.Write(Encoding.UTF8.GetBytes(json));
 
-        protected override async Task ExecuteAsync(CancellationToken ct)
-        {
-            _logger.LogInformation("Subscriber started, listening to " + _ibmMQSettings.Queue);
+        if (!string.IsNullOrEmpty(msg.CorrelationId))
+            mqMessage.CorrelationId = Encoding.UTF8.GetBytes(msg.CorrelationId);
 
-            // ✅ Hook the message received event before starting listening
-            _subscriber.MQMessageReceived += (sender, args) =>
-            {
-                try
-                {
-                    string msg = Encoding.UTF8.GetString(args.MessageBody);
-                    _logger.LogInformation("Message received from MQ: {Message}", msg);
+        MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+        _queue.Put(mqMessage, mqPutOptions);
 
-                    _messageProcessor.HandleMessage(msg);
+        _logger.LogInformation("Successfully published JSON message to {0}", _queueName);
+        _logger.LogDebug("MessageBody : {0}", json);
 
-                    args.IsAcknowledge = true; // acknowledge if needed
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error while processing message");
-                    args.IsRejectMessage = true;
-                }
-            };
-
-            _subscriber.StartListening();
-
-            while (!ct.IsCancellationRequested)
-            {
-                if (_logger.IsEnabled(LogLevel.Information))
-                {
-                    _logger.LogInformation("Subscriber Worker running at: {time}", DateTimeOffset.Now);
-                }
-                await Task.Delay(1000, ct);
-            }
-        }
+        this.EnableIdleTimeout();
     }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
+        throw;
+    }
+    return Task.CompletedTask;
 }
