@@ -1,90 +1,4 @@
-I have created this project in .Net 8, follwing is the structure:
-
-MessageProcessing.Process:
-
-Debouncetimer.cs:
-
-using MessageProcessing.Shared.Interface;
-using MessageProcessing.Shared.Models;
-using Microsoft.Extensions.Options;
-
-namespace MessageProcessing.Process
-{
-    public class DebounceTimer: IDebounceNotifier, IDisposable
-    {
-        private readonly TimeSpan _timeout;
-        private readonly IETLTrigger _etl;
-        private readonly object _lock = new object();
-        private Timer _timer;
-
-        public DebounceTimer(IOptions<EtlOptions> opts, IETLTrigger etl)
-        {
-            _timeout = TimeSpan.FromSeconds(opts.Value.TimeoutSeconds);
-            _etl = etl;
-        }
-
-        public void Signal()
-        {
-            lock (_lock)
-            {
-                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
-                _timer = new Timer(OnElapsed, null, _timeout, Timeout.InfiniteTimeSpan);
-            }
-        }
-
-        private async void OnElapsed(object obj)
-        {
-            await _etl.TriggerAsync(CancellationToken.None);
-        }
-
-        public void Dispose()
-        {
-           _timer?.Dispose();
-        }
-    }
-}
-
-
-ETLProcess.cs:
-
-using MessageProcessing.Shared.Interface;
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-
-namespace MessageProcessing.Process
-{
-    public class MessageProcessor : IETLTrigger
-    {
-        private readonly ILogger<MessageProcessor> _logger;
-        private readonly string _connString;
-        public MessageProcessor(IConfiguration cfg, ILogger<MessageProcessor> logger) 
-        {
-            _connString = cfg.GetConnectionString("Sql");
-            _logger = logger;
-        }
-        public async Task TriggerAsync(CancellationToken ct)
-        {
-            _logger.LogInformation("Debounce elapsed - running ETL Process...");
-            using var conn = new SqlConnection(_connString);
-            using var cmd = new SqlCommand("dbo.p_Process_ETL", conn) { CommandType = System.Data.CommandType.StoredProcedure };
-            conn.OpenAsync(ct);
-
-            try
-            {
-                cmd.ExecuteNonQueryAsync(ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("{0} {1}", "Error while ETL Process " + ex.Message, ex.StackTrace);
-            }
-
-            _logger.LogInformation("ETL Process Completed");
-
-        }
-    }
-}
-
+I have created this project in .Net 9, follwing is the structure:
 
 MessageProcessing.Publisher:
 
@@ -141,37 +55,42 @@ await client.Publish(new Payload
 
 MessageProcessing.Shared:
 
-IDBWriter.cs:
+IETLTriggerScheduler.cs:
+
+namespace MessageProcessing.Shared.Interface
+{
+    public interface IETLTriggerScheduler
+    {
+        void Start();
+    }
+}
+
+
+IRepository.cs:
 
 using Messaging.IBMMQ.Shared.Models;
 
 namespace MessageProcessing.Shared.Interface
 {
-    public interface IDBWriter
+    public interface IRepository
     {
-        Task InsertAsync(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct);
+        Task StagingInsert(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct);
+        Task ETLProcess(CancellationToken ct = default);
     }
 }
 
-IDebounceNotifier.cs:
 
-namespace MessageProcessing.Shared.Interface
+
+AppSettings.cs:
+
+namespace MessageProcessing.Shared.Models
 {
-    public interface IDebounceNotifier
+    public class AppSettings
     {
-        void Signal();
+        public int DelayInterval { get; set; }  
     }
 }
 
-IETLTrigger.cs:
-
-namespace MessageProcessing.Shared.Interface
-{
-    public interface IETLTrigger
-    {
-        Task TriggerAsync(CancellationToken ct = default);
-    }
-}
 
 
 ETLOptions.cs:
@@ -185,6 +104,7 @@ namespace MessageProcessing.Shared.Models
 }
 
 
+
 MessageProcessing.Subscriber:
 
 apsettings.json:
@@ -192,7 +112,7 @@ apsettings.json:
 {
   "Logging": {
     "LogLevel": {
-      "Default": "Information",
+      "Default": "Debug",
       "Microsoft.Hosting.Lifetime": "Information"
     }
   },
@@ -211,46 +131,54 @@ apsettings.json:
     "ReconnectWaitInterval": 30
   },
   "ConnectionStrings": {
-    "Sql": "Server=THWDBD11,4433;Database=LAVA;uid=appuser; pwd=Madison527;"
+    "Sql": "Initial Catalog=lava;Data Source=THWDBD11.smtbusa.us,4433;Database=LAVA;uid=appuser; pwd=Madison527;Encrypt=false;TrustServerCertificate=true"
   },
   "Etl": {
     "TimeoutSeconds": 20
+  },
+  "AppSettings": {
+    "DelayInterval": 1
   }
 }
 
 
-DBWriter.cs:
+
+Repository.cs:
 
 using MessageProcessing.Shared.Interface;
 using Messaging.IBMMQ.Shared.Models;
 using Microsoft.Data.SqlClient;
 
-namespace MessageProcessing.Subscriber
+namespace MessageProcessing.Subscriber.Repositories
 {
-    public class DBWriter : IDBWriter
+    public class Repository : IRepository
     {
-        private readonly ILogger<DBWriter> _logger;
+        private readonly ILogger<Repository> _logger;
         private readonly string _connString;
-        public DBWriter(IConfiguration cfg, ILogger<DBWriter> logger)
+        public Repository(IConfiguration cfg, ILogger<Repository> logger)
         {
             _connString = cfg.GetConnectionString("Sql");
             _logger = logger;
         }
-        public async Task InsertAsync(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct)
+        public async Task StagingInsert(Payload msg, DateTime enqueueUtc, string source, CancellationToken ct)
         {
-            using var conn = new SqlConnection(_connString);
-            using var cmd = new SqlCommand("dbo.p_Staging_Insert", conn) { CommandType = System.Data.CommandType.StoredProcedure };
-
-            cmd.Parameters.AddWithValue("@CorrelationId", msg.CorrelationId);
-            cmd.Parameters.AddWithValue("@Body", msg.Body);
-            cmd.Parameters.AddWithValue("@Source", source);
-            cmd.Parameters.AddWithValue("@EnqueueUtc", enqueueUtc);
-
-            conn.OpenAsync(ct);
+            _logger.LogInformation("Persisting subscribed message into staging table");
 
             try
             {
-                 cmd.ExecuteNonQueryAsync(ct);
+                using var conn = new SqlConnection(_connString);
+                using var cmd = new SqlCommand("dbo.p_Staging_Insert", conn)
+                {
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
+
+                cmd.Parameters.AddWithValue("@CorrelationId", msg.CorrelationId);
+                cmd.Parameters.AddWithValue("@Body", msg.Body);
+                cmd.Parameters.AddWithValue("@Source", source);
+                cmd.Parameters.AddWithValue("@EnqueueUtc", enqueueUtc);
+
+                conn.OpenAsync(ct).GetAwaiter().GetResult();
+                cmd.ExecuteNonQueryAsync(ct).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -258,17 +186,88 @@ namespace MessageProcessing.Subscriber
             }
 
         }
+
+        public async Task ETLProcess(CancellationToken ct)
+        {
+            _logger.LogInformation("Timer elapsed - Running ETL Process...");
+
+            try
+            {
+                using var conn = new SqlConnection(_connString);
+                using var cmd = new SqlCommand("dbo.p_Process_ETL", conn)
+                {
+                    CommandType = System.Data.CommandType.StoredProcedure
+                };
+
+                conn.OpenAsync(ct).GetAwaiter().GetResult();
+                cmd.ExecuteNonQueryAsync(ct).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError("{0} {1}", "Error while ETL Process " + ex.Message, ex.StackTrace);
+            }
+
+            _logger.LogInformation("ETL Process Completed");
+
+        }
     }
 }
+
+
+ETLTriggerScheduler.cs:
+
+using MessageProcessing.Shared.Interface;
+using MessageProcessing.Shared.Models;
+using Microsoft.Extensions.Options;
+
+namespace MessageProcessing.Subscriber.UnitOfWork
+{
+    public class ETLTriggerScheduler : IETLTriggerScheduler, IDisposable
+    {
+        private readonly TimeSpan _timeout;        
+        private readonly IRepository _repo;
+        private readonly object _lock = new object();
+        private Timer _timer;
+
+        public ETLTriggerScheduler(IOptions<EtlOptions> opts, IRepository repo)
+        {
+            _timeout = TimeSpan.FromSeconds(opts.Value.TimeoutSeconds);
+            _repo = repo;
+        }
+
+        public void Start()
+        {
+            lock (_lock)
+            {
+                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _timer = new Timer(OnElapsed, null, _timeout, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        private async void OnElapsed(object obj)
+        {
+            await _repo.ETLProcess(CancellationToken.None);
+        }
+
+        public void Dispose()
+        {
+            _timer?.Dispose();
+        }
+    }
+}
+
+
+
 
 
 Program.cs:
 
 using MediatR;
-using MessageProcessing.Process;
 using MessageProcessing.Shared.Interface;
 using MessageProcessing.Shared.Models;
 using MessageProcessing.Subscriber;
+using MessageProcessing.Subscriber.Repositories;
+using MessageProcessing.Subscriber.UnitOfWork;
 using Messaging.IBMMQ;
 using Messaging.IBMMQ.Shared.Interface;
 using Messaging.IBMMQ.Shared.Models;
@@ -280,28 +279,31 @@ var host = Host.CreateDefaultBuilder(args)
 {
     services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
     services.Configure<EtlOptions>(ctx.Configuration.GetSection("Etl"));
+    services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings")); 
     //services.AddTransient<IBMMQClient>();
     services.AddTransient<ISubscriber, IBMMQSubscriber>();
-    services.AddTransient<Messaging.IBMMQ.Shared.Interface.IPublisher, IBMMQPublisher>();
-    services.AddTransient<IDBWriter, DBWriter>();
-    services.AddTransient<IDebounceNotifier, DebounceTimer>();
-    services.AddTransient<IETLTrigger, MessageProcessor>();
+    services.AddTransient<Messaging.IBMMQ.Shared.Interface.IPublisher, IBMMQPublisher>();    
+    services.AddTransient<IRepository, Repository>();
+    services.AddTransient<IETLTriggerScheduler, ETLTriggerScheduler>();    
     services.AddMediatR(typeof(ProcessRequestCommandHandler).Assembly);
     services.AddHostedService<SubscriberWorker>();
 }).ConfigureLogging(logging =>
 {
     logging.ClearProviders();
     logging.AddConsole();
-    logging.SetMinimumLevel(LogLevel.Information);
+    logging.SetMinimumLevel(LogLevel.Trace);
+    logging.AddLog4Net("log4net.config");
 })
 .Build();
 
 await host.StartAsync();
 
 
+
 SubscriberWorker.cs:
 
 using MediatR;
+using MessageProcessing.Shared.Models;
 using Messaging.IBMMQ.Shared.Interface;
 using Messaging.IBMMQ.Shared.Models;
 using MessagingProcessing.Handler;
@@ -315,30 +317,66 @@ namespace MessageProcessing.Subscriber
         private readonly ISubscriber _subscriber;
         private readonly IMediator _mediator;
         protected IBMMQConnectionSettings _ibmMQSettings;
+        protected AppSettings _appSettings;
 
-        public SubscriberWorker(ILogger<SubscriberWorker> logger, IMediator mediator, IOptions<IBMMQConnectionSettings> ibmMQSettings, ISubscriber subscriber)
+        public SubscriberWorker(ILogger<SubscriberWorker> logger, IMediator mediator, IOptions<IBMMQConnectionSettings> ibmMQSettings, ISubscriber subscriber, IOptions<AppSettings> appSettings)
         {
             _logger = logger;
             _mediator = mediator;
             _ibmMQSettings = ibmMQSettings.Value;
             _subscriber = subscriber;
+            _appSettings = appSettings.Value;
         }
 
         protected override async Task ExecuteAsync(CancellationToken ct)
         {
-            while (!ct.IsCancellationRequested)
-            {
-                _logger.LogInformation("Subscriber started, listening to {Queue}", _ibmMQSettings.Queue);
+            _logger.LogInformation("Subscriber service started...");
 
-                await foreach (Payload msg in _subscriber.ReadMessages(ct))
+            try
+            {
+                while (!ct.IsCancellationRequested)
                 {
-                    _logger.LogInformation("Received message {CorrelationId}", msg.CorrelationId);
-                    await _mediator.Send(new ProcessRequestCommand(msg), ct);
+                    try
+                    {
+                        foreach (Payload msg in _subscriber.ReadMessages(ct))
+                        {
+                            try
+                            {
+                                _logger.LogInformation("Received message {CorrelationId}", msg.CorrelationId);
+                                await _mediator.Send(new ProcessRequestCommand(msg), ct);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error while processing messages {CorrelatioId}", msg.CorrelationId);
+                            }
+                        }
+
+                        _logger.LogInformation("Subscriber Worker running at: {time}", DateTimeOffset.Now);
+                        Task.Delay(TimeSpan.FromSeconds(_appSettings.DelayInterval), ct).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error while reading messages from subscriber, retrying in 5s...");
+                        Task.Delay(TimeSpan.FromSeconds(_ibmMQSettings.ReconnectWaitInterval), ct).GetAwaiter().GetResult();
+                    }
                 }
+
             }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("IBM MQ Subscriber no longer listening to messages on {0}", _ibmMQSettings.Queue);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in the worker loop");
+                throw;
+            }
+
+            _logger.LogInformation("Subscriber service stopped...");
         }
     }
 }
+
 
 
 Messaging.IBMMQ:
@@ -524,6 +562,7 @@ namespace Messaging.IBMMQ
     }
 }
 
+
 IBMMQPublisher.cs:
 
 using IBM.WMQ;
@@ -674,6 +713,7 @@ namespace Messaging.IBMMQ
         }
     }
 }
+
 
 
 IBMMQSubscriber.cs:
@@ -837,10 +877,10 @@ namespace Messaging.IBMMQ
             }
         }
 
-        public async IAsyncEnumerable<Payload> ReadMessages([EnumeratorCancellation] CancellationToken ct)
+        public IEnumerable<Payload> ReadMessages(CancellationToken ct)
         {
             Connect();
-
+            
             var msg = new MQMessage();
             msg.CorrelationId = MQC.MQMI_NONE;
             msg.MessageId = MQC.MQMI_NONE;
@@ -909,6 +949,7 @@ namespace Messaging.IBMMQ
 }
 
 
+
 Messaging.IBMMQ.Shared:
 
 IPublisher.cs:
@@ -928,6 +969,7 @@ namespace Messaging.IBMMQ.Shared.Interface
     }
 }
 
+
 ISubscriber.cs:
 
 using Messaging.IBMMQ.Shared.Models;
@@ -944,9 +986,10 @@ namespace Messaging.IBMMQ.Shared.Interface
         void Connect();
         void StartListening();
         void StopListening();
-        IAsyncEnumerable<Payload> ReadMessages(CancellationToken ct);
+        IEnumerable<Payload> ReadMessages(CancellationToken ct);
     }
 }
+
 
 IBMMQConnectionSettings.cs:
 
@@ -986,16 +1029,6 @@ namespace Messaging.IBMMQ.Shared.Models
 
 MessageProcessing.Handler:
 
-EventArgs.cs:
-
-namespace MessagingProcessing.Handler
-{
-    public class VerifyScheduleEventArgs : EventArgs
-    {
-        public bool CanExecute { get; set; }
-    }
-}
-
 ProcessRequestCommand.cs:
 
 using MediatR;
@@ -1006,86 +1039,157 @@ namespace MessagingProcessing.Handler
     public record ProcessRequestCommand(Payload Message) : IRequest;
 }
 
+
 ProcessRequestCommandHandler.cs:
 
 using MediatR;
 using MessageProcessing.Shared.Interface;
 using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Logging;
 
 
 namespace MessagingProcessing.Handler
 {
+
     public class ProcessRequestCommandHandler : IRequestHandler<ProcessRequestCommand>
     {
-        private readonly IDBWriter _dbWriter;
+        private readonly ILogger<ProcessRequestCommand> _logger;        
+        private readonly IRepository _repository;        
+        private readonly IETLTriggerScheduler _etlTriggerScheduler;
         private readonly IPublisher _publisher;
-        private readonly IDebounceNotifier _debounce;
 
-        public ProcessRequestCommandHandler(IDBWriter dbWriter, IDebounceNotifier debounce, IPublisher publisher)
+        public ProcessRequestCommandHandler(ILogger<ProcessRequestCommand> logger, IRepository repository, IETLTriggerScheduler etlTriggerScheduler, IPublisher publisher)
         {
-            _dbWriter = dbWriter;
-            _debounce = debounce;
-            _publisher = publisher;
+            _logger = logger;
+            _repository = repository;
+            _etlTriggerScheduler = etlTriggerScheduler;
+            _publisher = publisher;            
         }
         public async Task<Unit> Handle(ProcessRequestCommand cmd, CancellationToken ct)
         {
-            await _dbWriter.InsertAsync(cmd.Message, DateTime.Now, "IBM MQ", ct);
-            _debounce.Signal();
-            var result = $"Processed at {DateTime.UtcNow:o}";
-            //await _publisher.Publish(new Payload
-            //{
-            //    CorrelationId = cmd.Message.CorrelationId,
-            //    Body = cmd.Message.Body
-            //}, ct);
+            try
+            {
+                await _repository.StagingInsert(cmd.Message, DateTime.Now, "IBM MQ", ct);
+                _etlTriggerScheduler.Start();                
+                _logger.LogInformation("Persisted subscribed message {0} at {1}", cmd.Message.CorrelationId, DateTime.Now);
+                
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while handling message {CorrelationId}", cmd.Message.CorrelationId);
+            }
+
             return Unit.Value;
         }
     }
 }
 
 
+
 dbo.p_Staging_Insert:
 
-CREATE PROCEDURE [dbo].[p_Staging_Insert]  
-(   
- @CorrelationId NVARCHAR(100),  
- @Body VARCHAR(MAX),  
- @Source VARCHAR(50),  
- @EnqueueUtc DATETIME   
-)  
-AS  
-BEGIN  
- SET NOCOUNT ON;  
-  
- IF NOT EXISTS (SELECT 1 FROM [dbo].IncomingStaging WHERE MessageId = @CorrelationId)  
- BEGIN  
-  INSERT INTO dbo.IncomingStaging   
-  (  
-   MessageId,   
-   Body,   
-   [Source],   
-   EnqueueUtc  
-  )  
-  VALUES   
-  (  
-   @CorrelationId,   
-   @Body,   
-   @Source,   
-   @EnqueueUtc  
-  )  
- END  
-   
-  
-END  
+IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[p_Staging_Insert]') AND type in (N'P', N'PC'))
+	DROP PROCEDURE [dbo].[p_Staging_Insert]
+GO
+ 
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ 
+CREATE PROCEDURE [dbo].[p_Staging_Insert]
+(	
+	@CorrelationId	NVARCHAR(100),
+	@Body VARCHAR(MAX),
+	@Source VARCHAR(50),
+	@EnqueueUtc DATETIME 
+)
+AS
+BEGIN
+	SET NOCOUNT ON;
+ 
+	IF NOT EXISTS (SELECT 1 FROM [dbo].IncomingStaging WHERE MessageId = @CorrelationId)
+	BEGIN
+		INSERT INTO dbo.IncomingStaging 
+		(
+			MessageId, 
+			Body, 
+			[Source], 
+			EnqueueUtc
+		)
+		VALUES 
+		(
+			@CorrelationId, 
+			@Body, 
+			@Source, 
+			@EnqueueUtc
+		)
+	END
 
-Console.WriteLine("Opening DB connection...");
-try
-{
-    await conn.OpenAsync(ct).ConfigureAwait(false);
-    Console.WriteLine("Connection opened.");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"OpenAsync exception: {ex.Message}");
-}
-Console.WriteLine("After OpenAsync.");
+ 
+END
+GO 
+
+
+[dbo].[p_Process_ETL]:
+
+IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[p_Process_ETL]') AND type in (N'P', N'PC'))
+	DROP PROCEDURE [dbo].[p_Process_ETL]
+GO
+ 
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ 
+CREATE PROCEDURE [dbo].[p_Process_ETL]
+
+AS
+BEGIN
+	SET NOCOUNT ON;
+	
+		INSERT INTO dbo.IncomingFinal
+		(
+			MessageId, 
+			Body, 
+			[Source], 
+			EnqueueUtc
+		)
+		SELECT
+		
+			MessageId, 
+			Body, 
+			[Source], 
+			EnqueueUtc
+		
+		FROM 
+			dbo.IncomingStaging IST
+		WHERE 
+			NOT EXISTS (SELECT 1 FROM dbo.IncomingFinal IFN WHERE IFN.MessageId = IST.MessageId)
+
+	
+
+ 
+END
+GO
+
+Table Schemas:
+
+CREATE TABLE [dbo].IncomingStaging
+(
+	StagingId INT IDENTITY(1,1) PRIMARY KEY,
+	MessageId NVARCHAR(100) NOT NULL,
+	Body VARCHAR(MAX) NULL,
+	[Source] VARCHAR(50) NULL,
+	EnqueueUtc DATETIME NULL
+)
+
+CREATE TABLE [dbo].IncomingFinal
+(
+	StagingId INT IDENTITY(1,1) PRIMARY KEY,
+	MessageId NVARCHAR(100) NOT NULL,
+	Body VARCHAR(MAX) NULL,
+	[Source] VARCHAR(50) NULL,
+	EnqueueUtc DATETIME NULL
+)
 
