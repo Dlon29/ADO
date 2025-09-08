@@ -56,3 +56,47 @@ public class CommandDispatcher : ICommandDispatcher
 
 services.AddScoped<ICommandHandler<ProcessRequestCommand>, ProcessRequestCommandHandler>();
 services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+
+
+
+using MessageProcessing.Shared.Interface;
+using Messaging.IBMMQ.Shared.Models;
+using Microsoft.Extensions.Logging;
+
+namespace MessagingProcessing.Handler
+{
+    public class ProcessRequestCommandHandler : ICommandHandler<ProcessRequestCommand>
+    {
+        private readonly ILogger<ProcessRequestCommandHandler> _logger;
+        private readonly IRepository _repository;
+        private readonly IETLTriggerScheduler _etlTriggerScheduler;
+        private readonly IPublisher _publisher;
+
+        public ProcessRequestCommandHandler(
+            ILogger<ProcessRequestCommandHandler> logger,
+            IRepository repository,
+            IETLTriggerScheduler etlTriggerScheduler,
+            IPublisher publisher)
+        {
+            _logger = logger;
+            _repository = repository;
+            _etlTriggerScheduler = etlTriggerScheduler;
+            _publisher = publisher;
+        }
+
+        public async Task Handle(ProcessRequestCommand cmd, CancellationToken ct)
+        {
+            try
+            {
+                await _repository.StagingInsert(cmd.Message, DateTime.UtcNow, "IBM MQ", ct);
+                _etlTriggerScheduler.Start();
+
+                _logger.LogInformation("Persisted subscribed message {CorrelationId} at {Time}", cmd.Message.CorrelationId, DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while handling message {CorrelationId}", cmd.Message.CorrelationId);
+            }
+        }
+    }
+}
