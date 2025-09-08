@@ -1,102 +1,141 @@
-public class ProcessRequestCommandHandler : ICommandHandler<ProcessRequestCommand>
-{
-    private readonly ILogger<ProcessRequestCommandHandler> _logger;
-    private readonly IRepository _repository;
-    private readonly IETLTriggerScheduler _etlTriggerScheduler;
-
-    public ProcessRequestCommandHandler(
-        ILogger<ProcessRequestCommandHandler> logger,
-        IRepository repository,
-        IETLTriggerScheduler etlTriggerScheduler)
-    {
-        _logger = logger;
-        _repository = repository;
-        _etlTriggerScheduler = etlTriggerScheduler;
-    }
-
-    public async Task Handle(ProcessRequestCommand cmd, CancellationToken ct)
-    {
-        try
-        {
-            await _repository.StagingInsert(cmd.Message, DateTime.UtcNow, "IBM MQ", ct);
-            _etlTriggerScheduler.Start();
-            _logger.LogInformation("Persisted message {0} at {1}", cmd.Message.CorrelationId, DateTime.UtcNow);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error while handling message {CorrelationId}", cmd.Message.CorrelationId);
-        }
-    }
-}
-
-
-
-
-public interface ICommandDispatcher
-{
-    Task Dispatch<TCommand>(TCommand command, CancellationToken cancellationToken);
-}
-
-public class CommandDispatcher : ICommandDispatcher
-{
-    private readonly IServiceProvider _serviceProvider;
-
-    public CommandDispatcher(IServiceProvider serviceProvider)
-    {
-        _serviceProvider = serviceProvider;
-    }
-
-    public async Task Dispatch<TCommand>(TCommand command, CancellationToken cancellationToken)
-    {
-        var handler = _serviceProvider.GetRequiredService<ICommandHandler<TCommand>>();
-        await handler.Handle(command, cancellationToken);
-    }
-}
-
-
-services.AddScoped<ICommandHandler<ProcessRequestCommand>, ProcessRequestCommandHandler>();
-services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
-
-
-
-using MessageProcessing.Shared.Interface;
+using IBM.WMQ;
+using Messaging.IBMMQ.Shared.Interface;
 using Messaging.IBMMQ.Shared.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text;
+using System.Timers;
 
-namespace MessagingProcessing.Handler
+namespace Messaging.IBMMQ
 {
-    public class ProcessRequestCommandHandler : ICommandHandler<ProcessRequestCommand>
+    public class IBMMQPublisher : IBMMQClient, IPublisher
     {
-        private readonly ILogger<ProcessRequestCommandHandler> _logger;
-        private readonly IRepository _repository;
-        private readonly IETLTriggerScheduler _etlTriggerScheduler;
-        private readonly IPublisher _publisher;
+        private readonly ILogger<IBMMQPublisher> _logger;
+        private System.Timers.Timer _idleTimeout;
 
-        public ProcessRequestCommandHandler(
-            ILogger<ProcessRequestCommandHandler> logger,
-            IRepository repository,
-            IETLTriggerScheduler etlTriggerScheduler,
-            IPublisher publisher)
+        #region Constructor
+        public IBMMQPublisher(IOptions<IBMMQConnectionSettings> ibmMQSettings, ILogger<IBMMQPublisher> logger)
+            : base(ibmMQSettings, logger)
         {
             _logger = logger;
-            _repository = repository;
-            _etlTriggerScheduler = etlTriggerScheduler;
-            _publisher = publisher;
-        }
 
-        public async Task Handle(ProcessRequestCommand cmd, CancellationToken ct)
+            _idleTimeout = new System.Timers.Timer
+            {
+                AutoReset = true
+            };
+
+            _idleTimeout.Elapsed += (object sender, ElapsedEventArgs e) =>
+            {
+                this.DisableIdleTimeout();
+                this.Disconnect();
+            };
+        }
+        #endregion
+
+        public string HostName => _ibmMQSettings.HostName;
+
+        public string QueueName => _queueName;
+
+        private void DisableIdleTimeout()
         {
             try
             {
-                await _repository.StagingInsert(cmd.Message, DateTime.UtcNow, "IBM MQ", ct);
-                _etlTriggerScheduler.Start();
-
-                _logger.LogInformation("Persisted subscribed message {CorrelationId} at {Time}", cmd.Message.CorrelationId, DateTime.UtcNow);
+                _idleTimeout.Enabled = false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error while handling message {CorrelationId}", cmd.Message.CorrelationId);
+                _logger.LogError(ex, "Error disabling idle timeout in IBMMQPublisher");
+                throw;
             }
+        }
+
+        private void EnableIdleTimeout()
+        {
+            try
+            {
+                if (_ibmMQSettings.IdleTimeout <= 0) return;
+
+                _idleTimeout.Interval = _ibmMQSettings.IdleTimeout * 1000;
+                _idleTimeout.Enabled = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error enabling idle timeout in IBMMQPublisher");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Publishes a plain message string (e.g., JSON).
+        /// </summary>
+        public void Publish(string messageBody)
+        {
+            try
+            {
+                DisableIdleTimeout();
+                Connect();
+
+                MQMessage mqMessage = new MQMessage
+                {
+                    CharacterSet = 1208, // UTF-8
+                    Encoding = 273
+                };
+
+                mqMessage.Write(Encoding.UTF8.GetBytes(messageBody));
+
+                MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+                _queue.Put(mqMessage, mqPutOptions);
+
+                _logger.LogInformation("Successfully published message to {QueueName}", _queueName);
+                _logger.LogDebug("MessageBody: {MessageBody}", messageBody);
+
+                EnableIdleTimeout();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing string message to IBM MQ");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Publishes a Payload object (Body is assumed to be a raw string, not JSON).
+        /// </summary>
+        public Task Publish(Payload msg, CancellationToken ct)
+        {
+            try
+            {
+                DisableIdleTimeout();
+                Connect();
+
+                MQMessage mqMessage = new MQMessage
+                {
+                    CharacterSet = 1208, // UTF-8
+                    Encoding = 273
+                };
+
+                mqMessage.Write(Encoding.UTF8.GetBytes(msg.Body));
+
+                if (!string.IsNullOrEmpty(msg.CorrelationId))
+                {
+                    mqMessage.CorrelationId = Encoding.UTF8.GetBytes(msg.CorrelationId);
+                }
+
+                MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+                _queue.Put(mqMessage, mqPutOptions);
+
+                _logger.LogInformation("Successfully published payload to {QueueName}", _queueName);
+                _logger.LogDebug("MessageBody: {MessageBody}", msg.Body);
+
+                EnableIdleTimeout();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing payload to IBM MQ");
+                throw;
+            }
+
+            return Task.CompletedTask;
         }
     }
 }
