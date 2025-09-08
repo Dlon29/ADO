@@ -1,32 +1,58 @@
-public async Task InsertAsync(Payload msg, DateTime receivedAtUtc, string source, CancellationToken ct)
+public class ProcessRequestCommandHandler : ICommandHandler<ProcessRequestCommand>
 {
-    try
+    private readonly ILogger<ProcessRequestCommandHandler> _logger;
+    private readonly IRepository _repository;
+    private readonly IETLTriggerScheduler _etlTriggerScheduler;
+
+    public ProcessRequestCommandHandler(
+        ILogger<ProcessRequestCommandHandler> logger,
+        IRepository repository,
+        IETLTriggerScheduler etlTriggerScheduler)
     {
-        Console.WriteLine("Opening DB connection...");
-
-        using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct);  // If this throws, we will catch it
-
-        Console.WriteLine("Connection opened.");
-
-        using var cmd = new SqlCommand("dbo.p_Staging_Insert", conn);
-        cmd.CommandType = CommandType.StoredProcedure;
-
-        cmd.Parameters.Add("@CorrelationId", SqlDbType.NVarChar, 100).Value = msg.CorrelationId;
-        cmd.Parameters.Add("@Body", SqlDbType.VarChar, -1).Value = msg.Body;
-        cmd.Parameters.Add("@Source", SqlDbType.NVarChar, 50).Value = source;
-        cmd.Parameters.Add("@EnqueueUtc", SqlDbType.DateTime).Value = receivedAtUtc;
-
-        Console.WriteLine("Executing stored procedure...");
-        await cmd.ExecuteNonQueryAsync(ct);
-        Console.WriteLine("Insert completed.");
+        _logger = logger;
+        _repository = repository;
+        _etlTriggerScheduler = etlTriggerScheduler;
     }
-    catch (Exception ex)
+
+    public async Task Handle(ProcessRequestCommand cmd, CancellationToken ct)
     {
-        Console.WriteLine("❌ EXCEPTION during DB insert:");
-        Console.WriteLine(ex.ToString());
+        try
+        {
+            await _repository.StagingInsert(cmd.Message, DateTime.UtcNow, "IBM MQ", ct);
+            _etlTriggerScheduler.Start();
+            _logger.LogInformation("Persisted message {0} at {1}", cmd.Message.CorrelationId, DateTime.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while handling message {CorrelationId}", cmd.Message.CorrelationId);
+        }
     }
 }
 
 
-sqlcmd -S THWDBD11.smtbusa.us,4433 -U appuser -P Madison527 -d LAVA
+
+
+public interface ICommandDispatcher
+{
+    Task Dispatch<TCommand>(TCommand command, CancellationToken cancellationToken);
+}
+
+public class CommandDispatcher : ICommandDispatcher
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public CommandDispatcher(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
+    public async Task Dispatch<TCommand>(TCommand command, CancellationToken cancellationToken)
+    {
+        var handler = _serviceProvider.GetRequiredService<ICommandHandler<TCommand>>();
+        await handler.Handle(command, cancellationToken);
+    }
+}
+
+
+services.AddScoped<ICommandHandler<ProcessRequestCommand>, ProcessRequestCommandHandler>();
+services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
