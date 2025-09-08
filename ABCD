@@ -211,21 +211,35 @@ namespace Messaging.IBMMQ
 
 
 
-public async Task Publish(string jsonPayload, CancellationToken ct)
+public Task Publish(string jsonPayload, CancellationToken ct)
 {
     try
     {
-        var payload = JsonSerializer.Deserialize<Payload>(jsonPayload);
-        if (payload == null)
-        {
-            throw new ArgumentException("Invalid JSON: Cannot deserialize to Payload.");
-        }
+        this.DisableIdleTimeout();
 
-        await Publish(payload, ct);
+        Connect();
+
+        MQMessage mqMessage = new MQMessage
+        {
+            CharacterSet = 1208,
+            Encoding = 273
+        };
+
+        mqMessage.Write(Encoding.UTF8.GetBytes(jsonPayload));
+
+        MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
+        _queue.Put(mqMessage, mqPutOptions);
+
+        _logger.LogInformation("Successfully published JSON message to {0}", _queueName);
+        _logger.LogDebug("MessageBody : {0}", jsonPayload);
+
+        this.EnableIdleTimeout();
     }
     catch (Exception ex)
     {
-        _logger.LogError(ex, "Error deserializing JSON payload or publishing message");
+        _logger.LogError(ex, "Unexpected error while publishing JSON");
         throw;
     }
+
+    return Task.CompletedTask;
 }
