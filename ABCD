@@ -208,3 +208,24 @@ namespace Messaging.IBMMQ
         }
     }
 }
+
+
+
+public async Task Publish(string jsonPayload, CancellationToken ct)
+{
+    try
+    {
+        var payload = JsonSerializer.Deserialize<Payload>(jsonPayload);
+        if (payload == null)
+        {
+            throw new ArgumentException("Invalid JSON: Cannot deserialize to Payload.");
+        }
+
+        await Publish(payload, ct);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error deserializing JSON payload or publishing message");
+        throw;
+    }
+}
