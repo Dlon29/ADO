@@ -1,245 +1,75 @@
-using IBM.WMQ;
-using Messaging.IBMMQ.Shared.Interface;
-using Messaging.IBMMQ.Shared.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using SMTBUSA.Messaging.Consumer;
-using System.Text;
-using System.Text.Json;
+<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Default.aspx.cs" Inherits="WinAuthWebForms.Default" %>
 
-namespace Messaging.IBMMQ
+<!DOCTYPE html>
+<html>
+<head runat="server">
+    <title>Home Page</title>
+</head>
+<body>
+    <form id="form1" runat="server">
+        <div>
+            <asp:Label ID="Label1" runat="server" Font-Size="Large" />
+            <br /><br />
+            <a href="Page2.aspx">Go to Page 2</a>
+        </div>
+    </form>
+</body>
+</html>
+
+
+using System;
+
+namespace WinAuthWebForms
 {
-    public class IBMMQSubscriber : IBMMQClient, ISubscriber
+    public partial class Default : System.Web.UI.Page
     {
-        private Task _listenTask = null;
-        private CancellationTokenSource _cancelListenTokenSource = new CancellationTokenSource();
-
-        public event MQConsumer.MQMessageReceivedHandler MQMessageReceived;
-        public event Action<Payload> JsonMessageReceived;
-
-        private readonly ILogger<IBMMQSubscriber> _logger;
-
-        public IBMMQSubscriber(IOptions<IBMMQConnectionSettings> ibmMQSettings, ILogger<IBMMQSubscriber> logger) 
-            : base(ibmMQSettings, logger)
+        protected void Page_Load(object sender, EventArgs e)
         {
-            _logger = logger;
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        }
-
-        public string HostName => _ibmMQSettings.HostName;
-        public string QueueName => _queueName;
-
-        public void StartListening()
-        {
-            try
-            {
-                if (_listenTask != null && _listenTask.Status == TaskStatus.Running)
-                    return;
-
-                CancellationToken cancelListenToken = _cancelListenTokenSource.Token;
-
-                _listenTask = Task.Factory.StartNew(() =>
-                {
-                    try
-                    {
-                        this.Connect();
-
-                        while (true)
-                        {
-                            cancelListenToken.ThrowIfCancellationRequested();
-                            ConsumeMessages();
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        _logger.LogInformation("IBM MQ Subscriber stopped listening on {0}", _ibmMQSettings.Queue);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Unexpected error in StartListening");
-                        throw;
-                    }
-                }, cancelListenToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in StartListening");
-                throw;
-            }
-        }
-
-        public void StopListening()
-        {
-            try
-            {
-                _cancelListenTokenSource.Cancel();
-                this.Disconnect();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in StopListening");
-                throw;
-            }
-        }
-
-        public void ConsumeMessages()
-        {
-            try
-            {
-                this.Connect();
-
-                while (true)
-                {
-                    MQMessage incomingMsg = new MQMessage
-                    {
-                        CorrelationId = MQC.MQMI_NONE,
-                        MessageId = MQC.MQMI_NONE
-                    };
-
-                    try
-                    {
-                        _logger.LogDebug("Checking IBM MQ for messages. Queue: {0}", _queue.Name);
-                        MQGetMessageOptions mqGetMsgOptions = new MQGetMessageOptions { Options = MQC.MQGMO_WAIT };
-                        _queue.Get(incomingMsg, mqGetMsgOptions);
-                    }
-                    catch (MQException mqException) when (mqException.Reason == MQC.MQRC_NO_MSG_AVAILABLE)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Unexpected error in ConsumeMessages");
-                        break;
-                    }
-
-                    if (incomingMsg == null)
-                        break;
-
-                    string msgText = incomingMsg.ReadString(incomingMsg.MessageLength);
-                    _logger.LogInformation("IBM MQ message received. Charset: {0}, Encoding: {1}", incomingMsg.CharacterSet, incomingMsg.Encoding);
-                    _logger.LogDebug("MessageBody: {0}", msgText);
-
-                    try
-                    {
-                        var payload = JsonSerializer.Deserialize<Payload>(msgText);
-
-                        if (incomingMsg.CorrelationId != null && incomingMsg.CorrelationId.Length > 0)
-                        {
-                            payload.CorrelationId ??= Encoding.UTF8.GetString(incomingMsg.CorrelationId).TrimEnd('\0');
-                        }
-
-                        JsonMessageReceived?.Invoke(payload);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to deserialize message body: {0}", msgText);
-                    }
-
-                    MQMessageReceived?.Invoke(this, new MQMessageReceivedArgs
-                    {
-                        MessageBody = Encoding.UTF8.GetBytes(msgText)
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in ConsumeMessages");
-                throw;
-            }
-            finally
-            {
-                this.Disconnect();
-            }
-        }
-
-        public IEnumerable<Payload> ReadMessages(CancellationToken ct)
-        {
-            Connect();
-
-            while (!ct.IsCancellationRequested)
-            {
-                MQMessage msg = new MQMessage
-                {
-                    CorrelationId = MQC.MQMI_NONE,
-                    MessageId = MQC.MQMI_NONE
-                };
-
-                try
-                {
-                    _logger.LogInformation("Polling IBM MQ for messages. Queue: {Queue}", _queue.Name);
-                    MQGetMessageOptions getOpts = new MQGetMessageOptions { Options = MQC.MQGMO_WAIT };
-                    _queue.Get(msg, getOpts);
-                }
-                catch (MQException mqEx) when (mqEx.Reason == MQC.MQRC_NO_MSG_AVAILABLE)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error reading message from IBM MQ");
-                    break;
-                }
-
-                byte[] buffer = new byte[msg.MessageLength];
-                msg.ReadFully(ref buffer);
-                string body = Encoding.UTF8.GetString(buffer).TrimEnd('\0');
-
-                _logger.LogInformation("IBM MQ message read. Charset: {Charset}, Encoding: {Encoding}", msg.CharacterSet, msg.Encoding);
-                _logger.LogDebug("Raw Message: {Body}", body);
-
-                Payload payload;
-                try
-                {
-                    payload = JsonSerializer.Deserialize<Payload>(body);
-                }
-                catch (Exception jsonEx)
-                {
-                    _logger.LogError(jsonEx, "Failed to deserialize message: {Body}", body);
-                    continue; // skip malformed
-                }
-
-                if (msg.CorrelationId != null && msg.CorrelationId.Length > 0)
-                {
-                    payload.CorrelationId ??= Encoding.UTF8.GetString(msg.CorrelationId).TrimEnd('\0');
-                }
-
-                yield return payload;
-            }
+            Label1.Text = "Welcome, " + Context.User.Identity.Name;
         }
     }
 }
 
 
+<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Page2.aspx.cs" Inherits="WinAuthWebForms.Page2" %>
 
-public Task Publish(string jsonPayload, CancellationToken ct)
+<!DOCTYPE html>
+<html>
+<head runat="server">
+    <title>Page 2</title>
+</head>
+<body>
+    <form id="form1" runat="server">
+        <div>
+            <h2>This is Page 2</h2>
+            <a href="Default.aspx">Back to Home</a>
+        </div>
+    </form>
+</body>
+</html>
+
+
+using System;
+
+namespace WinAuthWebForms
 {
-    try
+    public partial class Page2 : System.Web.UI.Page
     {
-        this.DisableIdleTimeout();
-
-        Connect();
-
-        MQMessage mqMessage = new MQMessage
+        protected void Page_Load(object sender, EventArgs e)
         {
-            CharacterSet = 1208,
-            Encoding = 273
-        };
-
-        mqMessage.Write(Encoding.UTF8.GetBytes(jsonPayload));
-
-        MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
-        _queue.Put(mqMessage, mqPutOptions);
-
-        _logger.LogInformation("Successfully published JSON message to {0}", _queueName);
-        _logger.LogDebug("MessageBody : {0}", jsonPayload);
-
-        this.EnableIdleTimeout();
+            // Optional: show the user's name or do something else
+        }
     }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Unexpected error while publishing JSON");
-        throw;
-    }
-
-    return Task.CompletedTask;
 }
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <system.web>
+    <compilation debug="true" targetFramework="4.8" />
+    <authentication mode="Windows" />
+    <authorization>
+      <deny users="?" />
+    </authorization>
+  </system.web>
+</configuration>
