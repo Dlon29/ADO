@@ -30,7 +30,6 @@ namespace WinAuthWebForms
     }
 }
 
-
 <%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Page2.aspx.cs" Inherits="WinAuthWebForms.Page2" %>
 
 <!DOCTYPE html>
@@ -41,7 +40,8 @@ namespace WinAuthWebForms
 <body>
     <form id="form1" runat="server">
         <div>
-            <h2>This is Page 2</h2>
+            <asp:Label ID="Label1" runat="server" Font-Size="Large" />
+            <br /><br />
             <a href="Default.aspx">Back to Home</a>
         </div>
     </form>
@@ -57,7 +57,7 @@ namespace WinAuthWebForms
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-            // Optional: show the user's name or do something else
+            Label1.Text = "You are logged in as: " + Context.User.Identity.Name;
         }
     }
 }
