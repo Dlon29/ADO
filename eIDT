@@ -35,3 +35,12 @@ protected void Application_BeginRequest(object sender, EventArgs e)
         HttpContext.Current.Items["UserId"] = userId;
     }
 }
+
+
+app.MapGet("/whoami", (HttpContext context) =>
+{
+    var user = context.User;
+    return user?.Identity?.IsAuthenticated == true
+        ? $"Hello, {user.Identity.Name}"
+        : "Not authenticated";
+});
