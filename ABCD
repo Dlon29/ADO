@@ -1,75 +1,124 @@
-<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Default.aspx.cs" Inherits="WinAuthWebForms.Default" %>
-
-<!DOCTYPE html>
-<html>
-<head runat="server">
-    <title>Home Page</title>
-</head>
-<body>
-    <form id="form1" runat="server">
-        <div>
-            <asp:Label ID="Label1" runat="server" Font-Size="Large" />
-            <br /><br />
-            <a href="Page2.aspx">Go to Page 2</a>
-        </div>
-    </form>
-</body>
-</html>
+<authentication mode ="Windows" />
+<authorization>
+ <allow users ="*" />
+</authorization>
 
 
-using System;
-
-namespace WinAuthWebForms
 {
-    public partial class Default : System.Web.UI.Page
-    {
-        protected void Page_Load(object sender, EventArgs e)
-        {
-            Label1.Text = "Welcome, " + Context.User.Identity.Name;
-        }
+  "iisSettings": {
+    "windowsAuthentication": true,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:65015",
+      "sslPort": 44566
     }
-}
-
-<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Page2.aspx.cs" Inherits="WinAuthWebForms.Page2" %>
-
-<!DOCTYPE html>
-<html>
-<head runat="server">
-    <title>Page 2</title>
-</head>
-<body>
-    <form id="form1" runat="server">
-        <div>
-            <asp:Label ID="Label1" runat="server" Font-Size="Large" />
-            <br /><br />
-            <a href="Default.aspx">Back to Home</a>
-        </div>
-    </form>
-</body>
-</html>
-
-
-using System;
-
-namespace WinAuthWebForms
-{
-    public partial class Page2 : System.Web.UI.Page
-    {
-        protected void Page_Load(object sender, EventArgs e)
-        {
-            Label1.Text = "You are logged in as: " + Context.User.Identity.Name;
-        }
+  },
+  "profiles": {
+    "MyLavaCore": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:7266;http://localhost:5266",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ProxyTo": "http://localhost/MyLava"
+      }
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ProxyTo": "http://localhost/MyLava"
+      }
     }
+  }
 }
 
 
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <system.web>
-    <compilation debug="true" targetFramework="4.8" />
-    <authentication mode="Windows" />
-    <authorization>
-      <deny users="?" />
-    </authorization>
-  </system.web>
-</configuration>
+
+
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "ReverseProxy": {
+    "Routes": {
+      "route1": {
+        "ClusterId": "cluster1",
+        "Match": { "Path": "{**catch-all}" }
+      }
+    },
+    "Clusters": {
+      "cluster1": {
+        "Destinations": {
+          "destination1": {
+            "Address": "http://localhost/MyLava/"
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Net;
+using System.Net.Http;
+using Yarp.ReverseProxy.Transforms;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSystemWebAdapters();
+builder.Services.AddHttpForwarder();
+
+// Add services to the container.
+builder.Services.AddControllersWithViews();
+
+//Windows Auth for Core App
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
+builder.Services.AddAuthorization();
+
+builder.Services.AddReverseProxy()
+    .ConfigureHttpClient((context, handler) =>
+    {
+        handler.Credentials = CredentialCache.DefaultNetworkCredentials;
+    })
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
+    .AddTransforms(transforms =>
+    {
+        transforms.AddRequestHeadersAllowed("Authorization");
+    });
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+app.UseAuthorization();
+app.UseAuthentication();
+app.UseSystemWebAdapters();
+
+app.MapDefaultControllerRoute();
+
+app.MapGet("/ping", () => $"ping from MyLavaCore at {DateTime.Now}");
+app.MapReverseProxy();
+app.MapForwarder("/{**catch-all}", app.Configuration["ProxyTo"]).Add(static builder => ((RouteEndpointBuilder)builder).Order = int.MaxValue);
+app.Run();
