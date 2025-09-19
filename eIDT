@@ -1,224 +1,37 @@
-IBMMQPublisher.cs
+builder.Services.AddReverseProxy()
+    .ConfigureHttpClient((context, handler) =>
+    {
+        handler.Credentials = CredentialCache.DefaultNetworkCredentials;
+    })
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
+    .AddTransforms(builderContext =>
+    {
+        builderContext.AddRequestTransform(async transformContext =>
+        {
+            var user = transformContext.HttpContext.User.Identity;
+            if (user?.IsAuthenticated == true)
+            {
+                transformContext.ProxyRequest.Headers.Add("X-User-Id", user.Name);
+            }
+        });
+    });
 
-using System.Text.Json;
 
-public Task Publish(Payload msg, CancellationToken ct)
+
+<system.web>
+  <authentication mode="None" />
+  <authorization>
+    <allow users="*" />
+  </authorization>
+</system.web>
+
+
+protected void Application_BeginRequest(object sender, EventArgs e)
 {
-    try
+    string userId = HttpContext.Current.Request.Headers["X-User-Id"];
+    if (!string.IsNullOrEmpty(userId))
     {
-        this.DisableIdleTimeout();
-        Connect();
-
-        string json = JsonSerializer.Serialize(msg);  // Serialize entire Payload
-        MQMessage mqMessage = new MQMessage();
-        mqMessage.CharacterSet = 1208; // UTF-8
-        mqMessage.Encoding = 273;
-        mqMessage.Write(Encoding.UTF8.GetBytes(json));
-
-        if (!string.IsNullOrEmpty(msg.CorrelationId))
-            mqMessage.CorrelationId = Encoding.UTF8.GetBytes(msg.CorrelationId);
-
-        MQPutMessageOptions mqPutOptions = new MQPutMessageOptions();
-        _queue.Put(mqMessage, mqPutOptions);
-
-        _logger.LogInformation("Successfully published JSON message to {0}", _queueName);
-        _logger.LogDebug("MessageBody : {0}", json);
-
-        this.EnableIdleTimeout();
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Unexpected error in IBMMQPublisher");
-        throw;
-    }
-    return Task.CompletedTask;
-}
-
-
-IBMMQSubscriber.cs:
-
-using IBM.WMQ;
-using Messaging.IBMMQ.Shared.Interface;
-using Messaging.IBMMQ.Shared.Models;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-
-namespace Messaging.IBMMQ
-{
-    public class IBMMQSubscriber : IBMMQClient, ISubscriber
-    {
-        private Task _listenTask = null;
-        private CancellationTokenSource _cancelListenTokenSource = new CancellationTokenSource();
-        public event MQConsumer.MQMessageReceivedHandler MQMessageReceived;
-
-        private readonly ILogger<IBMMQSubscriber> _logger;
-
-        #region Constructor
-        public IBMMQSubscriber(IOptions<IBMMQConnectionSettings> ibmMQSettings, ILogger<IBMMQSubscriber> logger) 
-            : base(ibmMQSettings, logger)
-        {
-            _logger = logger;
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        }
-        #endregion 
-
-        public string HostName => _ibmMQSettings.HostName;
-        public string QueueName => _queueName;
-
-        public void StartListening()
-        {
-            if (_listenTask != null && !_listenTask.IsCompleted)
-                return;
-
-            var cancellationToken = _cancelListenTokenSource.Token;
-
-            _listenTask = Task.Run(() =>
-            {
-                try
-                {
-                    Connect();
-
-                    while (true)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        ConsumeMessages();
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.LogInformation("IBM MQ Subscriber stopped listening on queue {Queue}", _ibmMQSettings.Queue);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
-                    throw;
-                }
-                finally
-                {
-                    Disconnect();
-                }
-            }, cancellationToken);
-        }
-
-        public void StopListening()
-        {
-            try
-            {
-                _cancelListenTokenSource.Cancel();
-                Disconnect();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in IBMMQSubscriber");
-                throw;
-            }
-        }
-
-        private void ConsumeMessages()
-        {
-            try
-            {
-                var incomingMsg = new MQMessage();
-                incomingMsg.CorrelationId = MQC.MQMI_NONE;
-                incomingMsg.MessageId = MQC.MQMI_NONE;
-
-                MQGetMessageOptions getOptions = new MQGetMessageOptions { Options = MQC.MQGMO_WAIT };
-
-                _logger.LogDebug("Checking IBM MQ for messages. Queue: {QueueName}", _queue.Name);
-                _queue.Get(incomingMsg, getOptions);
-
-                string msgText = incomingMsg.ReadString(incomingMsg.MessageLength);
-                _logger.LogInformation("IBM MQ message received (Charset: {Charset}, Encoding: {Encoding})", incomingMsg.CharacterSet, incomingMsg.Encoding);
-                _logger.LogDebug("Message content: {MessageText}", msgText);
-
-                MQMessageReceived?.Invoke(this, new MQMessageReceivedArgs { MessageBody = Encoding.UTF8.GetBytes(msgText) });
-            }
-            catch (MQException mqEx) when (mqEx.Reason == MQC.MQRC_NO_MSG_AVAILABLE)
-            {
-                // No messages available - normal condition when queue is empty
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error in ConsumeMessages");
-                throw;
-            }
-        }
-
-        public IEnumerable<Payload> ReadMessages(CancellationToken ct)
-        {
-            Connect();
-
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    var msg = new MQMessage();
-                    msg.CorrelationId = MQC.MQMI_NONE;
-                    msg.MessageId = MQC.MQMI_NONE;
-
-                    MQGetMessageOptions getOpts = new MQGetMessageOptions { Options = MQC.MQGMO_WAIT };
-
-                    try
-                    {
-                        _logger.LogInformation("Checking IBM MQ for messages. Queue: {QueueName}", _queue.Name);
-                        _queue.Get(msg, getOpts);
-                    }
-                    catch (MQException mqEx) when (mqEx.Reason == MQC.MQRC_NO_MSG_AVAILABLE)
-                    {
-                        // No message available - break to avoid busy wait
-                        break;
-                    }
-
-                    Encoding encoding = msg.CharacterSet switch
-                    {
-                        37 => Encoding.GetEncoding(37),         // EBCDIC
-                        1200 => Encoding.Unicode,                // UTF-16 LE
-                        1201 => Encoding.BigEndianUnicode,       // UTF-16 BE
-                        1208 => Encoding.UTF8,                   // UTF-8
-                        _ => Encoding.ASCII,
-                    };
-
-                    byte[] buffer = new byte[msg.MessageLength];
-                    msg.ReadFully(ref buffer);
-
-                    string body = encoding.GetString(buffer).TrimEnd('\0');
-
-                    string corrId = string.Empty;
-                    if (msg.CorrelationId != null && msg.CorrelationId.Length > 0)
-                        corrId = Encoding.UTF8.GetString(msg.CorrelationId).TrimEnd('\0');
-
-                    _logger.LogInformation("IBM MQ message detected. Character set: {CharacterSet}, Encoding: {Encoding}", msg.CharacterSet, msg.Encoding);
-                    _logger.LogDebug("Raw message body: {Body}", body);
-
-                    Payload payload = null;
-                    try
-                    {
-                        payload = JsonSerializer.Deserialize<Payload>(body);
-                        if (payload != null && string.IsNullOrEmpty(payload.CorrelationId))
-                        {
-                            payload.CorrelationId = corrId;
-                        }
-                    }
-                    catch (JsonException jsonEx)
-                    {
-                        _logger.LogError(jsonEx, "Error deserializing JSON message");
-                        // Decide how to handle - skip, yield null, or throw. Here, just skip.
-                        continue;
-                    }
-
-                    if (payload != null)
-                        yield return payload;
-                }
-            }
-            finally
-            {
-                Disconnect();
-            }
-        }
+        // Store user in context, session, or a custom principal
+        HttpContext.Current.Items["UserId"] = userId;
     }
 }
