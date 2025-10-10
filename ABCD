@@ -1,5 +1,4 @@
 using MessagingStandards.SWIFT;
-using System.ComponentModel.Design.Serialization;
 using System.Text.RegularExpressions;
 
 namespace UnitTest
@@ -13,17 +12,15 @@ namespace UnitTest
 
         [Test]
         public void SeperateTagsByColonFromSwiftString()
-        {            
+        {
             MTParser message = new MTParser();
-            Dictionary<string, string> swiftBlocks = message.SeperateSWIFTFile("{1:F01STUSUS33AXXX0000000000}{2:I542STUSUS33AXXXN}{4:  :16R:GENL  :20C::SEME//LVC1011187000DF  :23G:NEWM  :16S:GENL  :16R:TRADDET  :98A::SETT//20200703  :98A::TRAD//20200703  :35B:/US/9128284F4  US TREASURY NB DTD 3312018 26250 33  12025  :16S:TRADDET  :16R:FIAC  :36B::SETT//FAMT/282000,00  :97A::SAFE//097425  :16S:FIAC  :16R:SETDET  :22F::SETR//TRAD  :16R:SETPRTY  :95Q::PSET//NYK  :16S:SETPRTY  :16R:SETPRTY  :95R::REAG/USFW/021000089  :97A::SAFE//CUST/204204  :16S:SETPRTY  :16S:SETDET  -}");
+            Dictionary<string, string> swiftBlocks = message.SeperateSWIFTFile(
+                "{1:F01STUSUS33AXXX0000000000}{2:I542STUSUS33AXXXN}{4:  :16R:GENL  :20C::SEME//LVC1011187000DF  :23G:NEWM  :16S:GENL  :16R:TRADDET  :98A::SETT//20200703  :98A::TRAD//20200703  :35B:/US/9128284F4  US TREASURY NB DTD 3312018 26250 33  12025  :16S:TRADDET  :16R:FIAC  :36B::SETT//FAMT/282000,00  :97A::SAFE//097425  :16S:FIAC  :16R:SETDET  :22F::SETR//TRAD  :16R:SETPRTY  :95Q::PSET//NYK  :16S:SETPRTY  :16R:SETPRTY  :95R::REAG/USFW/021000089  :97A::SAFE//CUST/204204  :16S:SETPRTY  :16S:SETDET  -}");
 
-            List<string> listOfTags = new List<string>();
-            var Block4 = swiftBlocks["TextBlock"];
-            listOfTags = message.Block4ToList(Block4);
+            var listOfTags = message.Block4ToList(swiftBlocks["TextBlock"]);
 
             Stack<MTTag> tagStack = new Stack<MTTag>();
             List<MTTag> textBlock = new List<MTTag>();
-            MTTag root = null;
 
             foreach (var swiftTag in listOfTags)
             {
@@ -34,33 +31,26 @@ namespace UnitTest
                 {
                     var tag = tagMatch.Groups["Tag"].Value.Trim();
                     var value = tagMatch.Groups["Value"].Value.Trim();
-
                     MTTag newTag = new MTTag { Tag = tag, Value = value };
 
                     if (tag.StartsWith("16R"))
                     {
-                        // New block begins
                         if (tagStack.Count > 0)
                         {
-                            // Add this new nested block to the current parent
                             tagStack.Peek().Body.Add(newTag);
                         }
                         tagStack.Push(newTag);
                     }
                     else if (tag.StartsWith("16S"))
                     {
-                        // Block ends
-                        MTTag completedBlock = tagStack.Pop();
-
+                        var completedBlock = tagStack.Pop();
                         if (tagStack.Count == 0)
                         {
-                            // Completed a full root-level block
                             textBlock.Add(completedBlock);
                         }
                     }
                     else
                     {
-                        // It's a regular tag — add it to current block
                         if (tagStack.Count > 0)
                         {
                             tagStack.Peek().Body.Add(newTag);
@@ -71,26 +61,36 @@ namespace UnitTest
                 }
             }
 
-            // Modify tag 23G's value from NEWM to CANC
+            // Example modifications:
             foreach (var tag in textBlock)
             {
                 ModifyTagValue(tag, "23G", "CANC");
-                ModifyTagValue(tag, "95Q", "PSET//WDC");
+                ModifyTagValue(tag, "95Q", ":PSET//WDC");
+
+                // NEW: Remove 95Q tag from SETPRTY
+                RemoveTagFromSequence(tag, "SETPRTY", "95Q");
+
+                // NEW: Add 95P tag to SETPRTY
+                var newTag = new MTTag
+                {
+                    Tag = "95P",
+                    Value = ":DEPO//XYZBANK"
+                };
+                AddTagToSequence(tag, "SETPRTY", newTag);
             }
 
-            // Flatten the structure back into a flat list
+            // Flatten and rebuild the updated Block 4 string
             List<string> updatedTagList = new List<string>();
             foreach (var tag in textBlock)
             {
                 updatedTagList.AddRange(FlattenTagHierarchy(tag));
             }
 
-            // Rebuild the block 4 string
             string updatedBlock4 = string.Join("\r\n", updatedTagList);
-            Console.WriteLine("\nUpdated Block 4:\n" + updatedBlock4);           
+            Console.WriteLine("\nUpdated Block 4:\n" + updatedBlock4);
         }
 
-        // Recursively modifies a tag's value
+        // Recursively modifies all occurrences of a tag
         private void ModifyTagValue(MTTag tag, string targetTag, string newValue)
         {
             foreach (var child in tag.Body)
@@ -109,7 +109,41 @@ namespace UnitTest
             }
         }
 
-        // Recursively flattens tag hierarchy into string lines
+        // Recursively removes a tag from a specific sequence
+        private void RemoveTagFromSequence(MTTag tag, string sequenceName, string tagToRemove)
+        {
+            if (tag.Tag == "16R" && tag.Value == sequenceName)
+            {
+                int removed = tag.Body.RemoveAll(t => t.Tag == tagToRemove);
+                if (removed > 0)
+                    Console.WriteLine($" Removed {removed} instance(s) of tag {tagToRemove} from sequence {sequenceName}");
+            }
+
+            foreach (var child in tag.Body)
+            {
+                if (child.Body.Any())
+                    RemoveTagFromSequence(child, sequenceName, tagToRemove);
+            }
+        }
+
+        // Recursively adds a tag to a specific sequence
+        private void AddTagToSequence(MTTag tag, string sequenceName, MTTag tagToAdd)
+        {
+            if (tag.Tag == "16R" && tag.Value == sequenceName)
+            {
+                tag.Body.Add(tagToAdd);
+                Console.WriteLine($" Added tag {tagToAdd.Tag} to sequence {sequenceName}");
+                return;
+            }
+
+            foreach (var child in tag.Body)
+            {
+                if (child.Body.Any())
+                    AddTagToSequence(child, sequenceName, tagToAdd);
+            }
+        }
+
+        // Recursively flattens the tag hierarchy back into lines
         private List<string> FlattenTagHierarchy(MTTag tag)
         {
             var lines = new List<string>();
@@ -123,7 +157,6 @@ namespace UnitTest
                     lines.AddRange(FlattenTagHierarchy(child));
                 }
 
-                // Derive 16S from 16R — closing block
                 lines.Add($":16S:{tag.Value}");
             }
             else
