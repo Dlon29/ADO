@@ -1,47 +1,39 @@
-<asp:BoundField HeaderText="Catg" DataField="Category" SortExpression="Category">
-                                                        <ItemStyle Width="10%" HorizontalAlign="Center"></ItemStyle>
-                                                    </asp:BoundField> 
+Standard Output: 
+	Tag: 16R, Value: GENL
+	Tag: 20C, Value: :SEME//LVC102349500SR
+	Tag: 23G, Value: NEWM
+	Tag: 16S, Value: GENL
+	Tag: 16R, Value: TRADDET
+	Tag: 98A, Value: :SETT//20250805
+	Tag: 98A, Value: :TRAD//20250805
+	Tag: 35B, Value: /US/91282CKQ3  US TREASURY NB DTD 5152024 43750 51  52034
+	Tag: 16S, Value: TRADDET
+	Tag: 16R, Value: FIAC
+	Tag: 36B, Value: :SETT//FAMT/6210000,00
+	Tag: 97A, Value: :SAFE//204204
+	Tag: 16S, Value: FIAC
+	Tag: 16R, Value: SETDET
+	Tag: 22F, Value: :SETR//TRAD
+	Tag: 16R, Value: SETPRTY
+	Tag: 95Q, Value: :PSET//NYK
+	Tag: 16S, Value: SETPRTY
+	Tag: 16R, Value: SETPRTY
+	Tag: 95R, Value: :DEAG/USFW/021000089
+	Tag: 97A, Value: :SAFE//CUST/097425
+	Tag: 16S, Value: SETPRTY
+	Tag: 16S, Value: SETDET
+ Modified tag 23G: NEWM → CANC
 
-
-function ValidateECMT530() {
-        
-
-        //Filter checked rows               
-        var chkLength = $("#<%= gvEuroclearDashboard.ClientID%> input[id*='chkECInclude']:enabled:checked").length;
-
-        if (chkLength == 0) {
-            alert(GetMessageKeyValue('SelectRecord'));
-            return false;
-        }
-
-        //Filter checked rows       
-        var filteredRowList = $("#gvEuroclearDashboard tr").has("input[id*='chkECInclude']:enabled:checked");
-
-      
-        var category = filteredRowList.has("input[id$='Category'];
-   
-
-        //find MT530 switch status as 'manual' in list which is filtered with 'NotSent' MT530 swift status
-        var manualList = notsentMT530SwiftStatusList.has("input[id$='hdnECMT530SwitchStatus'][value='" + MT530SwitchStatus.toUpperCase() + "']")
-
-        if (notsentSwiftStatusList.length > 0 || notSettledNewLoan.length > 0) {
-            alert(GetMessageKeyValue('ValidateOnSwiftMT530AcctSwitch'));
-            return false;
-        }
-
-        if (notsentSwiftStatusList.length > 0 || notSettledReturnLoan.length > 0) {
-            alert(GetMessageKeyValue('ValidateOnSwiftMT530AcctSwitch'));
-            return false;
-        }
-
-        if (otherMT530SwiftStatusList.length > 0 || MT530switchStatusList.length > 0) {
-            alert(GetMessageKeyValue('ValidateOnMT530Swift'));
-        }
-
-        if (manualList.length == 0) {
-            return false;
-        }
-        else {
-            return confirm(GetMessageKeyValue("ConfirmMT530SwiftCreation"));
-        }
-    }
+Updated Block 4:
+:16R:GENL
+:20C::SEME//LVC102349500SR
+:23G:CANC
+:16R:TRADDET
+:98A::SETT//20250805
+:98A::TRAD//20250805
+:35B:/US/91282CKQ3  US TREASURY NB DTD 5152024 43750 51  52034
+:16R:FIAC
+:36B::SETT//FAMT/6210000,00
+:97A::SAFE//204204
+:16R:SETDET
+:22F::SETR//TRAD
