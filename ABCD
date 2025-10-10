@@ -167,3 +167,33 @@ namespace UnitTest
         }
     }
 }
+
+
+private List<string> FlattenTagHierarchy(MTTag tag)
+{
+    var lines = new List<string>();
+
+    if (tag.Tag.StartsWith("16R"))
+    {
+        lines.Add($":{tag.Tag}:{tag.Value}");
+
+        foreach (var child in tag.Body)
+        {
+            lines.AddRange(FlattenTagHierarchy(child));
+        }
+
+        // Derive 16S from 16R — closing block
+        lines.Add($":16S:{tag.Value}");
+    }
+    else
+    {
+        lines.Add($":{tag.Tag}:{tag.Value}");
+
+        foreach (var child in tag.Body)
+        {
+            lines.AddRange(FlattenTagHierarchy(child));
+        }
+    }
+
+    return lines;
+}
