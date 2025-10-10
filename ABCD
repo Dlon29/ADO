@@ -1,199 +1,45 @@
-foreach (var tag in textBlock)
+foreach (var swiftTag in listOfTags)
 {
-    ModifyTagValue(tag, "23G", "MODF");
-}
+    var tagRegex = new Regex(@":(?<Tag>\d{2,3}[A-Z]?):(?<Value>.*)", RegexOptions.Singleline);
+    var tagMatches = tagRegex.Matches(swiftTag);
 
-
-private void ModifyTagValue(MTTag tag, string targetTag, string newValue)
-{
-    foreach (var child in tag.Body)
+    foreach (Match tagMatch in tagMatches)
     {
-        if (child.Tag == targetTag)
+        var tag = tagMatch.Groups["Tag"].Value.Trim();
+        var value = tagMatch.Groups["Value"].Value.Trim();
+
+        MTTag newTag = new MTTag { Tag = tag, Value = value };
+
+        if (tag.StartsWith("16R"))
         {
-            Console.WriteLine($"Modified tag {targetTag} from {child.Value} to {newValue}");
-            child.Value = newValue;
+            // New block begins
+            if (tagStack.Count > 0)
+            {
+                // Add this new nested block to the current parent
+                tagStack.Peek().Body.Add(newTag);
+            }
+            tagStack.Push(newTag);
         }
-    }
-
-    // Recursively check inner bodies (if any)
-    foreach (var child in tag.Body)
-    {
-        if (child.Body.Any())
-            ModifyTagValue(child, targetTag, newValue);
-    }
-}
-
-
-List<string> updatedTagList = new List<string>();
-foreach (var tag in textBlock)
-{
-    updatedTagList.AddRange(FlattenTagHierarchy(tag));
-}
-
-
-private List<string> FlattenTagHierarchy(MTTag tag)
-{
-    List<string> result = new List<string>();
-    result.Add($":{tag.Tag}:{tag.Value}");
-
-    foreach (var child in tag.Body)
-    {
-        result.AddRange(FlattenTagHierarchy(child));
-    }
-
-    return result;
-}
-
-
-string updatedBlock4 = string.Join("\r\n", updatedTagList);
-Console.WriteLine("\nUpdated Block 4:\n" + updatedBlock4);
-
-
-
-using MessagingStandards.SWIFT;
-using System.ComponentModel.Design.Serialization;
-using System.Text.RegularExpressions;
-
-namespace UnitTest
-{
-    public class Tests
-    {
-        [SetUp]
-        public void Setup()
+        else if (tag.StartsWith("16S"))
         {
+            // Block ends
+            MTTag completedBlock = tagStack.Pop();
+
+            if (tagStack.Count == 0)
+            {
+                // We've completed a full root-level block
+                textBlock.Add(completedBlock);
+            }
         }
-
-        [Test]
-        public void SeperateTagsByColonFromSwiftString()
+        else
         {
-            string str;
-
-            MTParser message = new MTParser();
-            Dictionary<string, string> swiftBlocks = message.SeperateSWIFTFile("{1:F01STUSUS33AXXX0000000000}{2:I540CITIUS33XASTN}{4:  :16R:GENL  :20C::SEME//LVC102349500SR  :23G:NEWM  :16S:GENL  :16R:TRADDET  :98A::SETT//20250805  :98A::TRAD//20250805  :35B:/US/91282CKQ3  US TREASURY NB DTD 5152024 43750 51  52034  :16S:TRADDET  :16R:FIAC  :36B::SETT//FAMT/6210000,00  :97A::SAFE//204204  :16S:FIAC  :16R:SETDET  :22F::SETR//TRAD  :16R:SETPRTY  :95Q::PSET//NYK  :16S:SETPRTY  :16R:SETPRTY  :95R::DEAG/USFW/021000089  :97A::SAFE//CUST/097425  :16S:SETPRTY  :16S:SETDET  -}");
-
-            List<string> listOfTags = new List<string>();
-            var Block4 = swiftBlocks["TextBlock"];
-            listOfTags = message.Block4ToList(Block4);
-
-            Stack<MTTag> tagStack = new Stack<MTTag>();
-            List<MTTag> textBlock = new List<MTTag>();
-            MTTag root = null;
-
-            foreach (var swiftTag in listOfTags)
+            // It's a regular tag — add it to current block
+            if (tagStack.Count > 0)
             {
-                var tagRegex = new Regex(@":(?<Tag>\d{2,3}[A-Z]?):(?<Value>.*)", RegexOptions.Singleline);
-                var tagMatches = tagRegex.Matches(swiftTag);
-
-                foreach (Match tagMatch in tagMatches)
-                {
-                    var tag = tagMatch.Groups["Tag"].Value.Trim();
-                    var value = tagMatch.Groups["Value"].Value.Trim();
-                    MTTag newTag = new MTTag() { Tag = tag, Value = value };
-
-                    if (tag.Contains("16R"))
-                    {
-                        tagStack.Push(newTag);
-                        root = newTag;
-                    }
-                    else if (tag.Contains("16S"))
-                    {
-                        root = tagStack.Pop();
-                        if (tagStack.Count == 0)
-                        {
-                            textBlock.Add(root);
-                        }
-                    }
-                    else
-                    {
-                        root.Body.Add(newTag);
-                    }
-
-                    Console.WriteLine($"\tTag: {tag}, Value: {value}");
-                }
-            }
-
-            // 🔧 Modify tag 23G's value from NEWM → MODF
-            foreach (var tag in textBlock)
-            {
-                ModifyTagValue(tag, "23G", "MODF");
-            }
-
-            // 🔄 Flatten the structure back into a flat list
-            List<string> updatedTagList = new List<string>();
-            foreach (var tag in textBlock)
-            {
-                updatedTagList.AddRange(FlattenTagHierarchy(tag));
-            }
-
-            // 🧱 Rebuild the block 4 string
-            string updatedBlock4 = string.Join("\r\n", updatedTagList);
-            Console.WriteLine("\n✅ Updated Block 4:\n" + updatedBlock4);
-
-            // Optional: Assert or use updatedBlock4 further
-            // Assert.IsTrue(updatedBlock4.Contains(":23G:MODF"));
-        }
-
-        // 🔍 Recursively modifies a tag's value
-        private void ModifyTagValue(MTTag tag, string targetTag, string newValue)
-        {
-            foreach (var child in tag.Body)
-            {
-                if (child.Tag == targetTag)
-                {
-                    Console.WriteLine($"🔁 Modified tag {targetTag}: {child.Value} → {newValue}");
-                    child.Value = newValue;
-                }
-            }
-
-            foreach (var child in tag.Body)
-            {
-                if (child.Body.Any())
-                    ModifyTagValue(child, targetTag, newValue);
+                tagStack.Peek().Body.Add(newTag);
             }
         }
 
-        // 📄 Recursively flattens tag hierarchy into string lines
-        private List<string> FlattenTagHierarchy(MTTag tag)
-        {
-            List<string> result = new List<string>();
-            result.Add($":{tag.Tag}:{tag.Value}");
-
-            foreach (var child in tag.Body)
-            {
-                result.AddRange(FlattenTagHierarchy(child));
-            }
-
-            return result;
-        }
+        Console.WriteLine($"\tTag: {tag}, Value: {value}");
     }
-}
-
-
-private List<string> FlattenTagHierarchy(MTTag tag)
-{
-    var lines = new List<string>();
-
-    if (tag.Tag.StartsWith("16R"))
-    {
-        lines.Add($":{tag.Tag}:{tag.Value}");
-
-        foreach (var child in tag.Body)
-        {
-            lines.AddRange(FlattenTagHierarchy(child));
-        }
-
-        // Derive 16S from 16R — closing block
-        lines.Add($":16S:{tag.Value}");
-    }
-    else
-    {
-        lines.Add($":{tag.Tag}:{tag.Value}");
-
-        foreach (var child in tag.Body)
-        {
-            lines.AddRange(FlattenTagHierarchy(child));
-        }
-    }
-
-    return lines;
 }
