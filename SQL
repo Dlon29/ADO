@@ -1,47 +1,34 @@
-	INSERT INTO LAVA.DBO.MTMTripartyManualEntryLog (
-				[BrkGrpID],
-				[BrkNbr],
-				[TPUID],
-				[CollSchedId],
-				[IsDefaultOpen],
-				[IsDefaultTerm],
-				[LockTime],
-				[AsOfDate],
-				[DvPFoP],
-				[CollCCYCode],
-				[ModifiedBy],
-				[ModifiedDate]
-			)
-			SELECT MTME.[BrkGrpID],
-				   MTME.[BrkNbr],
-				   MTME.[TPUID],
-				   MTME.[CollSchedId],
-				   MTME.[IsDefaultOpen],
-				   MTME.[IsDefaultTerm],
-				   MTME.[LockTime],
-				   MTME.[AsOfDate],
-				   MTME.[DvpFop],
-				   MTME.[CollCCYCode],
-				   MTME.[ModifiedBy],
-				   MTME.[ModifiedDate]
-			FROM LAVA.DBO.MTMTripartyManualEntry MTME
-			INNER JOIN MOBETTER.DBO.BrokerCollTypeSchedule BCTS
-			ON MTME.TPUID = BCTS.TripartyBrkCode AND
-			   MTME.CollSchedId = BCTS.CollSchedId AND
-			   BCTS.EffectiveDateEnd < '9999-12-31'
-			WHERE NOT EXISTS (
-			SELECT TripartyBrkCode FROM MOBETTER.DBO.BrokerCollTypeSchedule WHERE EffectiveDateEnd = '9999-12-31'
-			)
-			
+CREATE PROCEDURE [dbo].[p_UpdateCDSMQPositionStatus]
+(	
+	@pRequestId INT,	
+	@pStatus INT
+)
+AS 
+BEGIN 
+	SET NOCOUNT ON;
 
-			
-			DELETE MTME
-			FROM LAVA.DBO.MTMTripartyManualEntry MTME
-			INNER JOIN MOBETTER.DBO.BrokerCollTypeSchedule BCTS
-			ON MTME.TPUID = BCTS.TripartyBrkCode AND
-			   MTME.CollSchedId = BCTS.CollSchedId AND
-			   BCTS.EffectiveDateEnd < '9999-12-31'
-			WHERE NOT EXISTS (
-			SELECT TripartyBrkCode FROM MOBETTER.DBO.BrokerCollTypeSchedule WHERE EffectiveDateEnd = '9999-12-31'
-			)
-			
+	DECLARE @IsDeleted BIT = 0 	
+	DECLARE @StatusNotProcessed INT = 100
+
+	BEGIN TRAN
+
+	UPDATE dbo.CDSMQ_Position
+	SET
+		[Status] = @pStatus,
+		ModifiedOn = GETDATE()			
+	WHERE
+		RequestId = @pRequestId AND			
+		[Status]  = @StatusNotProcessed AND
+		IsDeleted = @IsDeleted
+
+	IF @@ROWCOUNT = 0
+	BEGIN
+		ROLLBACK TRAN
+		RETURN
+	END
+
+	COMMIT TRAN
+
+	SET NOCOUNT OFF; 
+END 
+GO
