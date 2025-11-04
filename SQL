@@ -1,6 +1,6 @@
 CREATE PROCEDURE [dbo].[p_UpdateCDSMQPositionStatus_XML]
 (
-    @TxnList XML = NULL    -- Example: <TxnList><Txn RequestId="101" Status="200"/><Txn RequestId="102" Status="300"/></TxnList>
+    @RequestListXML XML = NULL   -- XML input: <RequestList><Request RequestId="..." Status="..."/></RequestList>
 )
 AS
 BEGIN
@@ -9,11 +9,8 @@ BEGIN
     DECLARE @IsDeleted BIT = 0;
     DECLARE @StatusNotProcessed INT = 100;
     DECLARE @hdoc INT;
-    DECLARE @RequestId INT;
-    DECLARE @NewStatus INT;
-    DECLARE @Min INT, @Max INT, @ID INT;
 
-    -- Temporary table for XML-parsed data
+    -- Table to hold parsed XML
     DECLARE @TempXMLTable TABLE
     (
         ID INT IDENTITY(1,1),
@@ -24,17 +21,17 @@ BEGIN
     BEGIN TRY
         BEGIN TRAN;
 
-        -- Parse XML
-        IF @TxnList IS NOT NULL
+        -- Parse XML input
+        IF @RequestListXML IS NOT NULL
         BEGIN
-            EXEC sp_xml_preparedocument @hdoc OUTPUT, @TxnList;
+            EXEC sp_xml_preparedocument @hdoc OUTPUT, @RequestListXML;
 
             INSERT INTO @TempXMLTable (RequestId, NewStatus)
             SELECT
                 RequestId,
                 Status
             FROM
-                OPENXML(@hdoc, '/TxnList/Txn', 1)
+                OPENXML(@hdoc, '/RequestList/Request', 1)
                 WITH (
                     RequestId INT,
                     Status INT
@@ -43,32 +40,17 @@ BEGIN
             EXEC sp_xml_removedocument @hdoc;
         END
 
-        -- Option 1: Loop (like your dashboard proc)
-        SELECT @Min = MIN(ID), @Max = MAX(ID) FROM @TempXMLTable;
-
-        WHILE @Min IS NOT NULL AND @Min <= @Max
-        BEGIN
-            SELECT 
-                @RequestId = RequestId,
-                @NewStatus = NewStatus
-            FROM @TempXMLTable WHERE ID = @Min;
-
-            UPDATE dbo.CDSMQ_Position
-            SET 
-                [Status] = @NewStatus,
-                ModifiedOn = GETDATE()
-            WHERE 
-                RequestId = @RequestId
-                AND [Status] = @StatusNotProcessed
-                AND IsDeleted = @IsDeleted;
-
-            IF @@ROWCOUNT = 0
-            BEGIN
-                PRINT CONCAT('No rows updated for RequestId: ', @RequestId);
-            END
-
-            SET @Min += 1;
-        END
+        -- ✅ Set-based bulk update (faster and cleaner than looping)
+        UPDATE P
+        SET 
+            P.[Status] = X.NewStatus,
+            P.ModifiedOn = GETDATE()
+        FROM dbo.CDSMQ_Position AS P
+        INNER JOIN @TempXMLTable AS X
+            ON P.RequestId = X.RequestId
+        WHERE
+            P.[Status] = @StatusNotProcessed
+            AND P.IsDeleted = @IsDeleted;
 
         COMMIT TRAN;
     END TRY
