@@ -1,185 +1,76 @@
+Euroclear Cash Movement Dashboard – Design Summary
+
+Description (as provided):
 A new screen “Euroclear Cash Movement Dashboard” will be added under the "SMTBLUX" menu by replicating the existing “Cash Movement Dashboard” screen & underlying functionality to display verified Repo loan DVP transactions where there are applicable cash movements based on the as-of date (settlement date) selected, for transactions settling at Euroclear only i.e., where Depo is either EURO, EURONI, EUROSL, EUROTL. All the existing logic, message pop-up and screen formatting will also be replicated.
 
-1)	The header will have a Date selector which will be populated with today’s date by default upon entering the screen. Users are allowed to change the date to past or future dates to view projected and settled payments. (For historical and future dates, it should be read-only).
-2)	A small count section displays the number of items which need action by the appropriate team:
-a.	Currency: The action items will be split up based on the Currency* of the trade. 
-i.	The column will show a list of all the currencies SMTBUSA is trading in Euroclear (i.e., as per the Mark-to-Market set-up). 
-ii.	Currently, this is set up for EUR and AUD. The columns for Transactions to be Approved, Money Wires to be Input and Money Wires to be Approved, will display details related to each currency in separate rows.
-iii.	Currency* = Collateral Currency i.e., the contract currency and not the currency of the underlying security.
-b.	Transactions to be Approved: Shows how many applicable transactions need to be approved by SMTBLUX – Global Custody User. This should be based on the Projected amounts. Please review section descriptions for more details. 
-c.	Money Wires to be Input: Shows how many applicable Money Wires need to be Input by SMTBLUX – Global Custody User. This is based on projected figures for the dashboard aside from the Fails section, where the count should be based on the actual number of Fails that day requiring Money Wires. This count includes both Trade Support Approved and not yet Approved items.
-d.	Money Wires to be Approved: Shows how many applicable Money Wires need to be approved by a SMTBLUX – Global Custody Manager. This is based on projected figures for the dashboard aside from the Fails section, where the count should be based on the actual number of Fails that day requiring Money Wires. This count includes both SMTBLUX – Global Custody User Approved and not yet Approved items.
-3)	The Actions that users can take are:
-a.	Approve – Action taken by SMTBLUX – Global Custody User to approve the Settled transaction. The transaction must show as settled and appear in the Settled columns. These checkboxes allow approval in bulk. 
-b.	Export – Exports a copy of the dashboard at that moment to excel. Users can print the dashboard from Excel, if needed. The Excel file should have a copy of the Dashboard on the first worksheet as well as copies of all associated Money Wires on separate worksheets, regardless of whether it is approved or not. Label the Money Wires tabs with where the money is going. For example: Fund -36, Fund – 119, etc., If there is more than one wire for the same credit account, then add a -1 and so forth, such as: Fund -36-1, Fund -36-2.
-c.	Currency: The currency drop-down will list all the currencies SMTBUSA is trading in Euroclear (i.e., as per the Mark-to-Market set-up). Selecting a specific currency from this list will refresh all the sections on the screen to display transactions done in the selected currency only. By default, the screen will select currency = EUR and display information for EURO only.
-d.	Select All: The header will also have a “Select All” checkbox. Clicking on this will result in selection of all the checkboxes in the sections below.
+1. Header / Global Behaviour
 
+The screen includes a settlement date selector (defaulting to today), a currency filter, a “Select All” option, and summary counters showing items requiring attention across currencies. Actions include approving transactions, exporting the dashboard to Excel, and viewing/inputting/approving Money Wires.
 
-a.	Customer Repo Payments
+Section Summaries (a–h)
+a. Customer Repo Payments
 
-1)	This section will show a fixed list of masked Principal names. The display format will be as below:
-a.	Static text “Fund” + “–” + “MoBetter Account Code” as displayed on LAVA – Account maintenance screen, for example display “Fund-36” for SumiLife. 
-2)	This section shows only new and/or returned repo transactions (no pair offs aside from Fund-117 i.e., Guma), where there are DvP and/or RvP transactions.
-3)	Existing flags on the Account maintenance screen in MoBetter, maintained by Middle Office will be used to indicate if a customer should show up on the Cash Management Dashboard as well as define if they have a preference to net pair-offs with new and returns into one payable or receivable.
-4)	For Customer Repos, the settlement of new and returned items will be determined based on the Euroclear Settlement Ops View Dashboard which is used by SMTBLUX. 
-5)	When a customer has only Receivable From transactions, SMTBLUX approval and Money Wires are not needed. Those actions are grayed out.
-6)	When the customer has no transactions, SMTBLUX approval and Money Wires are not needed. Those actions are grayed out.
-7)	When the Money Wire for a payment is completed for a customer. 
+Displays customer repo transactions (new/returns), showing projected and settled amounts, and enabling approval and Money Wire actions only where applicable; includes special handling for netting preferences and exceptional cases like Gunma.
 
-a.	The “Approve” checkbox and Wire actions are active. 
-b.	Clicking on the Wire link reveals a pop-up showing the associated Money Wire. 
-c.	Note, only the Own Repo transactions should be displayed as part of this line item for Fund-36. 
-8)	When a customer has a Projected Payable, it is applicable for a Money Wire. However, if the payment has not yet settled, the SMTBLUX user should not be able to approve it. If SMTBLUX user tries to approve the payment before it has settled, an error should be shown:
-“Payment has not yet settled therefore it cannot be approved.”
-o	The Wire button is available for SMTBLUX users to view and have the inputter sign. The link will be shown in bold black to indicate it is an applicable Money Wire that is ready for input but not yet ready to be approved.
-o	If the SMTBLUX Manager tries to approve the Money Wire, when the payment has not yet been approved by SMTBUSA or SMTBLUX users, then show an error:
-	“Transaction has not yet been approved yet.”
+b. Internal Transfers (Repo)
 
-New Money Wire Sample:
- 
-9)	The Gunma Bank is an exceptional case because they require the Money Wire payment to be netted against new/returned/and pair-off transactions while all other customers separate new/returns from pair-offs. In Gunma’s case if the net calculation is a Payable To, then it is applicable for SMTBLUX user to Approve and Money Wire the Net Payment. 
-10)	The total line sums up the amounts in the Projected and Settled columns:
+Provides an informational summary of internal Euroclear funding movements, showing whether funds need to be transferred to Euroclear or Deutsche Bank based on net payable/receivable balances; no user actions required.
 
+c. Customer and Counterparty Pair-Offs
 
+Shows pair-off activity for customers and counterparties where only Payable amounts require user approval and Money Wires, with grouping based on Euroclear-eligible deposits and established wire code/SSI setups.
 
-b.	Internal Transfers (Repo)
-The row/s for internal transfers will appear below the Total for the Customer Repo Payments section even though it draws the amounts from other section/s on the Dashboard. 
+d. Euroclear Settlement (Bilateral Repo)
 
+Displays bilateral repo settlements for Euroclear, excluding pair-offs, and requires no approval or wire actions since associated movements are covered under Internal Transfers.
 
+e. Reverse Repo
 
-a.	This section will be for information purposes only and no actions will be required.
-b.	All the columns except Projected Payable to, Projected Receivable from, Settled Payable to, and Settled Receivable from, will be disabled / greyed out.
-c.	SMTBLUX’s cash management system will calculate the money required by Euroclear to settle based on the MT541 received from SMTBUSA and transfer the amount to Euroclear account automatically.
-d.	The row for internal transfers will show the money movements that will have to be made to either the Deutsche Bank or Euroclear account based on the summary of Euroclear - Bilateral Repos.
-e.	The row header will be displayed as either “Due to Euroclear A/C” or “Due to Deutsche Bank A/C” based on whether the payments that will have to be made to the Euroclear Account or if the payment must be made to Deutsche Bank account.
-f.	The following is a guide for when to Label as Due to Euroclear A/C or Due to Deutsche Bank A/C:
-i.	If Payable To is more than Receivable From, populate Payable To with the amount and label should read Due to Euroclear A/C.
-ii.	If Payable To is less than Receivable From, populate Receivable From with amount and label should read Due to Euroclear A/C.
+Placeholder section for future Reverse Repo functionality; remains empty until expanded.
 
+f. Triparty Euroclear (DVP)
 
+Lists valid triparty Euroclear DVP transactions for eligible customers, with no wire actions required since Euroclear processes movements automatically.
 
+g. Fails
 
+Shows failed transactions until they settle, updating dashboard sections automatically once resolved and ensuring related cash movements are reflected appropriately.
 
-c.	Customer and Counterparty Pair-Offs
+h. Reconciliation
 
+Provides a bottom-line summary comparing projected versus settled debits and credits for Euroclear and triparty activity, displaying alerts if discrepancies occur.
 
-1)	This section displays any pair-off transactions for both Customer (Fund) and Counterparties. The pair-off logic implemented for existing Cash Movement Dashboard will be replicated for the new Euroclear version of the Cash Movement Dashboard section. Only customers and counterparties with relevant pair-off activity will be shown in this section, therefore the list can vary daily. 
-a.	This list will include only Euroclear Depo’s (EURO, EURONI, EUROSL, EUROTL) for pair-offs for customers and Counterparties.
-2)	Customer: This section will show the masked Principal names. The display format will be the text “Fund” + “–” + “MoBetter Account Code” as displayed on LAVA – Account maintenance screen, for example display “Fund-6” for Shinkin.
-3)	Counterparty: Counterparties will be displayed grouped by Broker Group and then by Cash Wire code. In addition, the Security ID (ISIN) will be displayed along with the Broker Code separated by “slash”.
-4)	Customer & Counterparty wire code will need to be set up along with standard SSI on the new Euroclear Cash Wire Code maintenance screen. 
-a.	Note: Upon automation of the cash payment functionality, SMTBUSA will be sending the cash swift MX message directly to Euroclear.
-5)	When a customer or counterparty has only Receivable From transactions, SMTBLUX approval and Money Wires are not needed. Those actions are grayed out.
-6)	SMTBUSA Trade Support settles pair-off transactions in LAVA. In addition, Trade Support will use the existing Master Activity screen to mark Euroclear pair-off trades as “Failed” when the trades fail to settle. 
-7)	Only Payable To transactions will need SMTBLUX user Approval and Money Wires. 
-8)	When the Customer has pair-offs resulting in both Payable to and Receivable From amounts, only the Payable To amount will result in a Money Wire. The following is a sample Money Wire for Banking Proper.
+A new screen under LAVA → SMTB LUX → Maintenance → Euroclear Cash Wire Codes will allow users to maintain Cash Wire Codes used on the Euroclear Cash Movement Dashboard. The screen contains two tabs: Broker Cash Wire Codes and Account Group Cash Wire Codes.
 
+Broker Cash Wire Codes
 
+Users select an existing Broker Number and assign a Cash Wire Code (free text, max 25 characters).
 
-d.	Euroclear Settlement (Bilateral Repo)
+Only one code per Broker Number; edits replace existing values.
 
+The results grid mirrors the current Cash Wire Code maintenance layout and includes a simple filter by Broker Name/Number.
 
-1)	This section shows all Counterparty Euroclear Settlements for Bilateral repos. Only Counterparties with activity for that given day will be shown in this section, therefore the list can change daily.
-2)	Settled Transactions for new loans and returns are determined based on the Euroclear Settlement Ops View screen, which is used by the SMTBLUX team. No pair-offs are shown in this section (they will be shown in the Customer and Counterparty Pair-Off section).
-3)	This section does not require SMTBLUX Approval or Money Wires because the calculations for EUROCLEAR are represented in the Internal Transfers section (Section 8.2.1.1.3) to the Deutsche Bank or Euroclear accounts.
-4)	Because of this, grouping for the pair-offs for counterparties can be done on the Broker Group level and does not need to show the Cash Wire Code or CUSIPs. 
-a.	Question: 
-i.	The Broker Group Code (on MoBetter) for both 1647W3 & 01647W is the same i.e., DWB, In the screenshot above we currently have two records, should the totals for both the records / brokers be display as single row for DWB? Will it cause any issues?
-ii.	Or should we create a new field on MoBetter called “Broker Short Name” and display that instead of Broker Code “1647W3 / 01647W”?
+Account Group Cash Wire Codes
 
+Users select an existing Account Group and assign a Cash Wire Code (free text, max 25 characters).
 
+Only one code per Account Group; edits replace existing values.
 
-e.	Reverse Repo
+Includes Customer Preference flags (Display on Dashboard, Netting Option), each with tooltips.
 
-1)	This section is a placeholder for when Reverse Repos are incorporated into the Lending program. This section will be blank for now.
+Grid includes a simple filter by Account Group.
 
+5.2.1.3 Euroclear Settlement OPS View – Summary
 
-f.	Triparty Euroclear (DVP)
+Enhancements will be made to the existing Euroclear Settlement OPS View screen (LAVA → SMTB LUX → Euroclear Settlement OPS View) to support tracking and updating settlement status.
 
-1)	This section shows all transactions valid for Triparty Euroclear DVP. Show only Customers with valid Triparty Sec Lending Activity (Currently it is only with Citigroup Global Markets Limited - CGI).
-2)	This is for service level 2 versus payment activities.
-3)	Wire movement is not needed as it is automatically done by Euroclear based on the instructions.
+A new Settlement Status field will be added to both the filter section and results grid, with options All (default), Failed, and Settled.
 
+Settlement Status will update automatically to Settled when the G1 status is Settled; trades in Pending states will not auto-update.
 
+Users will be able to manually mark trades as Failed or Settled using a new Actions drop-down located next to the Apply button; previous-day trades may also be updated.
 
-
-
-g.	Fails
-The requirements for enhancements to the “Fails” section of the Cash Movement Dashboard to display correct money movements for the failed Bilateral transactions are as follows:
-1)	When a Euroclear New / Return transaction fails to settle, the SMTBUSA SL Trade Support or SMTBLUX team will mark the transaction as “Failed” on the “Euroclear Settlement Ops View” screen under the SMTBLUX menu.
-
-2)	When a Euroclear Pair-off transaction fails to settle, the SMTBUSA SL Trade Support team will mark the transaction as “Failed” on the “Master Activity” screen under the Dashboard  Operations Dashboard menu.
-
-3)	These failed transactions are displayed on the “Fails” section of the Cash Movement Dashboard on the day of the “Fail” and carry over to the next day and so forth until it has not been marked as Settled.
-
-4)	As per current standard operating procedures, the SL Trade Support team settles the transaction on Global One (G1) after it has been marked as Failed, to start capturing the accrued interest for the Repo loans. 
-
-5)	When the transaction gets marked as Settled on the Euroclear Settlements Ops View screen or the Master Activity by the SL Trade Support or SMTBLUX team. This action triggers the following:
-
-a.	Removal of the Failed transaction from the “Fails” section on the Cash Movement dashboard.
-b.	Money movement updates to the “Customer Repo Payments” & “EUROCLEAR Settlement (Bilateral Repo)” sections, to reflect the payment because of the failed transaction being marked as settled.
-
-
-
-h.	Reconciliation
-
-
-1)	This Section appears at the bottom of the screen and will tabulate the Debits and Credits based on Triparty DVP and the Euroclear Account. The first two columns sum up what was projected and the last two sum up what has settled. If there are any discrepancies, it will show an alert on the relevant line item as per the current Cash Movement Dashboard.
-2)	All formulas for this section are defined in the supplemental Euroclear Cash Movement Dashboard Mockup attached in section 18.1.
-
-5.2.1.2	EUROCLEAR CASH WIRE CODE MAINTENANCE
-Navigation: LAVA  SMTB LUX  Maintenance  Euroclear Cash Wire Codes
-1)	A new Maintenance screen will be created. This will allow users to maintain the codes that are needed for the Money Wires on the Cash Management Dashboard.
-a.	There will be one tab for Broker Number Cash Wire Codes
-b.	There will be one tab for Account Group Cash Wire Codes
-Navigation: LAVA  SMTB LUX  Maintenance  Euroclear Cash Wire Codes
-a.	Broker Cash Wire Code Maintenance Tab
-1)	The following are the fields to add a new Broker Number Cash Wire Code: 
-
-a.	The user can select a Broker Number and enter a cash wire code. Note that users will not be able to add a new Broker Number here, it must be added in MoBetter prior. 
-b.	The Cash Wire Code can be any free-text field, up to 25 characters.
-c.	User clicks on Save to save the code.
-d.	More than one Broker Number can have the same Cash Wire Code, it will not be verified to be unique, however if there is already a Cash Wire code for a Broker Number you cannot add another one for that same Broker Number, you must edit the existing Broker’s Cash Wire Code.
-e.	Display the Account Group with the fields as displayed in the data / result grid above, by replicating the existing Cash Wire Code maintenance screen.
-f.	Above the header, allow for a simple filter with a drop-down for Broker Name/ Number.
-
-b.	Acct Group Cash Wire Code Maintenance
-2)	The following are the fields for adding a new Account Group Cash Wire Code:
-a.	The user can select an Account Group and enter a cash wire code. Note that users will not be able to add a new Account Group here, it must be added in MoBetter prior. 
-b.	The Cash Wire Code can be any free-text field, up to 25 characters.
-c.	User clicks on Save to save the code.
-d.	More than one Account Group can have the same Cash Wire Code, it will not be verified to be unique, however if there is already a Cash Wire code for an Account Group you cannot add another one for that same group, you must edit the existing Account Group’s Cash Wire Code.
-e.	Customer Preferences for Cash Management Dashboard will also be here.
-i.	Display on Cash Management Dashboard: This flag indicates the account will be shown as part of the Cash Management Dashboard Customer Payment (Section 8.3).
-ii.	Net amount for New/Ret/Pair-Off: This flag indicates that for the Customer Repo Payment section, the customer will be netting New Repos, Returned Repos, and Pair-Offs. (Currently only Gunma has this requirement).
-iii.	Provide tool tips (mouseover) to show the purpose of each flag.
-
-
-
-
-f.	Display the Account Group with the fields as displayed in the data / result grid above.
-g.	Above the header, allow for a simple filter with a drop-down for Account Group.
-
-3)	This module is not mandatory per Broker or Account Group. Since it does not drive automatic transfers to Citibank, it is up to the users to ensure the right information is populated when there is a transaction. If a transaction is missing their Cash Wire code in the Cash dashboard, it will appear as blank.
-
-5.2.1.3	EUROCLEAR SETTLEMENT OPS VIEW
-Navigation: LAVA Home  SMTB LUX  Euroclear Settlement OPS View
-1)	The “Euroclear Settlement OPS View” will be changed to include the “Settlement Status” attribute on the filter criteria and the results grid (as shown in the screenshot below).
-2)	The “Settlement Status” drop-down list will display the following values:
-a.	All
-b.	Failed
-c.	Settled
-3)	The value “All” will be selected / displayed by default.
-4)	The screen will also be enhanced to include “Settlement Status” attribute on the data / result grid.
-5)	The “Settlement Status” will be automatically marked as “Settled” if G1 status = Settled. 
-6)	The screen will allow the users to manually mark a Settlement Status as Failed. The user should be able to mark the Failed status for previous day’s trades, using the “Actions” drop-down list.
-7)	The “Actions” drop-down list will be added to the left of the “Apply” button.
-8)	The “Actions” drop-down list will display the following values:
-a.	Mark as “Failed”.
-b.	Mark as “Settled”.
-9)	The Settlement Status (managed in the Euroclear Ops View) will be automatically marked as SETTLED for New / Return trades, if the G1 Status is SETTLED. IF the loan is in PENDING state (for new trade: PL/SL, for return trade: PR/SR), the Settlement Status will NOT be automatically set to SETTLED.
-10)	The items marked as Failed will show on the Euroclear Cash Management Dashboard under the “Fails” section until it is marked as Settled or Cancelled.
+Any items marked as Failed will appear in the “Fails” section of the Euroclear Cash Movement Dashboard until changed to Settled or Cancelled.
 
 5.2.1.4	ACCOUNT GROUP MAINTENANCE
 Navigation: LAVA Home  Maintenance  Account Setup  Account Group
@@ -187,24 +78,26 @@ The requirement for enhancement to account group maintenance screen is as follow
 1)	A new attribute label “Masked Prin Name” along with a free textbox, will be added on the screen to store the masked names of SMTBUSA Repo customers.
 2)	This new attribute will be displayed on the LAVA – Cash Movement Dashboard, in the column “Name TBD” under the Customer Repo Payments section.
 
-5.2.1.5	SMTBLUX TRIFAX REPORT 
-Navigation: LAVA Home  Reports  Trifax Report
-The Trifax report on LAVA will need to be enhanced to reflect market value instead of principal value. The requirement is as follows:
-1)	The Trifax report will be enhanced to show Market Value instead of the Principal Value under the following column headers:
-a.	Open Total
-b.	Closing Total
-2)	The column headers “Principal/Increase” & “Principal/Decrease” will be renamed as “Market/Increase” & “Market/Decrease” in both the Summary and Transaction Details section and the columns will show the Market Value.
+5.2.1.5 SMTBLUX Trifax Report – Summary
+
+The existing Trifax Report (LAVA → Reports → Trifax Report) will be updated to display Market Value instead of Principal Value.
+
+The Open Total and Closing Total columns will now show Market Value.
+
+Column headers Principal/Increase and Principal/Decrease will be renamed to Market/Increase and Market/Decrease in both the Summary and Transaction Details sections, with values updated to reflect Market Value.
 
 
 
-MA:
+Master Activity – Summary of Enhancements
 
-The requirements for enhancements to “Master Activity” screen is as follows:
+The existing Master Activity screen will be updated to support managing Euroclear settlement status for pair-off trades.
 
-1.	The “Master Activity” screen will be enhanced to grant write access to SL Trade Support (SLTS) to apply the Settlement Status.
-2.	This screen already shows all trades including Euroclear pair-offs.
-3.	Settlement Status for Pair-Off will be monitored and set automatically based on G1 status. However, for Pair-off Fails, SMTBUSA SL Trade Support users will need to mark this manually on the Master Activity screen.
-4.	SLTS will own the responsibility of changing the “Settlement Status” of the trade when it fails to settle. Therefore, building a separate Master Activity screen for Euroclear is not required.
-5.	SL Trade Support will use the existing Master Activity screen to “Mark as Failed” the Euroclear pair-off trades as “Failed” when the trades fail to settle.
-6.	The Euroclear pair-off trades marked as “Failed” on the Master Activity screen will be reflected under the “Fails” section of the Euroclear Cash Movement Dashboard. 
-7.	Additionally, The Euroclear New / Return trades marked as “Failed” on Euroclear Settlement Ops View screen will be reflected on the “Fails” section of the Euroclear Cash Movement Dashboard.
+SL Trade Support (SLTS) will receive write access to update Settlement Status directly on the Master Activity screen.
+
+Pair-off Settlement Status will update automatically based on G1 status, but SLTS will manually mark any pair-off Fails.
+
+No new Euroclear-specific Master Activity screen is required; all updates occur in the existing screen.
+
+Euroclear pair-off trades marked as Failed here will appear in the “Fails” section of the Euroclear Cash Movement Dashboard.
+
+Euroclear New/Return trades marked as Failed in the Euroclear Settlement Ops View will also appear in the dashboard’s “Fails” section.
