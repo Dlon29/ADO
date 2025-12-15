@@ -1,24 +1,158 @@
- public async Task ConsumeMessagesAsync(CancellationToken ct)
- {
-     try
-     {
-         foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
-         {
-             try
-             {
-                 _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
-                 var swiftInboundMQ = _swiftInboundFactory.Create(swiftInboundPayload);
-                 await _swiftInboundRepository.AddAsync(swiftInboundMQ, ct);
-             }
-             catch (Exception payloadEx)
-             {
-                 _logger.LogError(payloadEx, "Error while processing messages. Payload: {SwiftInboundPayload} ", swiftInboundPayload);
-             }
-         }
-     }
-     catch (Exception ex)
-     {
-         _logger.LogError(ex, "Error while processing position messages.");
-     }
+//for inbound message processing – MQ based (no SFTP)
+public override List<string> ReadSwiftMessages(
+    string tagCompData,
+    FtpConfigurationElement item,
+    IEnumerable<string> mqPayloads)
+{
+    List<string> lstMessages = new();
+    List<KeyValuePair<string, string>> lstMessageFilename = new();
 
- }
+    //Process the the message, if message type present in App.Config.
+    string[] filterMessageType =
+        (item.MessageTypes.Replace(Constants.CONS_MESSAGETYPESTART, "")).Split('|');
+
+    try
+    {
+        _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_1);
+
+        foreach (var payload in mqPayloads)
+        {
+            string fileName = $"MQ_{Guid.NewGuid():N}.txt";
+
+            try
+            {
+                ApplicationHeaderBlock applicationHeader =
+                    new ApplicationHeaderBlock(payload);
+
+                if (filterMessageType.Contains(applicationHeader.MessageType))
+                {
+                    lstMessageFilename.Add(
+                        new KeyValuePair<string, string>(fileName, payload));
+
+                    lstMessages.Add(payload);
+
+                    _logger.LogInfoFormat(
+                        item.DBName + " - " + item.MessageTypes,
+                        Constants.CONS_INBOUND_PROCESSED,
+                        applicationHeader.MessageType,
+                        fileName
+                    );
+                }
+                else
+                {
+                    _logger.LogInfoFormat(
+                        item.DBName + " - " + item.MessageTypes,
+                        Constants.CONS_INBOUND_NOTPROCESSED,
+                        applicationHeader.MessageType,
+                        fileName
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogErrorMessage(
+                    item.DBName + " - " + item.MessageTypes,
+                    Constants.CONS_INBOUND_SWIFTMESSAGE_INVALID,
+                    ex,
+                    true,
+                    "ReadSwiftMessages",
+                    new[] { "fileName" },
+                    fileName
+                );
+            }
+        }
+
+        _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_2);
+
+        InboundSwiftMessageCollection swiftMessages =
+            new InboundSwiftMessageCollection(lstMessages, tagCompData, lstMessageFilename);
+
+        if (swiftMessages.Count > 0)
+        {
+            _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_3);
+
+            try
+            {
+                SwiftInbound.UpdateInboundMessagesStatus(swiftMessages, item.DBName);
+            }
+            catch (Exception ex)
+            {
+                if (ex.Source.ToUpper().Contains("SQLEXCEPTION") ||
+                    ex.Source.ToUpper().Contains("SQLCONNECTION"))
+                {
+                    _logger.LogFatalMessage(
+                        item.DBName + " - " + item.MessageTypes,
+                        Constants.CONS_INBOUNDPROCESS_MESSAGE_5,
+                        ex,
+                        Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS,
+                        new[] { "DBName", "SwiftMessages" },
+                        item.DBName,
+                        swiftMessages
+                    );
+                }
+                else
+                {
+                    _logger.LogErrorMessage(
+                        item.DBName + " - " + item.MessageTypes,
+                        Constants.CONS_INBOUNDPROCESS_MESSAGE_5,
+                        ex,
+                        true,
+                        Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS,
+                        new[] { "DBName", "SwiftMessages" },
+                        item.DBName,
+                        swiftMessages
+                    );
+                }
+            }
+
+            _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_4);
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogErrorMessage(
+            item.DBName + " - " + item.MessageTypes,
+            Constants.CONS_INBOUNDPROCESS_MESSAGE_6,
+            ex,
+            false,
+            MethodBase.GetCurrentMethod()
+        );
+    }
+
+    return lstMessages;
+}
+
+
+// MQ consumer usage
+public async Task ConsumeMessagesAsync(CancellationToken ct)
+{
+    try
+    {
+        foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}",
+                    swiftInboundPayload);
+
+                ReadSwiftMessages(
+                    tagCompData,
+                    ftpConfigurationElement,
+                    new[] { swiftInboundPayload }
+                );
+            }
+            catch (Exception payloadEx)
+            {
+                _logger.LogError(
+                    payloadEx,
+                    "Error while processing messages. Payload: {SwiftInboundPayload}",
+                    swiftInboundPayload);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error while processing position messages.");
+    }
+}
