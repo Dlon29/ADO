@@ -1,13 +1,27 @@
+using System.Collections.Generic;
+using LAVA.SwiftInbound.Subscriber.Core.Models;
+
 namespace LAVA.SwiftInbound.Subscriber.Shared.Interface
 {
     public interface ISwiftInboundFactory
     {
+        /// <summary>
+        /// Create a SwiftInboundMQ entity from raw payload.
+        /// </summary>
         SwiftInboundMQ Create(string swiftInboundMQPayload);
+
+        /// <summary>
+        /// Read and parse SWIFT messages from MQ payload based on allowed message types.
+        /// </summary>
         List<string> ReadSwiftMessages(
             string mqPayload,
             string correlationId,
             string tagCompData,
-            FtpConfigurationElement item)
-        SwiftInboundMQ MapToSwiftInbound(InboundSwiftMessage message)
+            string messageTypes);
+
+        /// <summary>
+        /// Map a parsed InboundSwiftMessage to SwiftInboundMQ entity.
+        /// </summary>
+        SwiftInboundMQ MapToSwiftInboundMQ(InboundSwiftMessage message);
     }
 }
