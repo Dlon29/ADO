@@ -1,73 +1,142 @@
-public class SwiftInboundRepository(IConfiguration cfg, ILogger<SwiftInboundRepository> logger) : IRepository<SwiftInboundMQ>
+// MQ inbound – SAME logic, different transport
+public List<string> ReadSwiftMessagesFromMQ(
+    string mqPayload,
+    string correlationId,
+    string tagCompData,
+    FtpConfigurationElement item)
 {
-    private readonly ILogger<SwiftInboundRepository> _logger = logger;
-    private readonly string _connString = cfg.GetConnectionString("LAVA") ?? string.Empty;
+    List<string> lstMessages = new();
+    List<KeyValuePair<string, string>> lstMessageFilename = new();
 
-    public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
-    {
-        _logger.LogInformation("Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}", swiftInboundMQ.CorrelationID);
-        try
-        {
-            using var conn = new SqlConnection(_connString);
-            using (var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage", conn))
-            {
-                cmd.CommandType = System.Data.CommandType.StoredProcedure;
-                cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);                    
-                cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
-                cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
-                cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
-                cmd.Parameters.AddWithValue("@IsSuccess", swiftInboundMQ.IsSuccess);
-                cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
-                await conn.OpenAsync(ct);
-                await cmd.ExecuteNonQueryAsync(ct);
-            }
-                ;
-            await conn.CloseAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Error while adding MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}. Exception: {ErrorMsg}",
-                            swiftInboundMQ.CorrelationID, ex.Message);
-            throw;
-        }
-
-    }
-
-    
-
-}
-
-
-public static DataSet SaveInboundMessage(string MessageType, string ParsedFileName, string UserId, string applicationDBName, string xmlSwiftData, string xmlInboundSwiftData, ref bool blnSuccess)
-{
     try
     {
-        using (SqlConnection connection = SqlConnections.AppliCationDBConnection(applicationDBName))
+        ApplicationHeaderBlock applicationHeader =
+            new ApplicationHeaderBlock(mqPayload);
+
+        string[] filterMessageType =
+            (item.MessageTypes.Replace(Constants.CONS_MESSAGETYPESTART, ""))
+            .Split('|');
+
+        if (!filterMessageType.Contains(applicationHeader.MessageType))
+            return lstMessages;
+
+        lstMessages.Add(mqPayload);
+        lstMessageFilename.Add(
+            new KeyValuePair<string, string>(correlationId, mqPayload));
+
+        InboundSwiftMessageCollection swiftMessages =
+            new InboundSwiftMessageCollection(
+                lstMessages,
+                tagCompData,
+                lstMessageFilename);
+
+        if (swiftMessages.Count > 0)
         {
-            SqlParameter[] parameters = new SqlParameter[6];
-            parameters[0] = new SqlParameter(ConstantsDAL.PARAM_MSGTYPE, MessageType);                    
-            parameters[1] = new SqlParameter(ConstantsDAL.PARAM_XMLSWIFTMSGDATA, xmlInboundSwiftData);
-            parameters[2] = new SqlParameter(ConstantsDAL.PARAM_USERID, UserId);
-            parameters[3] = new SqlParameter(ConstantsDAL.PARAM_SWIFTMESSAGEDATA, xmlSwiftData);
-            parameters[4] = new SqlParameter(ConstantsDAL.PARAM_ISSUCCESS, blnSuccess);
-            parameters[5] = new SqlParameter(ConstantsDAL.PARAM_FILENAME, ParsedFileName);
-            parameters[4].Direction = ParameterDirection.Output;
-
-            DataSet ds = StoredProcSql.ExecuteDataSet(connection, ConstantsDAL.SPNAME_PROCESSINBOUNDSWIFTMESSAGE, parameters);
-
-            if (parameters[4].Value != null)
-                blnSuccess = Convert.ToBoolean(parameters[4].Value);
-
-            return ds;
+            SwiftInbound.UpdateInboundMessagesStatus(
+                swiftMessages,
+                item.DBName);
         }
     }
     catch (Exception ex)
     {
-        _logger.LogErrorMessage(applicationDBName + " - " + MessageType, "Error in method SaveInboundMessage", ex, true,
-                               MethodBase.GetCurrentMethod().Name, new string[] {"Stored Procedure", "ParsedFileName", "UserId" },
-                               ConstantsDAL.SPNAME_PROCESSINBOUNDSWIFTMESSAGE, ParsedFileName, UserId);
+        _logger.LogErrorMessage(
+            item.DBName + " - " + item.MessageTypes,
+            Constants.CONS_INBOUND_SWIFTMESSAGE_INVALID,
+            ex,
+            true,
+            nameof(ReadSwiftMessagesFromMQ),
+            new[] { "CorrelationId" },
+            correlationId
+        );
+    }
 
-        throw new Exception(Constants.CONS_METHOD_SAVEINBOUNDMESSAGE); 
+    return lstMessages;
+}
 
+
+
+
+public async Task ConsumeMessagesAsync(CancellationToken ct)
+{
+    try
+    {
+        foreach (var mqMessage in _swiftInboundMQSubscriber.ReadMessages(ct))
+        {
+            try
+            {
+                _logger.LogInformation(
+                    "Consumed swift inbound MQ message. CorrelationId: {CorrelationId}",
+                    mqMessage.CorrelationId
+                );
+
+                _swiftInboundFactory.ReadSwiftMessagesFromMQ(
+                    mqMessage.Payload,
+                    mqMessage.CorrelationId,
+                    _tagCompData,
+                    _ftpConfigurationElement
+                );
+            }
+            catch (Exception payloadEx)
+            {
+                _logger.LogError(
+                    payloadEx,
+                    "Error processing MQ message. CorrelationId: {CorrelationId}",
+                    mqMessage.CorrelationId
+                );
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error while consuming MQ messages.");
+    }
+}
+
+
+
+
+public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
+{
+    _logger.LogInformation(
+        "Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}",
+        swiftInboundMQ.CorrelationID);
+
+    try
+    {
+        using var conn = new SqlConnection(_connString);
+        using var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage", conn)
+        {
+            CommandType = CommandType.StoredProcedure
+        };
+
+        cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);
+        cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
+        cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
+        cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
+        cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+
+        // OUTPUT parameter (critical)
+        var isSuccessParam = new SqlParameter("@IsSuccess", SqlDbType.Bit)
+        {
+            Direction = ParameterDirection.Output
+        };
+        cmd.Parameters.Add(isSuccessParam);
+
+        await conn.OpenAsync(ct);
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        swiftInboundMQ.IsSuccess =
+            isSuccessParam.Value != DBNull.Value &&
+            Convert.ToBoolean(isSuccessParam.Value);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(
+            "Error in method SaveInboundMessage. CorrelationID: {CorrelationID}",
+            swiftInboundMQ.CorrelationID,
+            ex);
+
+        // Preserve legacy semantic behavior
+        throw new Exception(Constants.CONS_METHOD_SAVEINBOUNDMESSAGE);
     }
 }
