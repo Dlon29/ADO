@@ -419,3 +419,47 @@
          ref blnSuccess
      );
  }
+
+public SwiftInboundMQ Create(string swiftInboundMQPayload)
+{
+    try
+    {
+        var swiftInboundMQPayloadArr = swiftInboundMQPayload.Split('|');
+        SwiftInboundMQ swiftInboundMQ = new()
+        {
+            CorrelationID = swiftInboundMQPayloadArr[0],                    
+            MessageText = swiftInboundMQPayload
+        };
+        return swiftInboundMQ;
+    }
+    catch
+    {
+        throw;
+    }
+
+}
+
+public async Task ConsumeMessagesAsync(CancellationToken ct)
+{
+    try
+    {
+        foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+        {
+            try
+            {
+                _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
+                var swiftInboundMQ = _swiftInboundFactory.Create(swiftInboundPayload);
+                await _swiftInboundRepository.AddAsync(swiftInboundMQ, ct);
+            }
+            catch (Exception payloadEx)
+            {
+                _logger.LogError(payloadEx, "Error while processing messages. Payload: {SwiftInboundPayload} ", swiftInboundPayload);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error while processing position messages.");
+    }
+
+}
