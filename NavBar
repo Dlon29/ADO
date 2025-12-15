@@ -93,3 +93,59 @@ public SwiftInboundConsumer(IConfiguration cfg, ...)
 {
     _mqConfiguration = cfg.GetSection("MQInboundSettings").Get<MQConfiguration>();
 }
+
+
+
+namespace LAVA.SwiftInbound.Subscriber.Core
+{
+    public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                                 ISubscriber swiftInboundMQSubscriber,
+                                 ISwiftInboundFactory swiftInboundMQFactory,
+                                 IRepository<SwiftInboundMQ> swiftInboundMQRepository) : ISwiftInboundConsumer
+    {
+        private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+        private readonly IRepository<SwiftInboundMQ> _swiftInboundRepository = swiftInboundMQRepository;
+        private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
+        private readonly ILogger<SwiftInboundConsumer> _logger = logger;        
+
+        public async Task ConsumeMessagesAsync(CancellationToken ct)
+        {
+            try
+            {
+                foreach (var mqMessage in _swiftInboundMQSubscriber.ReadMessages(ct))
+                {
+                    try
+                    {
+                        var swiftMessages = _swiftInboundFactory.ReadSwiftMessages(
+                            mqMessage.Payload,
+                            mqMessage.CorrelationId,
+                            _tagCompData,
+                            _mqConfiguration.MessageTypes // use MQ config instead of FTP element
+                        );
+
+                        foreach (var swiftMessage in swiftMessages)
+                        {
+                            var entity = _swiftInboundFactory.MapToSwiftInboundMQ(swiftMessage);
+                            await _swiftInboundRepository.AddAsync(entity, ct);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "Error processing MQ message. CorrelationId: {CorrelationId}",
+                            mqMessage.CorrelationId
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while consuming MQ messages.");
+            }
+        }
+
+
+    }
+
+}
