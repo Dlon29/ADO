@@ -1,5 +1,4 @@
-// MQ inbound – SAME logic, different transport
-public List<string> ReadSwiftMessagesFromMQ(
+public InboundSwiftMessageCollection ReadSwiftMessagesFromMQ(
     string mqPayload,
     string correlationId,
     string tagCompData,
@@ -8,51 +7,26 @@ public List<string> ReadSwiftMessagesFromMQ(
     List<string> lstMessages = new();
     List<KeyValuePair<string, string>> lstMessageFilename = new();
 
-    try
-    {
-        ApplicationHeaderBlock applicationHeader =
-            new ApplicationHeaderBlock(mqPayload);
+    ApplicationHeaderBlock applicationHeader =
+        new ApplicationHeaderBlock(mqPayload);
 
-        string[] filterMessageType =
-            (item.MessageTypes.Replace(Constants.CONS_MESSAGETYPESTART, ""))
-            .Split('|');
+    string[] filterMessageType =
+        (item.MessageTypes.Replace(Constants.CONS_MESSAGETYPESTART, ""))
+        .Split('|');
 
-        if (!filterMessageType.Contains(applicationHeader.MessageType))
-            return lstMessages;
+    if (!filterMessageType.Contains(applicationHeader.MessageType))
+        return new InboundSwiftMessageCollection();
 
-        lstMessages.Add(mqPayload);
-        lstMessageFilename.Add(
-            new KeyValuePair<string, string>(correlationId, mqPayload));
+    lstMessages.Add(mqPayload);
+    lstMessageFilename.Add(
+        new KeyValuePair<string, string>(correlationId, mqPayload));
 
-        InboundSwiftMessageCollection swiftMessages =
-            new InboundSwiftMessageCollection(
-                lstMessages,
-                tagCompData,
-                lstMessageFilename);
-
-        if (swiftMessages.Count > 0)
-        {
-            SwiftInbound.UpdateInboundMessagesStatus(
-                swiftMessages,
-                item.DBName);
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogErrorMessage(
-            item.DBName + " - " + item.MessageTypes,
-            Constants.CONS_INBOUND_SWIFTMESSAGE_INVALID,
-            ex,
-            true,
-            nameof(ReadSwiftMessagesFromMQ),
-            new[] { "CorrelationId" },
-            correlationId
-        );
-    }
-
-    return lstMessages;
+    // Parsing only – no DB call
+    return new InboundSwiftMessageCollection(
+        lstMessages,
+        tagCompData,
+        lstMessageFilename);
 }
-
 
 
 
@@ -64,22 +38,23 @@ public async Task ConsumeMessagesAsync(CancellationToken ct)
         {
             try
             {
-                _logger.LogInformation(
-                    "Consumed swift inbound MQ message. CorrelationId: {CorrelationId}",
-                    mqMessage.CorrelationId
-                );
+                var swiftMessages =
+                    _swiftInboundFactory.ReadSwiftMessagesFromMQ(
+                        mqMessage.Payload,
+                        mqMessage.CorrelationId,
+                        _tagCompData,
+                        _ftpConfigurationElement);
 
-                _swiftInboundFactory.ReadSwiftMessagesFromMQ(
-                    mqMessage.Payload,
-                    mqMessage.CorrelationId,
-                    _tagCompData,
-                    _ftpConfigurationElement
-                );
+                foreach (var swiftMessage in swiftMessages)
+                {
+                    var entity = MapToSwiftInboundMQ(swiftMessage);
+                    await _swiftInboundRepository.AddAsync(entity, ct);
+                }
             }
-            catch (Exception payloadEx)
+            catch (Exception ex)
             {
                 _logger.LogError(
-                    payloadEx,
+                    ex,
                     "Error processing MQ message. CorrelationId: {CorrelationId}",
                     mqMessage.CorrelationId
                 );
@@ -94,49 +69,50 @@ public async Task ConsumeMessagesAsync(CancellationToken ct)
 
 
 
-
-public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
+private SwiftInboundMQ MapToSwiftInboundMQ(InboundSwiftMessage message)
 {
-    _logger.LogInformation(
-        "Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}",
-        swiftInboundMQ.CorrelationID);
-
-    try
+    return new SwiftInboundMQ
     {
-        using var conn = new SqlConnection(_connString);
-        using var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage", conn)
-        {
-            CommandType = CommandType.StoredProcedure
-        };
+        CorrelationID = message.FileName,
+        MessageType = message.MessageType,
+        ProcessedFileName = message.FileName,
+        UserID = ModifiedBy,
+        IsSuccess = true,
 
-        cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);
-        cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
-        cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
-        cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
-        cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+        InboundSwiftMessageData =
+            Common.Common.GetXMLData(
+                Common.Common.CreateDataTable(message.Text.SwiftTag)),
 
-        // OUTPUT parameter (critical)
-        var isSuccessParam = new SqlParameter("@IsSuccess", SqlDbType.Bit)
-        {
-            Direction = ParameterDirection.Output
-        };
-        cmd.Parameters.Add(isSuccessParam);
+        SwiftMessageData =
+            Common.Common.ConvertStringToXML(
+                BuildSwiftMessageString(message),
+                Constants.CONS_INBOUNDXMLATTR,
+                Convert.ToChar(Constants.CONS_SEMICOLON)
+            ).ToString()
+    };
+}
 
-        await conn.OpenAsync(ct);
-        await cmd.ExecuteNonQueryAsync(ct);
 
-        swiftInboundMQ.IsSuccess =
-            isSuccessParam.Value != DBNull.Value &&
-            Convert.ToBoolean(isSuccessParam.Value);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(
-            "Error in method SaveInboundMessage. CorrelationID: {CorrelationID}",
-            swiftInboundMQ.CorrelationID,
-            ex);
 
-        // Preserve legacy semantic behavior
-        throw new Exception(Constants.CONS_METHOD_SAVEINBOUNDMESSAGE);
-    }
+private string BuildSwiftMessageString(InboundSwiftMessage message)
+{
+    return
+        message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
+        Constants.CONS_SEMICOLON +
+        string.Empty +
+        Constants.CONS_SEMICOLON +
+        message.MessageType +
+        Constants.CONS_SEMICOLON +
+        message.MessageText +
+        Constants.CONS_SEMICOLON +
+        Constants.CONS_MESSAGEDIRECTION +
+        Constants.CONS_SEMICOLON +
+        OutboundStatusTypeData.CONS_MESSAGE_CREATED +
+        Constants.CONS_SEMICOLON +
+        (message.Text[Constants.CONS_BLOCK3TAG108]?.TagValue ?? string.Empty) +
+        Constants.CONS_SEMICOLON +
+        message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
+        Constants.CONS_SEMICOLON +
+        message.ApplicationHeaderText.RecipientAddress +
+        Constants.CONS_PIPESEPERATOR;
 }
