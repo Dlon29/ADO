@@ -98,15 +98,28 @@ public SwiftInboundConsumer(IConfiguration cfg, ...)
 
 namespace LAVA.SwiftInbound.Subscriber.Core
 {
-    public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
-                                 ISubscriber swiftInboundMQSubscriber,
-                                 ISwiftInboundFactory swiftInboundMQFactory,
-                                 IRepository<SwiftInboundMQ> swiftInboundMQRepository) : ISwiftInboundConsumer
+    public class SwiftInboundConsumer : ISwiftInboundConsumer
     {
-        private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
-        private readonly IRepository<SwiftInboundMQ> _swiftInboundRepository = swiftInboundMQRepository;
-        private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
-        private readonly ILogger<SwiftInboundConsumer> _logger = logger;        
+        private readonly ISubscriber _swiftInboundMQSubscriber;
+        private readonly IRepository<SwiftInboundMQ> _swiftInboundRepository;
+        private readonly ISwiftInboundFactory _swiftInboundFactory;
+        private readonly ILogger<SwiftInboundConsumer> _logger;
+        private readonly string _tagCompData = string.Empty; // or inject if needed
+        private readonly MQConfiguration _mqConfiguration;
+
+        public SwiftInboundConsumer(
+            ILogger<SwiftInboundConsumer> logger,
+            ISubscriber swiftInboundMQSubscriber,
+            ISwiftInboundFactory swiftInboundMQFactory,
+            IRepository<SwiftInboundMQ> swiftInboundMQRepository,
+            MQConfiguration mqConfiguration) // inject MQ config
+        {
+            _logger = logger;
+            _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+            _swiftInboundFactory = swiftInboundMQFactory;
+            _swiftInboundRepository = swiftInboundMQRepository;
+            _mqConfiguration = mqConfiguration;
+        }
 
         public async Task ConsumeMessagesAsync(CancellationToken ct)
         {
@@ -116,11 +129,12 @@ namespace LAVA.SwiftInbound.Subscriber.Core
                 {
                     try
                     {
+                        // Read messages using MQ MessageTypes
                         var swiftMessages = _swiftInboundFactory.ReadSwiftMessages(
                             mqMessage.Payload,
                             mqMessage.CorrelationId,
                             _tagCompData,
-                            _mqConfiguration.MessageTypes // use MQ config instead of FTP element
+                            _mqConfiguration.MessageTypes // MQ configuration
                         );
 
                         foreach (var swiftMessage in swiftMessages)
@@ -144,8 +158,5 @@ namespace LAVA.SwiftInbound.Subscriber.Core
                 _logger.LogError(ex, "Error while consuming MQ messages.");
             }
         }
-
-
     }
-
 }
