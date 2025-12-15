@@ -463,3 +463,125 @@ public async Task ConsumeMessagesAsync(CancellationToken ct)
     }
 
 }
+
+public class Common
+{
+    public static StringBuilder ConvertStringToXML(string itemList, string attributeNameList, char stringSeperator)
+    {
+        StringBuilder XmlDoc = new StringBuilder();
+        string[] list1 = itemList.Split('|');
+        string[] list2 = null;
+        string[] attrList = attributeNameList.Split('|');
+        int RecCount = 0;
+
+        XmlDoc.Append("<ROOT>\n");
+
+        for (int i = 0; i < list1.Length; i++)
+        {
+            if (list1[i] != string.Empty)
+            {
+                XmlDoc.Append("\t<record ");
+
+                list2 = list1[i].Split(stringSeperator);
+                //XmlDoc.Append("<");
+
+                for (int j = 0; j < attrList.Length; j++)
+                {
+                    XmlDoc.Append(attrList[j] + "=");
+                    XmlDoc.Append("\"");
+                    XmlDoc.Append(list2[j].ToString());
+                    XmlDoc.Append("\" ");
+                }
+
+                XmlDoc.Append(">");
+                XmlDoc.Append("</record>\n");
+                RecCount++;
+            }
+        }
+
+        XmlDoc.Append("</ROOT>");
+
+        if (RecCount == 0)
+        {
+            XmlDoc.Length = 0;
+            return XmlDoc;
+        }
+        return XmlDoc;
+    }
+
+    public static DataTable CreateDataTable<T>(IEnumerable<T> list)
+    {
+        Type type = typeof(T);
+        var properties = type.GetProperties();
+
+        DataTable dataTable = new DataTable();
+        foreach (PropertyInfo info in properties)
+        {
+            dataTable.Columns.Add(new DataColumn(info.Name, Nullable.GetUnderlyingType(info.PropertyType) ?? info.PropertyType));
+        }
+
+        foreach (T entity in list)
+        {
+            object[] values = new object[properties.Length];
+            for (int i = 0; i < properties.Length; i++)
+            {
+                values[i] = properties[i].GetValue(entity);
+            }
+
+            dataTable.Rows.Add(values);
+        }
+
+        return dataTable;
+    }
+
+    public static string GetXMLData(DataTable dtXMLData)
+    {
+
+        string xmlString = string.Empty;
+        using (TextWriter writer = new StringWriter())
+        {
+            dtXMLData.WriteXml(writer);
+            xmlString = writer.ToString();
+        }
+        return xmlString;
+    }
+}
+
+public class SwiftInboundRepository(IConfiguration cfg, ILogger<SwiftInboundRepository> logger) : IRepository<SwiftInboundMQ>
+{
+    private readonly ILogger<SwiftInboundRepository> _logger = logger;
+    private readonly string _connString = cfg.GetConnectionString("LAVA") ?? string.Empty;
+
+    public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
+    {
+        _logger.LogInformation("Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}", swiftInboundMQ.CorrelationID);
+        try
+        {
+            using var conn = new SqlConnection(_connString);
+            using (var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage", conn))
+            {
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);                    
+                cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
+                cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
+                cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
+                cmd.Parameters.AddWithValue("@IsSuccess", swiftInboundMQ.IsSuccess);
+                cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+                await conn.OpenAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+                ;
+            await conn.CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error while adding MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}. Exception: {ErrorMsg}",
+                            swiftInboundMQ.CorrelationID, ex.Message);
+            throw;
+        }
+
+    }
+
+    
+
+}
