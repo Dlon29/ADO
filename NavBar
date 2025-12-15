@@ -17,12 +17,24 @@ public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurat
         //only gets the files from SFTP location
         try
         {
-            SFTPClient.SftpDownloadFiles(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, InboundInProgresspath, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, ftpConfigElement.ArchiveInboundMsg, ftpConfigElement.DeleteInboundMsg, ftpConfigElement.FingerPrint, arrFileExt, item.DBName, item.MessageTypes);
+            SFTPClient.SftpDownloadFiles(
+                ftpConfigElement.Server,
+                ftpConfigElement.User,
+                ftpConfigElement.Password,
+                InboundInProgresspath,
+                ftpConfigElement.InboundMsgPath,
+                ftpConfigElement.InboundArchivePath,
+                ftpConfigElement.ArchiveInboundMsg,
+                ftpConfigElement.DeleteInboundMsg,
+                ftpConfigElement.FingerPrint,
+                arrFileExt,
+                item.DBName,
+                item.MessageTypes
+            );
         }
         catch (Exception)
         {
             //Catch error logging completed in above function
-
             return lstMessages;
         }
 
@@ -39,31 +51,55 @@ public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurat
             {
                 try
                 {
-                    fileName = file.Substring(InboundInProgresspath.Length + 1, file.Length - (InboundInProgresspath.Length + 1));
+                    fileName = file.Substring(
+                        InboundInProgresspath.Length + 1,
+                        file.Length - (InboundInProgresspath.Length + 1)
+                    );
 
-                    ApplicationHeaderBlock applicationHeader = new ApplicationHeaderBlock(DeliveryHelper.ReadFile(file));
+                    ApplicationHeaderBlock applicationHeader =
+                        new ApplicationHeaderBlock(DeliveryHelper.ReadFile(file));
 
                     if (filterMessageType.Contains(applicationHeader.MessageType))
                     {
-                        lstMessageFilename.Add(new KeyValuePair<string, string>(fileName, DeliveryHelper.ReadFile(file)));
+                        lstMessageFilename.Add(
+                            new KeyValuePair<string, string>(fileName, DeliveryHelper.ReadFile(file))
+                        );
                         lstMessages.Add(DeliveryHelper.ReadFile(file));
                         processarrInboundFileName.Add(file);
-                        _logger.LogInfoFormat(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUND_PROCESSED, applicationHeader.MessageType, fileName);
+                        _logger.LogInfoFormat(
+                            item.DBName + " - " + item.MessageTypes,
+                            Constants.CONS_INBOUND_PROCESSED,
+                            applicationHeader.MessageType,
+                            fileName
+                        );
                     }
                     else
                     {
-                        _logger.LogInfoFormat(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUND_NOTPROCESSED, applicationHeader.MessageType, fileName);
+                        _logger.LogInfoFormat(
+                            item.DBName + " - " + item.MessageTypes,
+                            Constants.CONS_INBOUND_NOTPROCESSED,
+                            applicationHeader.MessageType,
+                            fileName
+                        );
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogErrorMessage(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUND_SWIFTMESSAGE_INVALID, ex,
-                                            true, "ReadSwiftMessages", new string[] { "fileName" }, fileName);
+                    _logger.LogErrorMessage(
+                        item.DBName + " - " + item.MessageTypes,
+                        Constants.CONS_INBOUND_SWIFTMESSAGE_INVALID,
+                        ex,
+                        true,
+                        "ReadSwiftMessages",
+                        new string[] { "fileName" },
+                        fileName
+                    );
                 }
             }
 
             _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_2);
-            InboundSwiftMessageCollection swiftMessages = new InboundSwiftMessageCollection(lstMessages, tagCompData, lstMessageFilename);
+            InboundSwiftMessageCollection swiftMessages =
+                new InboundSwiftMessageCollection(lstMessages, tagCompData, lstMessageFilename);
 
             if (swiftMessages.Count > 0)
             {
@@ -76,11 +112,26 @@ public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurat
                 catch (Exception ex)
                 {
                     if (ex.Source.ToUpper().Contains("SQLEXCEPTION") || ex.Source.ToUpper().Contains("SQLCONNECTION"))
-                        _logger.LogFatalMessage(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_5, ex,
-                                                Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS, new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
+                        _logger.LogFatalMessage(
+                            item.DBName + " - " + item.MessageTypes,
+                            Constants.CONS_INBOUNDPROCESS_MESSAGE_5,
+                            ex,
+                            Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS,
+                            new string[] { "DBName", "SwiftMessages" },
+                            ftpConfigElement.DBName,
+                            swiftMessages
+                        );
                     else
-                        _logger.LogErrorMessage(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_5, ex, true,
-                                                Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS, new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
+                        _logger.LogErrorMessage(
+                            item.DBName + " - " + item.MessageTypes,
+                            Constants.CONS_INBOUNDPROCESS_MESSAGE_5,
+                            ex,
+                            true,
+                            Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS,
+                            new string[] { "DBName", "SwiftMessages" },
+                            ftpConfigElement.DBName,
+                            swiftMessages
+                        );
                 }
                 _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_4);
             }
@@ -92,28 +143,57 @@ public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurat
                 {
                     try
                     {
-                        SFTPClient.SFtpRenameFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, Path.GetFileName(file), Constants.CONS_OLDEXT, Constants.CONS_NEWEXT, ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
+                        SFTPClient.SFtpRenameFile(
+                            ftpConfigElement.Server,
+                            ftpConfigElement.User,
+                            ftpConfigElement.Password,
+                            ftpConfigElement.InboundMsgPath,
+                            Path.GetFileName(file),
+                            Constants.CONS_OLDEXT,
+                            Constants.CONS_NEWEXT,
+                            ftpConfigElement.FingerPrint,
+                            ftpConfigElement.MessageTypes,
+                            ftpConfigElement.DBName
+                        );
                     }
                     catch (Exception)
                     {
                         //Catch error logging completed in above function
-                        //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
                     }
                 }
-                ///moves the file from SFTP location to archive SFTP location
+
+                //moves the file from SFTP location to archive SFTP location
                 if (ftpConfigElement.ArchiveInboundMsg)
                 {
                     try
                     {
-                        SFTPClient.SFtpArchiveFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, file, ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
+                        SFTPClient.SFtpArchiveFile(
+                            ftpConfigElement.Server,
+                            ftpConfigElement.User,
+                            ftpConfigElement.Password,
+                            ftpConfigElement.InboundMsgPath,
+                            ftpConfigElement.InboundArchivePath,
+                            file,
+                            ftpConfigElement.FingerPrint,
+                            ftpConfigElement.MessageTypes,
+                            ftpConfigElement.DBName
+                        );
                     }
                     catch (Exception)
                     {
                         //Catch error logging completed in above function
-                        //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
                     }
                 }
-                DeliveryHelper.MoveFileToFolder(InboundInProgresspath, InboundLocalArchivalPath + Constants.CONS_SINGLEBWSLASH + DateDir + Constants.CONS_SINGLEBWSLASH, file, Path.GetFileName(file), true, item.DBName, item.MessageTypes);
+
+                DeliveryHelper.MoveFileToFolder(
+                    InboundInProgresspath,
+                    InboundLocalArchivalPath + Constants.CONS_SINGLEBWSLASH + DateDir + Constants.CONS_SINGLEBWSLASH,
+                    file,
+                    Path.GetFileName(file),
+                    true,
+                    item.DBName,
+                    item.MessageTypes
+                );
             }
             _logger.LogInfo(item.DBName + " - " + item.MessageTypes, Constants.CONS_FTP_ARCHIVEFILE_STOP_MESSAGE);
         }
@@ -121,29 +201,45 @@ public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurat
     catch (Exception ex)
     {
         //Do not perform logging thrown by exceptions from inner functions
-        if (ex.Message.Trim() != Constants.CONS_METHOD_SFTPDOWNLOADFILES.Trim() && ex.Message.Trim() != Constants.CONS_METHOD_SFTPARCHIVEFILE.Trim())
+        if (ex.Message.Trim() != Constants.CONS_METHOD_SFTPDOWNLOADFILES.Trim() &&
+            ex.Message.Trim() != Constants.CONS_METHOD_SFTPARCHIVEFILE.Trim())
         {
             if (ex.Source.ToUpper().Contains("WINIOERROR"))
-                _logger.LogFatalMessage(item.DBName + " - " + item.MessageTypes, Constants.CONS_MOVEFILETOFODER_1, ex, MethodBase.GetCurrentMethod());
+                _logger.LogFatalMessage(
+                    item.DBName + " - " + item.MessageTypes,
+                    Constants.CONS_MOVEFILETOFODER_1,
+                    ex,
+                    MethodBase.GetCurrentMethod()
+                );
             else
-                _logger.LogErrorMessage(item.DBName + " - " + item.MessageTypes, Constants.CONS_INBOUNDPROCESS_MESSAGE_6, ex, false, MethodBase.GetCurrentMethod());
+                _logger.LogErrorMessage(
+                    item.DBName + " - " + item.MessageTypes,
+                    Constants.CONS_INBOUNDPROCESS_MESSAGE_6,
+                    ex,
+                    false,
+                    MethodBase.GetCurrentMethod()
+                );
         }
-
     }
     return lstMessages;
 }
 
-
 private static Logger _logger = new Logger(typeof(InboundSwiftMessageCollection));
 
-#region inbound processing        
+#region inbound processing
 
-public InboundSwiftMessageCollection(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename)
+public InboundSwiftMessageCollection(
+    List<string> _messages,
+    string _tagCompData,
+    List<KeyValuePair<string, string>> lstMessageFilename)
 {
     this.createSwiftMessages(_messages, _tagCompData, lstMessageFilename);
-}       
+}
 
-void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename)
+void createSwiftMessages(
+    List<string> _messages,
+    string _tagCompData,
+    List<KeyValuePair<string, string>> lstMessageFilename)
 {
     try
     {
@@ -152,13 +248,17 @@ void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyVa
         foreach (string message in _messages)
         {
             fileContent = message.Split(AppConfig.MultipleINBMsgSeperator.ToCharArray());
-            string filename = lstMessageFilename.Where(x => x.Value.Equals(message)).FirstOrDefault().Key;
+            string filename = lstMessageFilename
+                .Where(x => x.Value.Equals(message))
+                .FirstOrDefault()
+                .Key;
 
             if (fileContent != null && fileContent.Length > 0)
             {
                 for (int i = 0; i < fileContent.Length; i++)
                 {
-                    InboundSwiftMessage swiftMessage = this.process(fileContent[i], _tagCompData, filename);
+                    InboundSwiftMessage swiftMessage =
+                        this.process(fileContent[i], _tagCompData, filename);
 
                     if (swiftMessage.IsValidMessage)
                         this.Add(swiftMessage);
@@ -174,16 +274,17 @@ void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyVa
 
 InboundSwiftMessage process(string _message, string _tagCompData, string filename)
 {
+    InboundSwiftMessage message =
+        new InboundSwiftMessage(_message, _tagCompData, filename);
 
-    InboundSwiftMessage message = new InboundSwiftMessage(_message, _tagCompData, filename);
-
-
-    return message; ;
+    return message;
 }
+
 #endregion
 
-
-public static void UpdateInboundMessagesStatus(InboundSwiftMessageCollection _messages, string itemDBName)
+public static void UpdateInboundMessagesStatus(
+    InboundSwiftMessageCollection _messages,
+    string itemDBName)
 {
     DataSet dsResult = null;
 
@@ -198,80 +299,123 @@ public static void UpdateInboundMessagesStatus(InboundSwiftMessageCollection _me
     DataTable dtSwiftTag = new DataTable();
     string ParsedFileName = string.Empty;
 
-    //for each message update database
     foreach (var message in _messages)
     {
         try
         {
-            dtSwiftTag = new DataTable();
-
             dtSwiftTag = Common.Common.CreateDataTable(message.Text.SwiftTag);
             dtSwiftTag.TableName = Common.Constants.CONS_TBL_TAGCOMP;
 
-            InboundMUR = message.Text[Constants.CONS_BLOCK3TAG108] != null ? message.Text[Constants.CONS_BLOCK3TAG108].TagValue : string.Empty;
+            InboundMUR = message.Text[Constants.CONS_BLOCK3TAG108] != null
+                ? message.Text[Constants.CONS_BLOCK3TAG108].TagValue
+                : string.Empty;
+
             sbSwiftMesage = new StringBuilder();
             sbAttributeList = new StringBuilder();
-            swiftMessageXml = null;
-            xmlSwiftData = null;
-            ParsedFileName = string.Empty;
             ParsedFileName = message.FileName;
-            sbSwiftMesage.Append
-               (
-                    Convert.ToString(message.Text[Constants.CONS_BLOCK4TAG20].TagValue) +
-                    Constants.CONS_SEMICOLON +
-                    string.Empty /*Convert.ToInt32(message.Text[Constants.CONS_BLOCK4TAG21].TagValue) */ +
-                    Constants.CONS_SEMICOLON +
-                    message.MessageType +
-                    Constants.CONS_SEMICOLON +
-                    message.MessageText +
-                    Constants.CONS_SEMICOLON +
-                    MessageDirection +
-                    Constants.CONS_SEMICOLON +
-                    MessageStatusId +
-                    Constants.CONS_SEMICOLON +
-                    InboundMUR +
-                    Constants.CONS_SEMICOLON +
-                    message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
-                    Constants.CONS_SEMICOLON +
-                    message.ApplicationHeaderText.RecipientAddress +
-                    Constants.CONS_PIPESEPERATOR
-               );
+
+            sbSwiftMesage.Append(
+                Convert.ToString(message.Text[Constants.CONS_BLOCK4TAG20].TagValue) +
+                Constants.CONS_SEMICOLON +
+                string.Empty +
+                Constants.CONS_SEMICOLON +
+                message.MessageType +
+                Constants.CONS_SEMICOLON +
+                message.MessageText +
+                Constants.CONS_SEMICOLON +
+                MessageDirection +
+                Constants.CONS_SEMICOLON +
+                MessageStatusId +
+                Constants.CONS_SEMICOLON +
+                InboundMUR +
+                Constants.CONS_SEMICOLON +
+                message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
+                Constants.CONS_SEMICOLON +
+                message.ApplicationHeaderText.RecipientAddress +
+                Constants.CONS_PIPESEPERATOR
+            );
 
             sbAttributeList.Append(Constants.CONS_INBOUNDXMLATTR);
-            swiftMessageXml = Common.Common.ConvertStringToXML(sbSwiftMesage.ToString(), sbAttributeList.ToString(), Convert.ToChar(Constants.CONS_SEMICOLON)).ToString();
+            swiftMessageXml = Common.Common
+                .ConvertStringToXML(
+                    sbSwiftMesage.ToString(),
+                    sbAttributeList.ToString(),
+                    Convert.ToChar(Constants.CONS_SEMICOLON)
+                )
+                .ToString();
 
             xmlSwiftData = Common.Common.GetXMLData(dtSwiftTag);
 
-            // escape single quotes from message XML (Fix issue in TAG 70D of MT537, reason column , value with single quote - 'On Hold')
             swiftMessageXml = swiftMessageXml.Replace("'", "&apos;");
             xmlSwiftData = xmlSwiftData.Replace("'", "&apos;");
-            //update db in one call
-            dsResult = SWIFTInbound.SaveInboundMessage(message.MessageType, ParsedFileName, ModifiedBy, itemDBName, xmlSwiftData, swiftMessageXml, ref blnSuccess);
+
+            dsResult = SWIFTInbound.SaveInboundMessage(
+                message.MessageType,
+                ParsedFileName,
+                ModifiedBy,
+                itemDBName,
+                xmlSwiftData,
+                swiftMessageXml,
+                ref blnSuccess
+            );
 
             if (dsResult != null && dsResult.Tables.Count > 0)
             {
-                bool isSuccess = Convert.ToBoolean(dsResult.Tables[0].Rows[0][Constants.COL_ISSUCESS]);
+                bool isSuccess =
+                    Convert.ToBoolean(dsResult.Tables[0].Rows[0][Constants.COL_ISSUCESS]);
 
                 if (!isSuccess)
-                    _logger.LogErrorMessage(itemDBName + " - MT" + message.MessageType, Constants.CONS_ERROR_SAVING_INBOUNDFILE, null, true,
-                                            Constants.CONS_METHOD_SAVEINBOUNDMESSAGE, new string[] { "ParsedFileName", "Error Message" },
-                                            ParsedFileName, Convert.ToString(dsResult.Tables[0].Rows[0][Constants.CONS_COL_MESSAGE_CODE]));
+                    _logger.LogErrorMessage(
+                        itemDBName + " - MT" + message.MessageType,
+                        Constants.CONS_ERROR_SAVING_INBOUNDFILE,
+                        null,
+                        true,
+                        Constants.CONS_METHOD_SAVEINBOUNDMESSAGE,
+                        new string[] { "ParsedFileName", "Error Message" },
+                        ParsedFileName,
+                        Convert.ToString(dsResult.Tables[0].Rows[0][Constants.CONS_COL_MESSAGE_CODE])
+                    );
                 else
-                    _logger.LogInfoFormat(itemDBName + " - MT" + message.MessageType, Constants.CONS_SAVED_INBOUNDFILE + ParsedFileName);
+                    _logger.LogInfoFormat(
+                        itemDBName + " - MT" + message.MessageType,
+                        Constants.CONS_SAVED_INBOUNDFILE + ParsedFileName
+                    );
             }
         }
         catch (Exception ex)
         {
             if (ex.Message.Trim() != Constants.CONS_METHOD_SAVEINBOUNDMESSAGE.Trim())
             {
-                _logger.LogErrorMessage(itemDBName + " - MT" + message.MessageType, Constants.CONS_PARSE_INBOUND_MESSAGE_ERROR, ex, true,
-                                        Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS, new string[] { "ParsedFileName" }, ParsedFileName);
+                _logger.LogErrorMessage(
+                    itemDBName + " - MT" + message.MessageType,
+                    Constants.CONS_PARSE_INBOUND_MESSAGE_ERROR,
+                    ex,
+                    true,
+                    Constants.CONS_METHOD_UPDATEINBOUNDMESSAGESSTATUS,
+                    new string[] { "ParsedFileName" },
+                    ParsedFileName
+                );
             }
         }
     }
 }
 
-public static DataSet SaveInboundMessage(string MessageType, string ParsedFileName, string UserId, string applicationDBName, string xmlSwiftData, string xmlInboundSwiftData, ref bool blnSuccess)
+public static DataSet SaveInboundMessage(
+    string MessageType,
+    string ParsedFileName,
+    string UserId,
+    string applicationDBName,
+    string xmlSwiftData,
+    string xmlInboundSwiftData,
+    ref bool blnSuccess)
 {
-    return SwiftInboundRepository.SaveInboundMessage(MessageType, ParsedFileName, UserId, applicationDBName, xmlSwiftData, xmlInboundSwiftData, ref blnSuccess);
+    return SwiftInboundRepository.SaveInboundMessage(
+        MessageType,
+        ParsedFileName,
+        UserId,
+        applicationDBName,
+        xmlSwiftData,
+        xmlInboundSwiftData,
+        ref blnSuccess
+    );
 }
