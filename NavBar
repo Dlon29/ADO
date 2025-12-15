@@ -1,118 +1,424 @@
-public InboundSwiftMessageCollection ReadSwiftMessagesFromMQ(
-    string mqPayload,
-    string correlationId,
-    string tagCompData,
-    FtpConfigurationElement item)
+public class FtpConfigurationElement : ConfigurationElement
 {
-    List<string> lstMessages = new();
-    List<KeyValuePair<string, string>> lstMessageFilename = new();
-
-    ApplicationHeaderBlock applicationHeader =
-        new ApplicationHeaderBlock(mqPayload);
-
-    string[] filterMessageType =
-        (item.MessageTypes.Replace(Constants.CONS_MESSAGETYPESTART, ""))
-        .Split('|');
-
-    if (!filterMessageType.Contains(applicationHeader.MessageType))
-        return new InboundSwiftMessageCollection();
-
-    lstMessages.Add(mqPayload);
-    lstMessageFilename.Add(
-        new KeyValuePair<string, string>(correlationId, mqPayload));
-
-    // Parsing only – no DB call
-    return new InboundSwiftMessageCollection(
-        lstMessages,
-        tagCompData,
-        lstMessageFilename);
-}
-
-
-
-public async Task ConsumeMessagesAsync(CancellationToken ct)
-{
-    try
+    #region Configuration Element Definition
+    [ConfigurationProperty("destination", IsRequired = true)]
+    public string Destination
     {
-        foreach (var mqMessage in _swiftInboundMQSubscriber.ReadMessages(ct))
-        {
-            try
-            {
-                var swiftMessages =
-                    _swiftInboundFactory.ReadSwiftMessagesFromMQ(
-                        mqMessage.Payload,
-                        mqMessage.CorrelationId,
-                        _tagCompData,
-                        _ftpConfigurationElement);
+        get { return (string)this["destination"]; }
+        set { this["destination"] = value; }
+    }
 
-                foreach (var swiftMessage in swiftMessages)
-                {
-                    var entity = MapToSwiftInboundMQ(swiftMessage);
-                    await _swiftInboundRepository.AddAsync(entity, ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Error processing MQ message. CorrelationId: {CorrelationId}",
-                    mqMessage.CorrelationId
-                );
-            }
+    [ConfigurationProperty("destinationid", IsRequired = true)]
+    public string DestinationId
+    {
+        get { return (string)this["destinationid"]; }
+        set { this["destinationid"] = value; }
+    }
+
+    [ConfigurationProperty("server", IsRequired = true)]
+    public string Server
+    {
+        get { return (string)this["server"]; }
+        set { this["server"] = value; }
+    }
+
+    [ConfigurationProperty("user", IsRequired = true)]
+    public string User
+    {
+        get { return (string)this["user"]; }
+        set { this["user"] = value; }
+    }
+
+    [ConfigurationProperty("password", IsRequired = true)]
+    public string Password
+    {
+        get { return (string)this["password"]; }
+        set { this["password"] = value; }
+    }
+
+    [ConfigurationProperty("localarchivalpath", IsRequired = true)]
+    public string LocalArchivalPath
+    {
+        get { return (string)this["localarchivalpath"]; }
+        set { this["localarchivalpath"] = value; }
+    }
+
+    [ConfigurationProperty("responsepath", IsRequired = true)]
+    public string ResponsePath
+    {
+        get { return (string)this["responsepath"]; }
+        set { this["responsepath"] = value; }
+    }
+
+    [ConfigurationProperty("inprogresspath", IsRequired = true)]
+    public string InprogressPath
+    {
+        get { return (string)this["inprogresspath"]; }
+        set { this["inprogresspath"] = value; }
+    }
+
+    [ConfigurationProperty("outboundmsgpath", IsRequired = false)]
+    public string OutboundMsgPath
+    {
+        get { return (string)this["outboundmsgpath"]; }
+        set { this["outboundmsgpath"] = value; }
+    }
+
+    [ConfigurationProperty("inboundmsgpath", IsRequired = false)]
+    public string InboundMsgPath
+    {
+        get { return (string)this["inboundmsgpath"]; }
+        set { this["inboundmsgpath"] = value; }
+    }
+
+    [ConfigurationProperty("ackpath", IsRequired = false)]
+    public string AckPath
+    {
+        get { return (string)this["ackpath"]; }
+        set { this["ackpath"] = value; }
+    }
+
+    [ConfigurationProperty("inboundarchivepath", IsRequired = false)]
+    public string InboundArchivePath
+    {
+        get { return (string)this["inboundarchivepath"]; }
+        set { this["inboundarchivepath"] = value; }
+    }
+
+    [ConfigurationProperty("responsearchivepath", IsRequired = false)]
+    public string ResponseArchivePath
+    {
+        get { return (string)this["responsearchivepath"]; }
+        set { this["responsearchivepath"] = value; }
+    }
+
+    [ConfigurationProperty("ackarchivepath", IsRequired = false)]
+    public string AckArchivePath
+    {
+        get { return (string)this["ackarchivepath"]; }
+        set { this["ackarchivepath"] = value; }
+    }
+
+    [ConfigurationProperty("renamegtxresponse", IsRequired = false)]
+    public bool RenameGTXResponse
+    {
+        get { return (bool)this["renamegtxresponse"]; }
+        set { this["renamegtxresponse"] = value; }
+    }
+
+    [ConfigurationProperty("renameack", IsRequired = false)]
+    public bool RenameAck
+    {
+        get { return (bool)this["renameack"]; }
+        set { this["renameack"] = value; }
+    }
+
+    [ConfigurationProperty("renameinboundmsg", IsRequired = false)]
+    public bool RenameInboundMsg
+    {
+        get { return (bool)this["renameinboundmsg"]; }
+        set { this["renameinboundmsg"] = value; }
+    }
+
+    [ConfigurationProperty("archivegtxresponse", IsRequired = false)]
+    public bool ArchiveGTXResponse
+    {
+        get { return (bool)this["archivegtxresponse"]; }
+        set { this["archivegtxresponse"] = value; }
+    }
+
+    [ConfigurationProperty("archiveack", IsRequired = false)]
+    public bool ArchiveAck
+    {
+        get { return (bool)this["archiveack"]; }
+        set { this["archiveack"] = value; }
+    }
+
+    [ConfigurationProperty("archiveinboundmsg", IsRequired = false)]
+    public bool ArchiveInboundMsg
+    {
+        get { return (bool)this["archiveinboundmsg"]; }
+        set { this["archiveinboundmsg"] = value; }
+    }
+
+    [ConfigurationProperty("deletegtxresponse", IsRequired = false)]
+    public bool DeleteGTXResponse
+    {
+        get { return (bool)this["deletegtxresponse"]; }
+        set { this["deletegtxresponse"] = value; }
+    }
+
+    [ConfigurationProperty("deleteack", IsRequired = false)]
+    public bool DeleteAck
+    {
+        get { return (bool)this["deleteack"]; }
+        set { this["deleteack"] = value; }
+    }
+
+    [ConfigurationProperty("deleteinboundmsg", IsRequired = false)]
+    public bool DeleteInboundMsg
+    {
+        get { return (bool)this["deleteinboundmsg"]; }
+        set { this["deleteinboundmsg"] = value; }
+    }
+
+    [ConfigurationProperty("messagetypes", IsRequired = false)]
+    public string MessageTypes
+    {
+        get { return (string)this["messagetypes"]; }
+        set { this["messagetypes"] = value; }
+    }
+
+    [ConfigurationProperty("fingerPrint", IsRequired = false)]
+    public string FingerPrint
+    {
+        get { return (string)this["fingerPrint"]; }
+        set { this["fingerPrint"] = value; }
+    }
+
+    [ConfigurationProperty("privateKeyPath", IsRequired = false)]
+    public string PrivateKeyPath
+    {
+        get { return (string)this["privateKeyPath"]; }
+        set { this["privateKeyPath"] = value; }
+    }
+
+    [ConfigurationProperty("dbName", IsRequired = true)]
+    public string DBName
+    {
+        get
+        {
+            return (string)this["dbName"];
+        }
+        set
+        {
+            this["dbName"] = value;
         }
     }
-    catch (Exception ex)
+
+    [ConfigurationProperty("outboundMessageInterval", IsRequired = false)]
+    public string OutboundMessageInterval
     {
-        _logger.LogError(ex, "Error while consuming MQ messages.");
+        get
+        {
+            return (string)this["outboundMessageInterval"];
+        }
+        set
+        {
+            this["outboundMessageInterval"] = value;
+        }
     }
-}
 
 
-
-private SwiftInboundMQ MapToSwiftInboundMQ(InboundSwiftMessage message)
-{
-    return new SwiftInboundMQ
+    [ConfigurationProperty("inboundMessageInterval", IsRequired = false)]
+    public string InboundMessageInterval
     {
-        CorrelationID = message.FileName,
-        MessageType = message.MessageType,
-        ProcessedFileName = message.FileName,
-        UserID = ModifiedBy,
-        IsSuccess = true,
+        get
+        {
+            return (string)this["inboundMessageInterval"];
+        }
+        set
+        {
+            this["inboundMessageInterval"] = value;
+        }
+    }
 
-        InboundSwiftMessageData =
-            Common.Common.GetXMLData(
-                Common.Common.CreateDataTable(message.Text.SwiftTag)),
+    [ConfigurationProperty("gtxMessageInterval", IsRequired = false)]
+    public string GTXMessageInterval
+    {
+        get
+        {
+            return (string)this["gtxMessageInterval"];
+        }
+        set
+        {
+            this["gtxMessageInterval"] = value;
+        }
+    }
 
-        SwiftMessageData =
-            Common.Common.ConvertStringToXML(
-                BuildSwiftMessageString(message),
-                Constants.CONS_INBOUNDXMLATTR,
-                Convert.ToChar(Constants.CONS_SEMICOLON)
-            ).ToString()
-    };
-}
+    [ConfigurationProperty("ackMessageInterval", IsRequired = false)]
+    public string AckMessageInterval
+    {
+        get
+        {
+            return (string)this["ackMessageInterval"];
+        }
+        set
+        {
+            this["ackMessageInterval"] = value;
+        }
+    }
 
+    [ConfigurationProperty("inboundMessageProcessingInterval", IsRequired = false)]
+    public string InboundMessageProcessingInterval
+    {
+        get
+        {
+            return (string)this["inboundMessageProcessingInterval"];
+        }
+        set
+        {
+            this["inboundMessageProcessingInterval"] = value;
+        }
+    }
 
+    [ConfigurationProperty("processLoanDataInterval", IsRequired = false)]
+    public string ProcessLoanDataInterval
+    {
+        get
+        {
+            return (string)this["processLoanDataInterval"];
+        }
+        set
+        {
+            this["processLoanDataInterval"] = value;
+        }
+    }
 
-private string BuildSwiftMessageString(InboundSwiftMessage message)
-{
-    return
-        message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
-        Constants.CONS_SEMICOLON +
-        string.Empty +
-        Constants.CONS_SEMICOLON +
-        message.MessageType +
-        Constants.CONS_SEMICOLON +
-        message.MessageText +
-        Constants.CONS_SEMICOLON +
-        Constants.CONS_MESSAGEDIRECTION +
-        Constants.CONS_SEMICOLON +
-        OutboundStatusTypeData.CONS_MESSAGE_CREATED +
-        Constants.CONS_SEMICOLON +
-        (message.Text[Constants.CONS_BLOCK3TAG108]?.TagValue ?? string.Empty) +
-        Constants.CONS_SEMICOLON +
-        message.Text[Constants.CONS_BLOCK4TAG20].TagValue +
-        Constants.CONS_SEMICOLON +
-        message.ApplicationHeaderText.RecipientAddress +
-        Constants.CONS_PIPESEPERATOR;
+    [ConfigurationProperty("ackResponseSourcePath", IsRequired = false)]
+    public string AckResponseSourcePath
+    {
+        get
+        {
+            return (string)this["ackResponseSourcePath"];
+        }
+        set
+        {
+            this["ackResponseSourcePath"] = value;
+        }
+    }
+
+    [ConfigurationProperty("outboundTestFileName", IsRequired = false)]
+    public string OutboundTestFileName
+    {
+        get
+        {
+            return (string)this["outboundTestFileName"];
+        }
+        set
+        {
+            this["outboundTestFileName"] = value;
+        }
+    }
+    [ConfigurationProperty("outboundTestFileContent", IsRequired = false)]
+    public string OutboundTestFileContent
+    {
+        get
+        {
+            return (string)this["outboundTestFileContent"];
+        }
+        set
+        {
+            this["outboundTestFileContent"] = value;
+        }
+    }
+    [ConfigurationProperty("isErrorInOutboundFileUpload", IsRequired = false)]
+    public string IsErrorInOutboundFileUpload
+    {
+        get
+        {
+            return (string)this["isErrorInOutboundFileUpload"];
+        }
+        set
+        {
+            this["isErrorInOutboundFileUpload"] = value;
+        }
+    }
+
+    [ConfigurationProperty("applicationId", IsRequired = false)]
+    public string ApplicationId
+    {
+        get
+        {
+            return (string)this["applicationId"];
+        }
+        set
+        {
+            this["applicationId"] = value;
+        }
+    }
+    [ConfigurationProperty("multipleACKMsgSeperator", IsRequired = false)]
+    public string MultipleACKMsgSeperator
+    {
+        get
+        {
+            return (string)this["multipleACKMsgSeperator"];
+        }
+        set
+        {
+            this["multipleACKMsgSeperator"] = value;
+        }
+    }
+    [ConfigurationProperty("FileName", IsRequired = false)]
+    public string FileName
+    {
+        get
+        {
+            return (string)this["FileName"];
+        }
+        set
+        {
+            this["FileName"] = value;
+        }
+    }
+    [ConfigurationProperty("MessageStatus", IsRequired = false)]
+    public string MessageStatus
+    {
+        get
+        {
+            return (string)this["MessageStatus"];
+        }
+        set
+        {
+            this["MessageStatus"] = value;
+        }
+    }
+
+    [ConfigurationProperty("isBulkSwiftMessage", IsRequired = false)]
+    public string isBulkSwiftMessage
+    {
+        get
+        {
+            if (this["isBulkSwiftMessage"] == null || this["isBulkSwiftMessage"].ToString().Trim().Length == 0)
+            {
+                return "false";
+            }
+            else
+            {
+                if (this["isBulkSwiftMessage"].ToString().Trim().ToLower() == "true" || this["isBulkSwiftMessage"].ToString().Trim() == "1")
+                    return "true";
+                else
+                    return "false";
+            }
+        }
+        set
+        {
+            this["isBulkSwiftMessage"] = value;
+        }
+    }
+
+    //Mod1
+    [ConfigurationProperty("FilterMessgesBasedOnApplicationId", IsRequired = false)]
+    public string FilterMessgesBasedOnApplicationId
+    {
+        get
+        {
+            if (this["FilterMessgesBasedOnApplicationId"] == null || this["FilterMessgesBasedOnApplicationId"].ToString().Trim().Length == 0)
+            {
+                return "false";
+            }
+            else
+            {
+                if (this["FilterMessgesBasedOnApplicationId"].ToString().Trim().ToLower() == "true" || this["FilterMessgesBasedOnApplicationId"].ToString().Trim() == "1")
+                    return "true";
+                else
+                    return "false";
+            }
+        }
+        set
+        {
+            this["FilterMessgesBasedOnApplicationId"] = value;
+        }
+    }
+    #endregion
 }
