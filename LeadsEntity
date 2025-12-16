@@ -242,34 +242,99 @@ public class SwiftConfigRepository : ISwiftConfigRepository
 
 using LAVA.SwiftInbound.Subscriber.Service;
 using LAVA.SwiftInbound.Subscriber.Core;
-using LAVA.SwiftInbound.Subscriber.Core.Repositories;
+using LAVA.SwiftInbound.Subscriber.Core.Repositories; // **Ensure this is present for ISwiftConfigRepository**
 using LAVA.SwiftInbound.Subscriber.Core.UnitOfWork;
 using LAVA.SwiftInbound.Subscriber.Shared.Interface;
 using LAVA.SwiftInbound.Subscriber.Shared.Models;
 using SMTBUSA.Messaging.IBMMQ;
 using SMTBUSA.Messaging.IBMMQ.Shared.Interface;
 using SMTBUSA.Messaging.IBMMQ.Shared.Models;
+using System; // Required for InvalidOperationException
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 
 var host = Host.CreateDefaultBuilder(args)
-                .ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
-                .UseWindowsService()
-                .ConfigureServices((ctx, services) =>
-                {
-                    services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
-                    services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
-                    services.AddTransient<ISubscriber, IBMMQSubscriber>();
-                    services.AddTransient<IRepository<SwiftInboundMQ>, SwiftInboundRepository>();
-                    services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>();
-                    services.AddTransient<ISwiftInboundConsumer, SwiftInboundConsumer>();
-                    services.AddHostedService<SubscriberWorker>();
-                }).ConfigureLogging(logging =>
-                {
-                    logging.ClearProviders();
-                    logging.AddConsole();
-                    logging.SetMinimumLevel(LogLevel.Trace);
-                    logging.AddLog4Net("log4net.config");
-                })
-                .Build();
+    .ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
+    .UseWindowsService()
+    .ConfigureServices((ctx, services) =>
+    {
+        // 1. Standard Configuration
+        services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
+        services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
+
+        // --- START: Swift Tag Configuration Loading and Injection ---
+
+        // Define the context variables
+        const string dbName = "LAVA"; 
+        string connectionString = ctx.Configuration.GetConnectionString(dbName);
+        
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            throw new InvalidOperationException($"Connection string for '{dbName}' is missing in configuration.");
+        }
+
+        // A. Register the Swift Config Repository
+        services.AddSingleton<ISwiftConfigRepository>(sp =>
+            new SwiftConfigRepository(connectionString, sp.GetRequiredService<ILogger<SwiftConfigRepository>>())
+        );
+
+        // B. Synchronously Load the data at startup
+        string tagCompDataXml;
+        
+        // Use a temporary scope to resolve and execute the configuration repository
+        using (var scope = services.BuildServiceProvider().CreateScope())
+        {
+            var serviceProvider = scope.ServiceProvider;
+            var configRepo = serviceProvider.GetRequiredService<ISwiftConfigRepository>();
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>(); 
+            
+            logger.LogInformation("Attempting to load critical Swift Tag Component Data from DB: {DBName}", dbName);
+            
+            // Execute the database call synchronously (This blocks startup)
+            try
+            {
+                tagCompDataXml = configRepo.GetSwiftTagComponentDataXmlAsync(dbName).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to load critical Swift Tag Component Data at startup.");
+                throw new InvalidOperationException("Failed to load critical Swift Tag Component Data. Cannot proceed.", ex);
+            }
+
+            if (string.IsNullOrEmpty(tagCompDataXml))
+            {
+                throw new InvalidOperationException("Loaded Swift Tag Component Data XML was empty.");
+            }
+            logger.LogInformation("Successfully loaded Swift Tag Component Data.");
+
+            // C. Register the SwiftInboundFactory, injecting the fetched XML string
+            // This replaces the old generic registration (services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>())
+            services.AddSingleton<ISwiftInboundFactory>(sp =>
+                new SwiftInboundFactory(
+                    sp.GetRequiredService<ILogger<SwiftInboundFactory>>(),
+                    tagCompDataXml // INJECT THE FETCHED XML HERE!
+                )
+            );
+        }
+
+        // --- END: Swift Tag Configuration Loading and Injection ---
+        
+        // 2. Standard Service Registrations (Keep these as they were)
+        services.AddTransient<ISubscriber, IBMMQSubscriber>();
+        services.AddTransient<IRepository<SwiftInboundMQ>, SwiftInboundRepository>();
+        // services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>(); <--- THIS LINE IS REMOVED
+        services.AddTransient<ISwiftInboundConsumer, SwiftInboundConsumer>();
+        services.AddHostedService<SubscriberWorker>();
+    })
+    .ConfigureLogging(logging =>
+    {
+        logging.ClearProviders();
+        logging.AddConsole();
+        logging.SetMinimumLevel(LogLevel.Trace);
+        logging.AddLog4Net("log4net.config");
+    })
+    .Build();
 
 await host.RunAsync();
