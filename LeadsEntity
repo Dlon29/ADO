@@ -240,40 +240,36 @@ public class SwiftConfigRepository : ISwiftConfigRepository
 }
 
 
-// In your Program.cs or Startup.cs ConfigureServices method
+using LAVA.SwiftInbound.Subscriber.Service;
+using LAVA.SwiftInbound.Subscriber.Core;
+using LAVA.SwiftInbound.Subscriber.Core.Repositories;
+using LAVA.SwiftInbound.Subscriber.Core.UnitOfWork;
+using LAVA.SwiftInbound.Subscriber.Shared.Interface;
+using LAVA.SwiftInbound.Subscriber.Shared.Models;
+using SMTBUSA.Messaging.IBMMQ;
+using SMTBUSA.Messaging.IBMMQ.Shared.Interface;
+using SMTBUSA.Messaging.IBMMQ.Shared.Models;
 
-// Configuration context (assuming you get this from IConfiguration)
-string dbName = "LAVA"; 
-string connectionString = configuration.GetConnectionString(dbName);
 
-// 1. Register the new configuration repository
-services.AddSingleton<ISwiftConfigRepository>(sp => 
-    new SwiftConfigRepository(connectionString, sp.GetRequiredService<ILogger<SwiftConfigRepository>>())
-);
+var host = Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
+                .UseWindowsService()
+                .ConfigureServices((ctx, services) =>
+                {
+                    services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
+                    services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
+                    services.AddTransient<ISubscriber, IBMMQSubscriber>();
+                    services.AddTransient<IRepository<SwiftInboundMQ>, SwiftInboundRepository>();
+                    services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>();
+                    services.AddTransient<ISwiftInboundConsumer, SwiftInboundConsumer>();
+                    services.AddHostedService<SubscriberWorker>();
+                }).ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddConsole();
+                    logging.SetMinimumLevel(LogLevel.Trace);
+                    logging.AddLog4Net("log4net.config");
+                })
+                .Build();
 
-// --- *** Synchronous Load at Startup *** ---
-// This is the key step: Execute the DB call immediately to get the config XML.
-// NOTE: This blocks startup, which is often acceptable for essential configuration.
-using (var scope = services.BuildServiceProvider().CreateScope())
-{
-    var configRepo = scope.ServiceProvider.GetRequiredService<ISwiftConfigRepository>();
-    // Wait synchronously for the result (or use Task.Run/Host startup hook for async)
-    string tagCompDataXml = configRepo.GetSwiftTagComponentDataXmlAsync(dbName).GetAwaiter().GetResult();
-    
-    if (string.IsNullOrEmpty(tagCompDataXml))
-    {
-        throw new InvalidOperationException("Failed to load critical Swift Tag Component Data.");
-    }
-
-    // 2. Register the SwiftInboundFactory, injecting the fetched XML
-    services.AddSingleton<ISwiftInboundFactory>(sp =>
-        new SwiftInboundFactory(
-            sp.GetRequiredService<ILogger<SwiftInboundFactory>>(),
-            tagCompDataXml // INJECT THE FETCHED XML HERE!
-        )
-    );
-}
-
-// 3. Register the Consumer and other services as normal
-services.AddHostedService<SwiftInboundConsumer>();
-// ...
+await host.RunAsync();
