@@ -1,18 +1,10 @@
-public class InboundSwiftMessageCollection : List<InboundSwiftMessage>
+public class InboundSwiftMessageCollection (ILogger<InboundSwiftMessageCollection> logger) : List<InboundSwiftMessage>
 {
-    private readonly ILogger<InboundSwiftMessageCollection> _logger ;
+    private readonly ILogger<InboundSwiftMessageCollection> _logger = logger;
 
     #region inbound processing        
 
-    public InboundSwiftMessageCollection(ILogger<InboundSwiftMessageCollection> logger) 
-    {
-        _logger = logger;            
-    }
-
     public InboundSwiftMessageCollection(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename) /*: this(default!)*/
-    {            
+    {
         createSwiftMessages(_messages, _tagCompData, lstMessageFilename);
     }
-
-    void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename)
-    {
