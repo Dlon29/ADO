@@ -1,32 +1,96 @@
-using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
+// ISwiftInboundFactory (Interface or Abstract Class)
+// The tagCompData parameter is REMOVED from the public method.
+List<SwiftInboundMQ> ReadSwiftMessages(string swiftInboundPayload, string dbName);
 
-namespace WebApplicationADO.Models
+
+
+public class SwiftInboundFactory : ISwiftInboundFactory
 {
-    public class LeadsEntity
-    {
-        [Key]
-        [DisplayName("Lead Id")]
-        public int Id { get; set; }
+    private readonly ILogger<SwiftInboundFactory> _logger;
+    // NEW: Field to hold the injected configuration data
+    private readonly string _tagCompData; 
 
-        [DisplayName("Date")]
-        [DataType(DataType.Date)]
-        public DateTime LeadDate { get; set; }
-
-        public string Name { get; set; }
-
-        public string Email { get; set; }
-
-        public string Mobile { get; set; }
-
-        [DisplayName("Lead Source")]
-        public string LeadSource { get; set; }
-
-        [DisplayName("Lead Status")]
-        public string LeadStatus { get; set; }
-
-        [DisplayName("Follow Up Date")]
-        [DataType(DataType.Date)]
-        public DateTime NextFollowUpDate { get; set; }
+    // MODIFIED CONSTRUCTOR: Accepts the tagCompData via DI
+    public SwiftInboundFactory(ILogger<SwiftInboundFactory> logger, string tagCompData)
+    {        
+        _logger = logger;
+        _tagCompData = tagCompData; 
     }
+
+    // MODIFIED METHOD SIGNATURE: tagCompData parameter removed.
+    public List<SwiftInboundMQ> ReadSwiftMessages(string swiftInboundPayload, string dbName)
+    {
+        List<SwiftInboundMQ> processedMessages = new List<SwiftInboundMQ>();
+        // ... (rest of the local variables) ...
+
+        try
+        {
+            // ... (Message splitting logic) ...
+
+            if (fileContent != null && fileContent.Length > 0)
+            {
+                foreach (string message in fileContent)
+                {
+                    if (string.IsNullOrWhiteSpace(message)) continue;
+
+                    string mockFileName = Guid.NewGuid().ToString("N") + ".txt"; 
+
+                    // NO CHANGE HERE: The internal helper uses the private field.
+                    InboundSwiftMessage inboundMessage = ProcessRawMessage(message, _tagCompData, mockFileName);
+                    // ... (rest of processing and mapping logic) ...
+                }
+            }
+        }
+        // ... (catch block) ...
+
+        return processedMessages;
+    } 
+
+    // Helper method remains the same, but it uses the factory's private field (ProcessRawMessage(message, _tagCompData, mockFileName))
+    // private InboundSwiftMessage ProcessRawMessage(string _message, string _tagCompData, string filename)
+    // {
+    //     return new InboundSwiftMessage(_message, _tagCompData, filename); 
+    // }
+
+    // ... (MapToSwiftInboundMQ method remains UNCHANGED) ...
+}
+
+
+
+public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                             ISubscriber swiftInboundMQSubscriber,
+                             ISwiftInboundFactory swiftInboundMQFactory,
+                             IRepository<SwiftInboundMQ> swiftInboundMQRepository) : ISwiftInboundConsumer
+{
+    // ... private readonly fields ...
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;
+
+    // The contextDbName is a configuration value, so keeping it here (or moving it to an IOptions<T>) is fine.
+    private readonly string contextDbName = "LAVA"; 
+    // REMOVED: string contextTagCompData = "{...}";
+
+    public async Task ConsumeMessagesAsync(CancellationToken ct)
+    {
+        try
+        {
+            foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+            {
+                try
+                {
+                    _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload.Substring(0, Math.Min(100, swiftInboundPayload.Length)) + "...");
+                    
+                    // 1. Get a list of fully mapped DTOs from the factory
+                    List<SwiftInboundMQ> swiftMessagesToPersist = _swiftInboundFactory.ReadSwiftMessages(
+                        swiftInboundPayload, 
+                        contextDbName
+                        // REMOVED: contextTagCompData
+                    );
+
+                    // ... (rest of the persistence logic) ...
+                }
+                // ... (catch block) ...
+            }
+        }
+        // ... (catch block) ...
+    }
 }
