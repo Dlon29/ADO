@@ -1,171 +1,53 @@
-using System.Data;
-using System.Data.SqlClient;
-using WebApplicationADO.Models;
+DataSet dsResult = SWIFTInbound.GetSwiftTagComponentData(item.DBName);
+tagCompData = Common.Common.ConvertObjectToXMLString(dsResult.Tables[0]);
 
-namespace WebApplicationADO.Data
+courier.Read(tagCompData, item);
+
+
+
+
+public static DataSet GetSwiftTagComponentData(string applicationDBName)
 {
-    public class LeadRepository
+    try
     {
-        private SqlConnection _connection;
+        DataSet ds = SwiftInboundDAL.GetSwiftTagComponentData(applicationDBName);
 
-        public LeadRepository()
+        if (ds != null)
         {
-                string connStr = "server=(LocalDb)\\MSSQLLocalDB;database=ADOWeb;" +
-                    "Integrated Security=true; TrustServerCertificate=true;";
-
-            _connection = new SqlConnection(connStr);
+            ds.Tables[0].TableName = "SwiftTagComponent";
         }
 
-        public List<LeadsEntity> GetAllLeads()
+        return ds;
+
+    }
+    catch (Exception)
+    {
+
+        throw;
+    }
+
+}
+
+
+
+
+
+public static DataSet GetSwiftTagComponentData(string applicationDBName)
+{
+    try
+    {
+        using (SqlConnection connection = SqlConnections.AppliCationDBConnection(applicationDBName))
         {
-            List<LeadsEntity> leadListEntity = new List<LeadsEntity>();
-
-            SqlCommand cmd = new SqlCommand("GetAllLeads", _connection);
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-
-            SqlDataAdapter dataAdapter = new SqlDataAdapter(cmd);
-
-            DataTable dt = new DataTable();
-
-            dataAdapter.Fill(dt);
-
-            foreach (DataRow dr in dt.Rows)
-            {
-                leadListEntity.Add(
-                    new LeadsEntity
-                    {
-                        Id = Convert.ToInt32(dr["id"]),
-                        LeadDate = Convert.ToDateTime(dr["LeadDate"]),
-                        Name = dr["name"].ToString(),
-                        Email = dr["Email"].ToString(),
-                        Mobile = dr["Mobile"].ToString(),
-                        LeadSource = dr["LeadSource"].ToString(),
-                        LeadStatus = dr["LeadStatus"].ToString(),
-                        NextFollowUpDate = Convert.ToDateTime(dr["NextFollowUpDate"]),
-
-
-                    });
-            }
-            return leadListEntity;
+            SqlParameter[] parameters = new SqlParameter[0];
+            return StoredProcSql.ExecuteDataSet(connection, ConstantsDAL.SPNAME_GETSWIFTTAGCOMPONENTDATA, parameters);
         }
+    }
+    catch (Exception ex)
+    {
 
+        _logger.LogErrorMessage(applicationDBName,"Error in method GetSwiftTagComponentData", ex, true,
+                               MethodBase.GetCurrentMethod().Name, new string[] { "applicationDBName", "Stored Procedure" }, applicationDBName, ConstantsDAL.SPNAME_GETSWIFTTAGCOMPONENTDATA);
 
-        public LeadsEntity GetLeadById(int Id)
-        {
-            LeadsEntity leadListEntity = new LeadsEntity();
-
-            SqlCommand cmd = new SqlCommand("GetLeadDetailsById", _connection);
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-
-            SqlParameter param;
-
-            cmd.Parameters.Add(new SqlParameter("@Id", Id));
-
-            SqlDataAdapter dataAdapter = new SqlDataAdapter(cmd);
-
-            DataTable dt = new DataTable();
-
-            dataAdapter.Fill(dt);
-
-            foreach (DataRow dr in dt.Rows)
-            {
-                leadListEntity = new LeadsEntity
-      
-                    {
-                        Id = Convert.ToInt32(dr["id"]),
-                        LeadDate = Convert.ToDateTime(dr["LeadDate"]),
-                        Name = dr["name"].ToString(),
-                        Email = dr["Email"].ToString(),
-                        Mobile = dr["Mobile"].ToString(),
-                        LeadSource = dr["LeadSource"].ToString(),
-                        LeadStatus = dr["LeadStatus"].ToString(),
-                        NextFollowUpDate = Convert.ToDateTime(dr["NextFollowUpDate"]),
-
-
-                    };
-            }
-            return leadListEntity;
-        }
-
-
-        public bool AddLead(LeadsEntity lead)
-        {
-            SqlCommand cmd = new SqlCommand("AddLead", _connection);
-            cmd.CommandType=System.Data.CommandType.StoredProcedure;
-
-            cmd.Parameters.AddWithValue("@LeadDate", lead.LeadDate);
-            cmd.Parameters.AddWithValue("@Name", lead.Name);
-            cmd.Parameters.AddWithValue("@Email", lead.Email);
-            cmd.Parameters.AddWithValue("@Mobile", lead.Mobile);
-            cmd.Parameters.AddWithValue("@LeadSource", lead.LeadSource);
-            cmd.Parameters.AddWithValue("@LeadStatus", lead.LeadStatus);
-            cmd.Parameters.AddWithValue("@NextFollowUpDate", lead.NextFollowUpDate);
-
-            _connection.Open();
-
-            int i=cmd.ExecuteNonQuery();
-            _connection.Close();
-
-            if(i >= 1)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        public bool EditLeadDetails(int Id , LeadsEntity lead)
-        {
-            SqlCommand cmd = new SqlCommand("EditLead", _connection);
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-
-
-            cmd.Parameters.AddWithValue("@Id", lead.Id);
-            cmd.Parameters.AddWithValue("@LeadDate", lead.LeadDate);
-            cmd.Parameters.AddWithValue("@Name", lead.Name);
-            cmd.Parameters.AddWithValue("@Email", lead.Email);
-            cmd.Parameters.AddWithValue("@Mobile", lead.Mobile);
-            cmd.Parameters.AddWithValue("@LeadSource", lead.LeadSource);
-            cmd.Parameters.AddWithValue("@LeadStatus", lead.LeadStatus);
-            cmd.Parameters.AddWithValue("@NextFollowUpDate", lead.NextFollowUpDate);
-
-            _connection.Open();
-
-            int i = cmd.ExecuteNonQuery();
-            _connection.Close();
-
-            if (i >= 1)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        public bool DeleteLeadDetails(int Id, LeadsEntity lead)
-        {
-            SqlCommand cmd = new SqlCommand("DeleteLeadDetails", _connection);
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-
-            cmd.Parameters.AddWithValue("@Id", lead.Id);
-
-            _connection.Open();
-
-            int i = cmd.ExecuteNonQuery();
-            _connection.Close();
-
-            if (i >= 1)
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
+        throw;
     }
 }
