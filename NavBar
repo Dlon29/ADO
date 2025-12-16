@@ -1,244 +1,479 @@
- public class SwiftInboundFactory(ILogger<SwiftInboundFactory> logger) : ISwiftInboundFactory
- {        
-     private readonly ILogger<SwiftInboundFactory> _logger = logger;
+public class SwiftInboundFactory(ILogger<SwiftInboundFactory> logger) : ISwiftInboundFactory
+{        
+    private readonly ILogger<SwiftInboundFactory> _logger = logger;        
 
-     //public SwiftInboundMQ Create(string swiftInboundMQPayload)
-     //{
-     //    try
-     //    {
-     //        var swiftInboundMQPayloadArr = swiftInboundMQPayload.Split('|');
-     //        SwiftInboundMQ swiftInboundMQ = new()
-     //        {
-     //            CorrelationID = swiftInboundMQPayloadArr[0],                    
-     //            MessageText = swiftInboundMQPayload
-     //        };
-     //        return swiftInboundMQ;
-     //    }
-     //    catch
-     //    {
-     //        throw;
-     //    }
+    public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurationElement item)
+    {
+        List<string> lstMessages = new List<string>();
+        List<KeyValuePair<string, string>> lstMessageFilename = new List<KeyValuePair<string, string>>();
+        FtpConfigurationElement ftpConfigElement = ftpConfig.FtpConfigElementColl[item.Destination];
+        string InboundLocalArchivalPath = ftpConfigElement.LocalArchivalPath + @"\Inbound";
+        string InboundInProgresspath = ftpConfigElement.InprogressPath + @"\Inbound";
+        string[] arrFileExt = new string[] { ".txt" };
 
-     //}
+        //Process the the message, if message type present in App.Config.
+        string[] filterMessageType = (ftpConfigElement.MessageTypes.Replace("MT", "")).Split('|');
 
-     public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurationElement item)
-     {
-         List<string> lstMessages = new List<string>();
-         List<KeyValuePair<string, string>> lstMessageFilename = new List<KeyValuePair<string, string>>();
-         FtpConfigurationElement ftpConfigElement = ftpConfig.FtpConfigElementColl[item.Destination];
-         string InboundLocalArchivalPath = ftpConfigElement.LocalArchivalPath + @"\Inbound";
-         string InboundInProgresspath = ftpConfigElement.InprogressPath + @"\Inbound";
-         string[] arrFileExt = new string[] { ".txt" };
+        //read and create string array from all messages in inbound directory
+        try
+        {
+            //only gets the files from SFTP location
+            //try
+            //{
+            //    SFTPClient.SftpDownloadFiles(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, InboundInProgresspath, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, ftpConfigElement.ArchiveInboundMsg, ftpConfigElement.DeleteInboundMsg, ftpConfigElement.FingerPrint, arrFileExt, item.DBName, item.MessageTypes);
+            //}
+            //catch (Exception)
+            //{
+            //    //Catch error logging completed in above function
 
-         //Process the the message, if message type present in App.Config.
-         string[] filterMessageType = (ftpConfigElement.MessageTypes.Replace("MT", "")).Split('|');
+            //    return lstMessages;
+            //}
 
-         //read and create string array from all messages in inbound directory
-         try
-         {
-             //only gets the files from SFTP location
-             //try
-             //{
-             //    SFTPClient.SftpDownloadFiles(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, InboundInProgresspath, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, ftpConfigElement.ArchiveInboundMsg, ftpConfigElement.DeleteInboundMsg, ftpConfigElement.FingerPrint, arrFileExt, item.DBName, item.MessageTypes);
-             //}
-             //catch (Exception)
-             //{
-             //    //Catch error logging completed in above function
+            //InboundInProgresspath = InboundInProgresspath + @"\" + DateDir;
 
-             //    return lstMessages;
-             //}
+            //if (Directory.Exists(InboundInProgresspath))
+            //{
+            //    IEnumerable<string> arrInboundFileName = Directory.EnumerateFiles(InboundInProgresspath + @"\");
+            //    List<string> processarrInboundFileName = new List<string>();
+            //    string fileName = null;
 
-             //InboundInProgresspath = InboundInProgresspath + @"\" + DateDir;
+            //    _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Starting to read the inbound swift messages ");
+            //    foreach (string file in arrInboundFileName)
+            //    {
+            //        try
+            //        {
+            //            fileName = file.Substring(InboundInProgresspath.Length + 1, file.Length - (InboundInProgresspath.Length + 1));
 
-             //if (Directory.Exists(InboundInProgresspath))
-             //{
-             //    IEnumerable<string> arrInboundFileName = Directory.EnumerateFiles(InboundInProgresspath + @"\");
-             //    List<string> processarrInboundFileName = new List<string>();
-             //    string fileName = null;
+            //            ApplicationHeaderBlock applicationHeader = new ApplicationHeaderBlock(DeliveryHelper.ReadFile(file));
 
-             //    _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Starting to read the inbound swift messages ");
-             //    foreach (string file in arrInboundFileName)
-             //    {
-             //        try
-             //        {
-             //            fileName = file.Substring(InboundInProgresspath.Length + 1, file.Length - (InboundInProgresspath.Length + 1));
+            //            if (filterMessageType.Contains(applicationHeader.MessageType))
+            //            {
+            //                lstMessageFilename.Add(new KeyValuePair<string, string>(fileName, DeliveryHelper.ReadFile(file)));
+            //                lstMessages.Add(DeliveryHelper.ReadFile(file));
+            //                processarrInboundFileName.Add(file);
+            //                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "File with message type MT{0} is processed. File - {1}", applicationHeader.MessageType, fileName);
+            //            }
+            //            else
+            //            {
+            //                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "File with message type MT{0} is not processed as per configuration. {1} will be archived", applicationHeader.MessageType, fileName);
+            //            }
+            //        }
+            //        catch (Exception ex)
+            //        {
+            //            _logger.LogError(item.DBName + " - " + item.MessageTypes, "The inbound message cannot be processed as it is an Input message.", ex,
+            //                                    true, "ReadSwiftMessages", new string[] { "fileName" }, fileName);
+            //        }
+            //    }
 
-             //            ApplicationHeaderBlock applicationHeader = new ApplicationHeaderBlock(DeliveryHelper.ReadFile(file));
+                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Completed reading the inbound swift messages  ");
+                InboundSwiftMessageCollection swiftMessages = new InboundSwiftMessageCollection(lstMessages, tagCompData, lstMessageFilename);
 
-             //            if (filterMessageType.Contains(applicationHeader.MessageType))
-             //            {
-             //                lstMessageFilename.Add(new KeyValuePair<string, string>(fileName, DeliveryHelper.ReadFile(file)));
-             //                lstMessages.Add(DeliveryHelper.ReadFile(file));
-             //                processarrInboundFileName.Add(file);
-             //                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "File with message type MT{0} is processed. File - {1}", applicationHeader.MessageType, fileName);
-             //            }
-             //            else
-             //            {
-             //                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "File with message type MT{0} is not processed as per configuration. {1} will be archived", applicationHeader.MessageType, fileName);
-             //            }
-             //        }
-             //        catch (Exception ex)
-             //        {
-             //            _logger.LogError(item.DBName + " - " + item.MessageTypes, "The inbound message cannot be processed as it is an Input message.", ex,
-             //                                    true, "ReadSwiftMessages", new string[] { "fileName" }, fileName);
-             //        }
-             //    }
+                if (swiftMessages.Count > 0)
+                {
+                    _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Starting to update message status to success/failure");
 
-                 _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Completed reading the inbound swift messages  ");
-                 InboundSwiftMessageCollection swiftMessages = new InboundSwiftMessageCollection(lstMessages, tagCompData, lstMessageFilename);
+                    try
+                    {
+                        UpdateInboundMessagesStatus(swiftMessages, item.DBName);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex.Source.ToUpper().Contains("SQLEXCEPTION") || ex.Source.ToUpper().Contains("SQLCONNECTION"))
+                            _logger.LogCritical(item.DBName + " - " + item.MessageTypes, "Error while updating swift inbound messages", ex,
+                                                    "UpdateInboundMessagesStatus", new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
+                        else
+                            _logger.LogError(item.DBName + " - " + item.MessageTypes, "Error while updating swift inbound messages", ex, true,
+                                                    "UpdateInboundMessagesStatus", new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
+                    }
+                    _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Completed updating the message status to success/failure");
+                }
 
-                 if (swiftMessages.Count > 0)
-                 {
-                     _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Starting to update message status to success/failure");
+                _logger.LogInformation(item.DBName + " - " + item.MessageTypes, " Inbound Messages - " + "Archiving files from FTP server");
+                //foreach (string file in arrInboundFileName)
+                //{
+                //    if (ftpConfigElement.RenameInboundMsg)
+                //    {
+                //        try
+                //        {
+                //            SFTPClient.SFtpRenameFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, Path.GetFileName(file), "txt", "done", ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
+                //        }
+                //        catch (Exception)
+                //        {
+                //            //Catch error logging completed in above function
+                //            //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
+                //        }
+                //    }
+                //    ///moves the file from SFTP location to archive SFTP location
+                //    if (ftpConfigElement.ArchiveInboundMsg)
+                //    {
+                //        try
+                //        {
+                //            SFTPClient.SFtpArchiveFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, file, ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
+                //        }
+                //        catch (Exception)
+                //        {
+                //            //Catch error logging completed in above function
+                //            //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
+                //        }
+                //    }
+                //    DeliveryHelper.MoveFileToFolder(InboundInProgresspath, InboundLocalArchivalPath + @"\" + DateDir + @"\", file, Path.GetFileName(file), true, item.DBName, item.MessageTypes);
+                //}
+                //_logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Archived files from FTP server");
+            //}
+        }
+        catch (Exception ex)
+        {
+            //Do not perform logging thrown by exceptions from inner functions
+            if (ex.Message.Trim() != "SftpDownloadFiles".Trim() && ex.Message.Trim() != "SFtpArchiveFile".Trim())
+            {
+                if (ex.Source.ToUpper().Contains("WINIOERROR"))
+                    _logger.LogCritical(item.DBName + " - " + item.MessageTypes, " Error at MoveFileToFolder ", ex, MethodBase.GetCurrentMethod());
+                else
+                    _logger.LogError(item.DBName + " - " + item.MessageTypes, "Exception at ReadSwiftMessages", ex, false, MethodBase.GetCurrentMethod());
+            }
 
-                     try
-                     {
-                         UpdateInboundMessagesStatus(swiftMessages, item.DBName);
-                     }
-                     catch (Exception ex)
-                     {
-                         if (ex.Source.ToUpper().Contains("SQLEXCEPTION") || ex.Source.ToUpper().Contains("SQLCONNECTION"))
-                             _logger.LogCritical(item.DBName + " - " + item.MessageTypes, "Error while updating swift inbound messages", ex,
-                                                     "UpdateInboundMessagesStatus", new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
-                         else
-                             _logger.LogError(item.DBName + " - " + item.MessageTypes, "Error while updating swift inbound messages", ex, true,
-                                                     "UpdateInboundMessagesStatus", new string[] { "DBName", "SwiftMessages" }, ftpConfigElement.DBName, swiftMessages);
-                     }
-                     _logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Completed updating the message status to success/failure");
-                 }
+        }
+        return lstMessages;
+    }               
 
-                 _logger.LogInformation(item.DBName + " - " + item.MessageTypes, " Inbound Messages - " + "Archiving files from FTP server");
-                 //foreach (string file in arrInboundFileName)
-                 //{
-                 //    if (ftpConfigElement.RenameInboundMsg)
-                 //    {
-                 //        try
-                 //        {
-                 //            SFTPClient.SFtpRenameFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, Path.GetFileName(file), "txt", "done", ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
-                 //        }
-                 //        catch (Exception)
-                 //        {
-                 //            //Catch error logging completed in above function
-                 //            //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
-                 //        }
-                 //    }
-                 //    ///moves the file from SFTP location to archive SFTP location
-                 //    if (ftpConfigElement.ArchiveInboundMsg)
-                 //    {
-                 //        try
-                 //        {
-                 //            SFTPClient.SFtpArchiveFile(ftpConfigElement.Server, ftpConfigElement.User, ftpConfigElement.Password, ftpConfigElement.InboundMsgPath, ftpConfigElement.InboundArchivePath, file, ftpConfigElement.FingerPrint, ftpConfigElement.MessageTypes, ftpConfigElement.DBName);
-                 //        }
-                 //        catch (Exception)
-                 //        {
-                 //            //Catch error logging completed in above function
-                 //            //Here it is not thrown ahead since below MoveFileFolder at LocalArchivalPath needs to be ran
-                 //        }
-                 //    }
-                 //    DeliveryHelper.MoveFileToFolder(InboundInProgresspath, InboundLocalArchivalPath + @"\" + DateDir + @"\", file, Path.GetFileName(file), true, item.DBName, item.MessageTypes);
-                 //}
-                 //_logger.LogInformation(item.DBName + " - " + item.MessageTypes, "Archived files from FTP server");
-             //}
-         }
-         catch (Exception ex)
-         {
-             //Do not perform logging thrown by exceptions from inner functions
-             if (ex.Message.Trim() != "SftpDownloadFiles".Trim() && ex.Message.Trim() != "SFtpArchiveFile".Trim())
-             {
-                 if (ex.Source.ToUpper().Contains("WINIOERROR"))
-                     _logger.LogCritical(item.DBName + " - " + item.MessageTypes, " Error at MoveFileToFolder ", ex, MethodBase.GetCurrentMethod());
-                 else
-                     _logger.LogError(item.DBName + " - " + item.MessageTypes, "Exception at ReadSwiftMessages", ex, false, MethodBase.GetCurrentMethod());
-             }
+    public void UpdateInboundMessagesStatus(InboundSwiftMessageCollection _messages, string itemDBName)
+    {
+        DataSet dsResult = null;
 
-         }
-         return lstMessages;
-     }               
+        string swiftMessageXml = null;
+        StringBuilder sbSwiftMesage = new StringBuilder();
+        StringBuilder sbAttributeList = new StringBuilder();
+        string MessageDirection = "Inbound";
+        int MessageStatusId = 45;
+        string InboundMUR = string.Empty;
+        string xmlSwiftData = string.Empty;
+        bool blnSuccess = false;
+        DataTable dtSwiftTag = new DataTable();
+        string ParsedFileName = string.Empty;
 
-     public static void UpdateInboundMessagesStatus(InboundSwiftMessageCollection _messages, string itemDBName)
-     {
-         DataSet dsResult = null;
+        //for each message update database
+        foreach (var message in _messages)
+        {
+            try
+            {
+                dtSwiftTag = new DataTable();
 
-         string swiftMessageXml = null;
-         StringBuilder sbSwiftMesage = new StringBuilder();
-         StringBuilder sbAttributeList = new StringBuilder();
-         string MessageDirection = "Inbound";
-         int MessageStatusId = 45;
-         string InboundMUR = string.Empty;
-         string xmlSwiftData = string.Empty;
-         bool blnSuccess = false;
-         DataTable dtSwiftTag = new DataTable();
-         string ParsedFileName = string.Empty;
+                dtSwiftTag = LAVA.SwiftInbound.Subscriber.Core.Common.CreateDataTable(message.Text.SwiftTag);
+                dtSwiftTag.TableName = "TblTagComp";
 
-         //for each message update database
-         foreach (var message in _messages)
-         {
-             try
-             {
-                 dtSwiftTag = new DataTable();
+                InboundMUR = message.Text["{108:"] != null ? message.Text["{108:"].TagValue : string.Empty;
+                sbSwiftMesage = new StringBuilder();
+                sbAttributeList = new StringBuilder();
+                swiftMessageXml = null;
+                xmlSwiftData = null;
+                ParsedFileName = string.Empty;
+                ParsedFileName = message.FileName;
+                sbSwiftMesage.Append
+                   (
+                        Convert.ToString(message.Text["20"].TagValue) +
+                        ";" +
+                        string.Empty /*Convert.ToInt32(message.Text[Constants.CONS_BLOCK4TAG21].TagValue) */ +
+                        ";" +
+                        message.MessageType +
+                        ";" +
+                        message.MessageText +
+                        ";" +
+                        MessageDirection +
+                        ";" +
+                        MessageStatusId +
+                        ";" +
+                        InboundMUR +
+                        ";" +
+                        message.Text["20"].TagValue +
+                        ";" +
+                        message.ApplicationHeaderText.RecipientAddress +
+                        "|"
+                   );
 
-                 dtSwiftTag = LAVA.SwiftInbound.Subscriber.Core.Common.CreateDataTable(message.Text.SwiftTag);
-                 dtSwiftTag.TableName = "TblTagComp";
+                sbAttributeList.Append("SwiftMessageId|RelatedSwiftMsgId|SwiftMsgType|MessageText|MessageDirection|MessageStatusId|InboundMUR|InboundReference|RecipientAddress");
+                swiftMessageXml = LAVA.SwiftInbound.Subscriber.Core.Common.ConvertStringToXML(sbSwiftMesage.ToString(), sbAttributeList.ToString(), Convert.ToChar(";")).ToString();
 
-                 InboundMUR = message.Text["{108:"] != null ? message.Text["{108:"].TagValue : string.Empty;
-                 sbSwiftMesage = new StringBuilder();
-                 sbAttributeList = new StringBuilder();
-                 swiftMessageXml = null;
-                 xmlSwiftData = null;
-                 ParsedFileName = string.Empty;
-                 ParsedFileName = message.FileName;
-                 sbSwiftMesage.Append
-                    (
-                         Convert.ToString(message.Text["20"].TagValue) +
-                         ";" +
-                         string.Empty /*Convert.ToInt32(message.Text[Constants.CONS_BLOCK4TAG21].TagValue) */ +
-                         ";" +
-                         message.MessageType +
-                         ";" +
-                         message.MessageText +
-                         ";" +
-                         MessageDirection +
-                         ";" +
-                         MessageStatusId +
-                         ";" +
-                         InboundMUR +
-                         ";" +
-                         message.Text["20"].TagValue +
-                         ";" +
-                         message.ApplicationHeaderText.RecipientAddress +
-                         "|"
-                    );
+                xmlSwiftData = LAVA.SwiftInbound.Subscriber.Core.Common.GetXMLData(dtSwiftTag);
 
-                 sbAttributeList.Append("SwiftMessageId|RelatedSwiftMsgId|SwiftMsgType|MessageText|MessageDirection|MessageStatusId|InboundMUR|InboundReference|RecipientAddress");
-                 swiftMessageXml = LAVA.SwiftInbound.Subscriber.Core.Common.ConvertStringToXML(sbSwiftMesage.ToString(), sbAttributeList.ToString(), Convert.ToChar(";")).ToString();
+                // escape single quotes from message XML (Fix issue in TAG 70D of MT537, reason column , value with single quote - 'On Hold')
+                swiftMessageXml = swiftMessageXml.Replace("'", "&apos;");
+                xmlSwiftData = xmlSwiftData.Replace("'", "&apos;");
+                //update db in one call
+                dsResult = SaveInboundMessage(message.MessageType, ParsedFileName, "dcolaco", itemDBName, xmlSwiftData, swiftMessageXml, ref blnSuccess);
 
-                 xmlSwiftData = LAVA.SwiftInbound.Subscriber.Core.Common.GetXMLData(dtSwiftTag);
+                if (dsResult != null && dsResult.Tables.Count > 0)
+                {
+                    bool isSuccess = Convert.ToBoolean(dsResult.Tables[0].Rows[0]["Status"]);
 
-                 // escape single quotes from message XML (Fix issue in TAG 70D of MT537, reason column , value with single quote - 'On Hold')
-                 swiftMessageXml = swiftMessageXml.Replace("'", "&apos;");
-                 xmlSwiftData = xmlSwiftData.Replace("'", "&apos;");
-                 //update db in one call
-                 dsResult = SaveInboundMessage(message.MessageType, ParsedFileName, "dcolaco", itemDBName, xmlSwiftData, swiftMessageXml, ref blnSuccess);
+                    if (!isSuccess)
+                        _logger.LogError(itemDBName + " - MT" + message.MessageType, "Error at Saving the Inbound Message ", null, true,
+                                                "SaveInboundMessage", new string[] { "ParsedFileName", "Error Message" },
+                                                ParsedFileName, Convert.ToString(dsResult.Tables[0].Rows[0]["MessageCode"]));
+                    else
+                        _logger.LogInformation(itemDBName + " - MT" + message.MessageType, "Successfully saved inbound message file " + ParsedFileName);
+                }                    
+            }
+            catch (Exception ex)
+            {
+                if (ex.Message.Trim() != "SaveInboundMessage".Trim())
+                {
+                    _logger.LogError(itemDBName + " - MT" + message.MessageType, "Parsing inbound message error", ex, true,
+                                            "UpdateInboundMessagesStatus", new string[] { "ParsedFileName" }, ParsedFileName);
+                }
+            }
+        }
+    }
 
-                 if (dsResult != null && dsResult.Tables.Count > 0)
-                 {
-                     bool isSuccess = Convert.ToBoolean(dsResult.Tables[0].Rows[0]["Status"]);
+    public static DataSet SaveInboundMessage(string MessageType, string ParsedFileName, string UserId, string applicationDBName, string xmlSwiftData, string xmlInboundSwiftData, ref bool blnSuccess)
+    {
+        return SwiftInboundDAL.SaveInboundMessage(MessageType, ParsedFileName, UserId, applicationDBName, xmlSwiftData, xmlInboundSwiftData, ref blnSuccess);
+    }
 
-                     if (!isSuccess)
-                         _logger.LogErrorMessage(itemDBName + " - MT" + message.MessageType, "Error at Saving the Inbound Message ", null, true,
-                                                 "SaveInboundMessage", new string[] { "ParsedFileName", "Error Message" },
-                                                 ParsedFileName, Convert.ToString(dsResult.Tables[0].Rows[0]["MessageCode"]));
-                     else
-                         _logger.LogInfoFormat(itemDBName + " - MT" + message.MessageType, "Successfully saved inbound message file " + ParsedFileName);
-                 }                    
-             }
-             catch (Exception ex)
-             {
-                 if (ex.Message.Trim() != "SaveInboundMessage".Trim())
-                 {
-                     _logger.LogErrorMessage(itemDBName + " - MT" + message.MessageType, "Parsing inbound message error", ex, true,
-                                             "UpdateInboundMessagesStatus", new string[] { "ParsedFileName" }, ParsedFileName);
-                 }
-             }
-         }
-     }
+  public static DataSet SaveInboundMessage(string MessageType, string ParsedFileName, string UserId, string applicationDBName, string xmlSwiftData, string xmlInboundSwiftData, ref bool blnSuccess)
+{
+    try
+    {
+        using (SqlConnection connection = SqlConnections.AppliCationDBConnection(applicationDBName))
+        {
+            SqlParameter[] parameters = new SqlParameter[6];
+            parameters[0] = new SqlParameter(ConstantsDAL.PARAM_MSGTYPE, MessageType);                    
+            parameters[1] = new SqlParameter(ConstantsDAL.PARAM_XMLSWIFTMSGDATA, xmlInboundSwiftData);
+            parameters[2] = new SqlParameter(ConstantsDAL.PARAM_USERID, UserId);
+            parameters[3] = new SqlParameter(ConstantsDAL.PARAM_SWIFTMESSAGEDATA, xmlSwiftData);
+            parameters[4] = new SqlParameter(ConstantsDAL.PARAM_ISSUCCESS, blnSuccess);
+            parameters[5] = new SqlParameter(ConstantsDAL.PARAM_FILENAME, ParsedFileName);
+            parameters[4].Direction = ParameterDirection.Output;
+
+            DataSet ds = StoredProcSql.ExecuteDataSet(connection, ConstantsDAL.SPNAME_PROCESSINBOUNDSWIFTMESSAGE, parameters);
+
+            if (parameters[4].Value != null)
+                blnSuccess = Convert.ToBoolean(parameters[4].Value);
+
+            return ds;
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogErrorMessage(applicationDBName + " - " + MessageType, "Error in method SaveInboundMessage", ex, true,
+                               MethodBase.GetCurrentMethod().Name, new string[] {"Stored Procedure", "ParsedFileName", "UserId" },
+                               ConstantsDAL.SPNAME_PROCESSINBOUNDSWIFTMESSAGE, ParsedFileName, UserId);
+
+        throw new Exception(Constants.CONS_METHOD_SAVEINBOUNDMESSAGE); 
+
+    }
+}
+
+
+public class Common
+{
+    public static StringBuilder ConvertStringToXML(string itemList, string attributeNameList, char stringSeperator)
+    {
+        StringBuilder XmlDoc = new StringBuilder();
+        string[] list1 = itemList.Split('|');
+        string[] list2 = null;
+        string[] attrList = attributeNameList.Split('|');
+        int RecCount = 0;
+
+        XmlDoc.Append("<ROOT>\n");
+
+        for (int i = 0; i < list1.Length; i++)
+        {
+            if (list1[i] != string.Empty)
+            {
+                XmlDoc.Append("\t<record ");
+
+                list2 = list1[i].Split(stringSeperator);
+                //XmlDoc.Append("<");
+
+                for (int j = 0; j < attrList.Length; j++)
+                {
+                    XmlDoc.Append(attrList[j] + "=");
+                    XmlDoc.Append("\"");
+                    XmlDoc.Append(list2[j].ToString());
+                    XmlDoc.Append("\" ");
+                }
+
+                XmlDoc.Append(">");
+                XmlDoc.Append("</record>\n");
+                RecCount++;
+            }
+        }
+
+        XmlDoc.Append("</ROOT>");
+
+        if (RecCount == 0)
+        {
+            XmlDoc.Length = 0;
+            return XmlDoc;
+        }
+        return XmlDoc;
+    }
+
+    public static DataTable CreateDataTable<T>(IEnumerable<T> list)
+    {
+        Type type = typeof(T);
+        var properties = type.GetProperties();
+
+        DataTable dataTable = new DataTable();
+        foreach (PropertyInfo info in properties)
+        {
+            dataTable.Columns.Add(new DataColumn(info.Name, Nullable.GetUnderlyingType(info.PropertyType) ?? info.PropertyType));
+        }
+
+        foreach (T entity in list)
+        {
+            object[] values = new object[properties.Length];
+            for (int i = 0; i < properties.Length; i++)
+            {
+                values[i] = properties[i].GetValue(entity);
+            }
+
+            dataTable.Rows.Add(values);
+        }
+
+        return dataTable;
+    }
+
+    public static string GetXMLData(DataTable dtXMLData)
+    {
+
+        string xmlString = string.Empty;
+        using (TextWriter writer = new StringWriter())
+        {
+            dtXMLData.WriteXml(writer);
+            xmlString = writer.ToString();
+        }
+        return xmlString;
+    }
+}
+
+public class InboundSwiftMessageCollection : List<InboundSwiftMessage>
+{
+    private readonly ILogger<InboundSwiftMessageCollection> _logger ;
+
+    #region inbound processing        
+
+    public InboundSwiftMessageCollection(ILogger<InboundSwiftMessageCollection> logger) 
+    {
+        _logger = logger;            
+    }
+
+    public InboundSwiftMessageCollection(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename) /*: this(default!)*/
+    {            
+        createSwiftMessages(_messages, _tagCompData, lstMessageFilename);
+    }
+
+    void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename)
+    {
+        try
+        {
+            string[] fileContent = null;
+
+            foreach (string message in _messages)
+            {
+                fileContent = message.Split("$".ToCharArray());
+                string filename = lstMessageFilename.Where(x => x.Value.Equals(message)).FirstOrDefault().Key;
+
+                if (fileContent != null && fileContent.Length > 0)
+                {
+                    for (int i = 0; i < fileContent.Length; i++)
+                    {
+                        InboundSwiftMessage swiftMessage = this.process(fileContent[i], _tagCompData, filename);
+
+                        if (swiftMessage.IsValidMessage)
+                            this.Add(swiftMessage);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("", "Error at createSwiftMessages", ex, false, null);
+        }
+    }
+
+    InboundSwiftMessage process(string _message, string _tagCompData, string filename)
+    {
+
+        InboundSwiftMessage message = new InboundSwiftMessage(_message, _tagCompData, filename);
+
+
+        return message; ;
+    }
+    #endregion
+}
+
+public class SwiftInboundRepository(IConfiguration cfg, ILogger<SwiftInboundRepository> logger) : IRepository<SwiftInboundMQ>
+{
+    private readonly ILogger<SwiftInboundRepository> _logger = logger;
+    private readonly string _connString = cfg.GetConnectionString("LAVA") ?? string.Empty;
+
+    public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
+    {
+        _logger.LogInformation("Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}", swiftInboundMQ.CorrelationID);
+        try
+        {
+            using var conn = new SqlConnection(_connString);
+            using (var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage_Test", conn))
+            {
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);
+                cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
+                cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
+                cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
+                cmd.Parameters.AddWithValue("@IsSuccess", swiftInboundMQ.IsSuccess);
+                cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+                await conn.OpenAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+                ;
+            await conn.CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error while adding MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}. Exception: {ErrorMsg}",
+                            swiftInboundMQ.CorrelationID, ex.Message);
+            throw;
+        }
+
+    }
+}
+
+
+public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                             ISubscriber swiftInboundMQSubscriber,
+                             ISwiftInboundFactory swiftInboundMQFactory,
+                             IRepository<SwiftInboundMQ> swiftInboundMQRepository) : ISwiftInboundConsumer
+{
+    private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+    private readonly IRepository<SwiftInboundMQ> _swiftInboundRepository = swiftInboundMQRepository;
+    private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;
+
+    public async Task ConsumeMessagesAsync(CancellationToken ct)
+    {
+        try
+        {
+            foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+            {
+                try
+                {
+                    _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
+                    var swiftInboundMQ = _swiftInboundFactory.ReadSwiftMessages(swiftInboundPayload);
+                    await _swiftInboundRepository.AddAsync(swiftInboundMQ, ct);
+                }
+                catch (Exception payloadEx)
+                {
+                    _logger.LogError(payloadEx, "Error while processing messages. Payload: {SwiftInboundPayload} ", swiftInboundPayload);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while processing position messages.");
+        }
+
+    }
+}
+
+}
