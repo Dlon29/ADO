@@ -1,324 +1,206 @@
-@model WebApplicationADO.Models.LeadsEntity
-
-@{
-    ViewData["Title"] = "AddLead";
-}
+// ISwiftInboundFactory (Interface or Abstract Class)
+// Returns a list to handle cases where one MQ payload contains multiple SWIFT messages (separated by '$')
+List<SwiftInboundMQ> ReadSwiftMessages(string swiftInboundPayload, string dbName, string tagCompData);
 
 
 
 
-<div class="container">
-    <div class="col-md-10 border-1">
-        <form asp-action="AddNewLead">
-
-            <h2>Create New Lead</h2>
-            <hr/>
-
-            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-            <div class="row">
-                <div class="col-12 text-center">
-                    <b>@ViewBag.Message</b>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-3">
-                    <label asp-for="LeadDate" class="control-label"></label>
-                    <input asp-for="LeadDate" class="form-control" />
-                    <span asp-validation-for="LeadDate" class="text-danger"></span>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Name" class="control-label"></label>
-                    <input asp-for="Name" class="form-control" />
-                    <span asp-validation-for="Name" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="Email" class="control-label"></label>
-                    <input asp-for="Email" class="form-control" />
-                    <span asp-validation-for="Email" class="text-danger"></span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Mobile" class="control-label"></label>
-                    <input asp-for="Mobile" class="form-control" />
-                    <span asp-validation-for="Mobile" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="LeadSource" class="control-label"></label>
-                    <input asp-for="LeadSource" class="form-control" />
-                    <span asp-validation-for="LeadSource" class="text-danger"></span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="LeadStatus" class="control-label"></label>
-                    <input asp-for="LeadStatus" class="form-control" />
-                    <span asp-validation-for="LeadStatus" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="NextFollowUpDate" class="control-label"></label>
-                    <input asp-for="NextFollowUpDate" class="form-control" />
-                    <span asp-validation-for="NextFollowUpDate" class="text-danger"></span>
-                </div>
-            </div>
-            <br />
-            <div class="form-group">
-                
-                    <input type="submit" value="Save Lead" class="btn btn-primary" />
-                <a asp-action="Index" class="btn btn-warning">Back to List</a>
-            </div>
-        </form>
-    </div>
-</div>
 
 
+public class SwiftInboundFactory(ILogger<SwiftInboundFactory> logger) : ISwiftInboundFactory
+{        
+    private readonly ILogger<SwiftInboundFactory> _logger = logger;        
 
-@section Scripts {
-    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
-}
+    // *** IMPORTANT: The old signature is likely obsolete and can be removed/updated:
+    // public override List<string> ReadSwiftMessages(string tagCompData, FtpConfigurationElement item)
+    // The implementation below replaces its core parsing function.
 
+    public List<SwiftInboundMQ> ReadSwiftMessages(string swiftInboundPayload, string dbName, string tagCompData)
+    {
+        List<SwiftInboundMQ> processedMessages = new List<SwiftInboundMQ>();
+        List<KeyValuePair<string, string>> lstMessageFilename = new List<KeyValuePair<string, string>>();
+        List<string> lstRawMessages = new List<string>();
 
-@model WebApplicationADO.Models.LeadsEntity
-
-@{
-    ViewData["Title"] = "AddLead";
-}
-
-
-
-
-<div class="container">
-    <div class="col-md-10 border-1">
-        <form asp-action="DeleteLeadDetails">
-            <input asp-for="Id" hidden />
-            <h2>Delete Lead Details</h2>
-            <hr />
-
-
-
-            <div class="row">
-                <div class="col-3">
-                    <label asp-for="LeadDate" class="control-label"></label>
-                    <input asp-for="LeadDate" class="form-control" readonly />
-                    <span asp-validation-for="LeadDate" class="text-danger"></span>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Name" class="control-label"></label>
-                    <input asp-for="Name" class="form-control" readonly/>
-                </div>
-                <div class="col-6">
-                    <label asp-for="Email" class="control-label"></label>
-                    <input asp-for="Email" class="form-control" readonly/>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Mobile" class="control-label"></label>
-                    <input asp-for="Mobile" class="form-control" readonly/>
-                </div>
-                <div class="col-6">
-                    <label asp-for="LeadSource" class="control-label"></label>
-                    <input asp-for="LeadSource" class="form-control" readonly/>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="LeadStatus" class="control-label"></label>
-                    <input asp-for="LeadStatus" class="form-control" readonly/>
-                </div>
-                <div class="col-6">
-                    <label asp-for="NextFollowUpDate" class="control-label"></label>
-                    <input asp-for="NextFollowUpDate" class="form-control" readonly/>
-                </div>
-            </div>
-            <br />
-            <div class="form-group">
-
-                <input type="submit" value="Delete Lead" class="btn btn-primary" />
-                <a asp-action="Index" class="btn btn-warning">Back to List</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-
-
-@section Scripts {
-    @{
-        await Html.RenderPartialAsync("_ValidationScriptsPartial");
-    }
-}
-
-
-
-@model WebApplicationADO.Models.LeadsEntity
-
-@{
-    ViewData["Title"] = "AddLead";
-}
-
-
-
-
-<div class="container">
-    <div class="col-md-10 border-1">
-        <form asp-action="EditLeadDetails">
-            <input asp-for="Id" hidden />
-            <h2>Edit Lead Details</h2>
-            <hr />
-
-            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-            <div class="row">
-                <div class="col-12 text-center">
-                    <b>@ViewBag.Message</b>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-3">
-                    <label asp-for="LeadDate" class="control-label"></label>
-                    <input asp-for="LeadDate" class="form-control" />
-                    <span asp-validation-for="LeadDate" class="text-danger"></span>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Name" class="control-label"></label>
-                    <input asp-for="Name" class="form-control" />
-                    <span asp-validation-for="Name" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="Email" class="control-label"></label>
-                    <input asp-for="Email" class="form-control" />
-                    <span asp-validation-for="Email" class="text-danger"></span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="Mobile" class="control-label"></label>
-                    <input asp-for="Mobile" class="form-control" />
-                    <span asp-validation-for="Mobile" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="LeadSource" class="control-label"></label>
-                    <input asp-for="LeadSource" class="form-control" />
-                    <span asp-validation-for="LeadSource" class="text-danger"></span>
-                </div>
-            </div>
-            <div class="row">
-                <div class="col-6">
-                    <label asp-for="LeadStatus" class="control-label"></label>
-                    <input asp-for="LeadStatus" class="form-control" />
-                    <span asp-validation-for="LeadStatus" class="text-danger"></span>
-                </div>
-                <div class="col-6">
-                    <label asp-for="NextFollowUpDate" class="control-label"></label>
-                    <input asp-for="NextFollowUpDate" class="form-control" />
-                    <span asp-validation-for="NextFollowUpDate" class="text-danger"></span>
-                </div>
-            </div>
-            <br />
-            <div class="form-group">
-
-                <input type="submit" value="Save Lead" class="btn btn-primary" />
-                <a asp-action="Index" class="btn btn-warning">Back to List</a>
-            </div>
-        </form>
-    </div>
-</div>
-
-
-
-@section Scripts {
-    @{
-        await Html.RenderPartialAsync("_ValidationScriptsPartial");
-    }
-}
-
-
-
-@model IEnumerable<LeadsEntity>
-
-    <br />
-
-    <h2>Leads</h2>
-    <hr />
-    <br />
-
-    <table class="table table-striped">
-        <tr>
-            <th>
-                @Html.DisplayNameFor(model => model.Id)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.LeadDate)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.Name)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.Email)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.Mobile)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.LeadSource)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.LeadStatus)
-            </th>
-            <th>
-                @Html.DisplayNameFor(model => model.NextFollowUpDate)
-            </th>
-        </tr>
-
-        @foreach (var item in Model)
+        try
         {
-            @Html.HiddenFor(model => item.Id)
-            <tr>
-                <td>
-                    @Html.DisplayFor(modelItem => item.Id)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.LeadDate)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.Name)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.Email)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.Mobile)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.LeadSource)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.LeadStatus)
-                </td>
-                <td>
-                    @Html.DisplayFor(modelItem => item.NextFollowUpDate)
-                </td>
-                <td>
-                    <a asp-action="EditLead" asp-route-Id="@item.Id"><i class="bi bi-pen">Edit</i></a>
+            // 1. Separate potential multiple messages within the payload (as per your old logic)
+            string[] fileContent = swiftInboundPayload.Split('$'.ToCharArray());
 
-                    <a asp-action="DeleteLead" asp-route-Id="@item.Id"><i class="bi bi-trash-fill">Delete</i></a>
-                </td>
-            </tr>
+            if (fileContent != null && fileContent.Length > 0)
+            {
+                foreach (string message in fileContent)
+                {
+                    if (string.IsNullOrWhiteSpace(message)) continue;
+
+                    // 2. Mock a FileName/Unique ID since it's an MQ message now
+                    string mockFileName = Guid.NewGuid().ToString("N") + ".txt"; 
+
+                    // 3. Process the raw message into the old InboundSwiftMessage structure (for parsing logic)
+                    InboundSwiftMessage inboundMessage = ProcessRawMessage(message, tagCompData, mockFileName);
+                    
+                    if (inboundMessage.IsValidMessage)
+                    {
+                        // 4. Map the parsed message to the new DTO (SwiftInboundMQ)
+                        SwiftInboundMQ mqMessage = MapToSwiftInboundMQ(inboundMessage, dbName);
+                        processedMessages.Add(mqMessage);
+
+                        _logger.LogInformation(dbName + " - MT" + inboundMessage.MessageType, "Parsed inbound swift message. Mock File - {0}", mockFileName);
+                    }
+                    else
+                    {
+                        _logger.LogInformation(dbName, "Discarded message due to invalid format.");
+                    }
+                }
+            }
         }
-</table>
+        catch (Exception ex)
+        {
+            _logger.LogError(dbName, "Exception in ReadSwiftMessages while processing MQ payload.", ex);
+            // Optionally rethrow or return empty list based on error handling policy
+        }
+        
+        return processedMessages;
+    } 
 
-<br />
-<p>
-    <a asp-action="AddLead" asp-cpntroller="Leads" class="btn btn-primary">Add New Lead</a>
-</p>
+    // Helper method to keep your core parsing logic isolated
+    private InboundSwiftMessage ProcessRawMessage(string _message, string _tagCompData, string filename)
+    {
+        // This is where your old InboundSwiftMessage logic lives
+        return new InboundSwiftMessage(_message, _tagCompData, filename); 
+    }
+
+    // Helper method to map the old parsed object to the new DTO 
+    private SwiftInboundMQ MapToSwiftInboundMQ(InboundSwiftMessage message, string dbName)
+    {
+        // This mapping logic is based on the logic found in your old UpdateInboundMessagesStatus
+        
+        // 1. Map Swift Tags (TblTagComp)
+        DataTable dtSwiftTag = LAVA.SwiftInbound.Subscriber.Core.Common.CreateDataTable(message.Text.SwiftTag);
+        dtSwiftTag.TableName = "TblTagComp";
+        string xmlSwiftData = LAVA.SwiftInbound.Subscriber.Core.Common.GetXMLData(dtSwiftTag);
+        xmlSwiftData = xmlSwiftData.Replace("'", "&apos;"); // Escape single quotes
+
+        // 2. Map Inbound Message Data (Header/Summary XML)
+        StringBuilder sbSwiftMesage = new StringBuilder();
+        StringBuilder sbAttributeList = new StringBuilder();
+        // ... (Build sbSwiftMesage and sbAttributeList as per your existing logic) ...
+        // Example logic from your old code:
+        sbSwiftMesage.Append(
+            message.Text["20"].TagValue + ";" + // SwiftMessageId
+            string.Empty + ";" + // RelatedSwiftMsgId
+            message.MessageType + ";" + // SwiftMsgType
+            message.MessageText + ";" + // MessageText
+            "Inbound" + ";" + // MessageDirection
+            45 + ";" + // MessageStatusId
+            (message.Text["{108:"] != null ? message.Text["{108:"].TagValue : string.Empty) + ";" + // InboundMUR
+            message.Text["20"].TagValue + ";" + // InboundReference
+            message.ApplicationHeaderText.RecipientAddress + "|" // RecipientAddress
+        );
+
+        sbAttributeList.Append("SwiftMessageId|RelatedSwiftMsgId|SwiftMsgType|MessageText|MessageDirection|MessageStatusId|InboundMUR|InboundReference|RecipientAddress");
+        string swiftMessageXml = LAVA.SwiftInbound.Subscriber.Core.Common.ConvertStringToXML(sbSwiftMesage.ToString(), sbAttributeList.ToString(), ';').ToString();
+        swiftMessageXml = swiftMessageXml.Replace("'", "&apos;"); // Escape single quotes
+
+        // 3. Create and populate the DTO
+        return new SwiftInboundMQ
+        {
+            MessageType = message.MessageType,
+            InboundSwiftMessageData = swiftMessageXml,
+            UserID = "dcolaco", // Hardcoded user ID from your original code
+            SwiftMessageData = xmlSwiftData,
+            IsSuccess = true, // Default to true upon successful parsing
+            ProcessedFileName = message.FileName, // Mocked GUID
+            CorrelationID = message.FileName // Use filename as Correlation ID for traceability
+        };
+    }
+}
+
+
+
+
+
+public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                             ISubscriber swiftInboundMQSubscriber,
+                             ISwiftInboundFactory swiftInboundMQFactory,
+                             IRepository<SwiftInboundMQ> swiftInboundMQRepository) : ISwiftInboundConsumer
+{
+    private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+    private readonly IRepository<SwiftInboundMQ> _swiftInboundRepository = swiftInboundMQRepository;
+    private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;
+
+    public async Task ConsumeMessagesAsync(CancellationToken ct)
+    {
+        // NOTE: You need a way to get 'dbName' and 'tagCompData' here, 
+        // perhaps from a configuration service or hardcoded context.
+        // Assuming they are loaded from a configuration or dependency:
+        string contextDbName = "LAVA"; 
+        string contextTagCompData = "{...}"; // Replace with actual value
+
+        try
+        {
+            foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+            {
+                try
+                {
+                    _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload.Substring(0, Math.Min(100, swiftInboundPayload.Length)) + "...");
+                    
+                    // 1. Get a list of fully mapped DTOs from the factory
+                    List<SwiftInboundMQ> swiftMessagesToPersist = _swiftInboundFactory.ReadSwiftMessages(
+                        swiftInboundPayload, 
+                        contextDbName, 
+                        contextTagCompData
+                    );
+
+                    // 2. Persist each message DTO
+                    foreach (var swiftInboundMQ in swiftMessagesToPersist)
+                    {
+                        await _swiftInboundRepository.AddAsync(swiftInboundMQ, ct);
+                    }
+                }
+                catch (Exception payloadEx)
+                {
+                    _logger.LogError(payloadEx, "Error while processing messages. Payload: {SwiftInboundPayload} ", swiftInboundPayload);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error while processing position messages.");
+        }
+    }
+}
+
+
+
+
+
+public async Task AddAsync(SwiftInboundMQ swiftInboundMQ, CancellationToken ct)
+{
+    _logger.LogInformation("Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}", swiftInboundMQ.CorrelationID);
+    try
+    {
+        // The 'using' statement handles connection closing/disposal automatically.
+        using var conn = new SqlConnection(_connString);
+        using (var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage_Test", conn))
+        {
+            cmd.CommandType = System.Data.CommandType.StoredProcedure;
+            cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);
+            cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
+            cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
+            cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
+            cmd.Parameters.AddWithValue("@IsSuccess", swiftInboundMQ.IsSuccess);
+            cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+            
+            await conn.OpenAsync(ct);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        // Removed the extra 'await conn.CloseAsync();' and the unnecessary semicolon.
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError("Error while adding MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}. Exception: {ErrorMsg}",
+                        swiftInboundMQ.CorrelationID, ex.Message);
+        throw;
+    }
+}
