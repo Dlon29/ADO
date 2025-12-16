@@ -477,3 +477,1122 @@ public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
 }
 
 }
+
+
+
+
+
+
+public class InboundSwiftMessage
+{
+    #region Variable Declaration
+
+    private readonly ILogger<InboundSwiftMessage> _logger;
+    BasicHeaderBlock basicHeader;
+    ApplicationHeaderBlock applicationHeader;
+    UserHeaderBlock userHeader;
+    TextBlock text;
+    string messageText;
+    bool isValidMesage;
+    string filename = null;
+
+    #endregion
+
+    public InboundSwiftMessage(ILogger<InboundSwiftMessage> logger)
+    {
+        _logger = logger;
+    }
+        
+    public InboundSwiftMessage(string _message, string _tagCompData, string fileName) 
+    {
+        try
+        {
+            this.messageText = _message;
+            this.basicHeader = new BasicHeaderBlock(_message);
+            this.applicationHeader = new ApplicationHeaderBlock(_message);
+            this.userHeader = new UserHeaderBlock(_message);
+            this.text = new TextBlock(_message, _tagCompData);
+            this.filename = fileName;
+            //Mark message as Invalid and don't process this if it is not Output message.
+            if (InputOutputIdentifier == "I")
+            {
+                this.isValidMesage = false;
+            }
+            else
+            {
+                this.isValidMesage = true;
+            }
+
+
+        }
+        catch (Exception ex)
+        {
+            this.isValidMesage = false;
+            _logger.LogCritical("", "Error Read swift inbound message", ex, MethodBase.GetCurrentMethod(), _message);
+        }
+    }
+
+    public string MessageType
+    {
+        get
+        {
+            return this.applicationHeader.MessageType;
+        }
+    }
+
+    public TextBlock Text
+    {
+        get
+        {
+            return this.text;
+        }
+    }
+
+    public string MessageText
+    {
+        get
+        {
+            return this.messageText;
+        }
+    }
+
+    public bool IsValidMessage
+    {
+        get
+        {
+            return this.isValidMesage;
+        }
+    }
+
+    public ApplicationHeaderBlock ApplicationHeaderText
+    {
+        get
+        {
+            return this.applicationHeader;
+        }
+    }
+
+    public UserHeaderBlock UserHeaderBlockText
+    {
+        get
+        {
+            return this.userHeader;
+        }
+    }
+
+    public string InputOutputIdentifier
+    {
+        get
+        {
+            return this.applicationHeader.InputOutputIdentifier;
+        }
+    }
+
+    public string FileName
+    {
+        get
+        {
+            return this.filename;
+        }
+    }
+}
+
+
+
+public class BasicHeaderBlock : SwiftBlock
+{
+
+    string block1Start = null;
+    protected string applicationId = null;
+    string serviceId = null;
+    string logicalTerminalAddress = null;
+    string sessionNumber = null;
+    private string sequenceNumber = null;
+
+    public string Block1Start
+    {
+
+        get
+        {
+            return this.block1Start;
+        }
+
+        set
+        {
+            this.block1Start = value;
+        }
+    }
+
+    public string ApplicationId
+    {
+        get
+        {
+            return this.applicationId;
+        }
+        set
+        {
+            this.applicationId = value;
+        }
+    }
+
+    public string ServiceId
+    {
+        get
+        {
+            return this.serviceId;
+        }
+        set
+        {
+            this.serviceId = value;
+        }
+    }
+
+    public string LogicalTerminalAddress
+    {
+
+        get
+        {
+            return this.logicalTerminalAddress;
+        }
+        set
+        {
+            this.logicalTerminalAddress = value;
+        }
+    }
+
+    public string SessionNumber
+    {
+
+        get
+        {
+            return this.sessionNumber;
+        }
+        set
+        {
+            this.sessionNumber = value;
+        }
+    }
+
+    public string SequenceNumber
+    {
+        get
+        {
+            return this.sequenceNumber;
+        }
+        set
+        {
+            this.sequenceNumber = value;
+        }
+    }
+
+    public BasicHeaderBlock(string _applicationId, string _serviceId, string _logicalTerminalAddress, string _sessionNumber, string _sequenceNumber)
+    {
+        this.block1Start = "{1:";
+        //this.blockIdentifier = Smtb.SWIFTFramework.SwiftUtility.Common.Constants.CONS_BLOCK1IDENTIFIER;
+        this.applicationId = _applicationId;
+        this.serviceId = _serviceId;
+        this.logicalTerminalAddress = _logicalTerminalAddress;
+        this.sessionNumber = _sessionNumber;
+        this.sequenceNumber = _sequenceNumber;
+    }
+
+    public BasicHeaderBlock(string _message)
+    {
+        this.blockIdentifier = "1:";
+
+        string[] arrMessageBlocks = _message.Split(("}").ToCharArray());
+
+        if (arrMessageBlocks.Length > 0)
+        {
+            this.blockContent = arrMessageBlocks[0].Substring(3);
+        }
+    }
+
+    public BasicHeaderBlock()
+    {
+
+    }
+
+}
+
+
+
+public class SwiftBlock
+{
+    protected string blockIdentifier;
+
+    public string BlockIdentifier
+    {
+        get
+        {
+            return this.blockIdentifier;
+        }
+    }
+
+    protected string blockContent;
+
+    public string BlockContent
+    {
+        get
+        {
+            return this.blockContent;
+        }
+    }
+}
+
+
+
+
+public class ApplicationHeaderBlock : SwiftBlock
+{
+    private readonly ILogger<ApplicationHeaderBlock> _logger;
+
+    string block2Start = null;
+    protected string inputOutputIdentifier = null;
+    string messageType = null;
+    string messagePriority = null;
+    string recipientAddress = null;
+    private string deliveryMonitoring = null;
+    string obsolescencePeriod = null;
+    string inputTime = null;
+    string inputDate = null;
+    string messageInputReference = null;                //MIR
+    string outputDateTime = null;
+    string sessionNumber = null;
+    string sequenceNumbe = null;
+
+    public ApplicationHeaderBlock(ILogger<ApplicationHeaderBlock> logger)
+    {
+        _logger = logger;
+    }
+
+    public string Block2Start
+    {
+        get
+        {
+            return this.block2Start;
+        }
+    }
+
+    public string InputOutputIdentifier
+    {
+        get
+        {
+            return this.inputOutputIdentifier;
+        }
+    }
+
+    public string RecipientAddress
+    {
+        get
+        {
+            return this.recipientAddress;
+        }
+
+        set
+        {
+            this.recipientAddress = value;
+        }
+    }
+
+    public string MessageType
+    {
+        get
+        {
+            return this.messageType;
+        }
+
+        set
+        {
+            this.messageType = value;
+        }
+    }
+
+    public string MessagePriority
+    {
+        get
+        {
+            return this.messagePriority;
+        }
+
+        set
+        {
+            this.messagePriority = value;
+        }
+    }
+
+    public string DeliveryMonitoring
+    {
+        get
+        {
+            return this.deliveryMonitoring;
+        }
+
+        set
+        {
+            this.deliveryMonitoring = value;
+        }
+    }
+
+    public string ObsolescencePeriod
+    {
+        get
+        {
+            return this.obsolescencePeriod;
+        }
+        set
+        {
+            this.obsolescencePeriod = value;
+        }
+    }
+
+    public string InputDate
+    {
+        get
+        {
+            return this.inputDate;
+        }
+    }
+
+    public string MessageInputReference
+    {
+        get
+        {
+            return this.messageInputReference;
+        }
+    }
+
+    public string OutputDateTime
+    {
+        get
+        {
+            return this.outputDateTime;
+        }
+    }
+
+    public string SessionNumber
+    {
+        get
+        {
+            return this.sessionNumber;
+        }
+        set
+        {
+            this.sessionNumber = value;
+        }
+    }
+
+    public string SequenceNumbe
+    {
+        get
+        {
+            return this.sequenceNumbe;
+        }
+        set
+        {
+            this.sequenceNumbe = value;
+        }
+    }
+                 
+    //Inbound
+    public ApplicationHeaderBlock(string _message)
+    {
+        this.blockIdentifier = "2:";
+
+        string[] arrMessageBlocks = _message.Split(("}").ToCharArray());
+
+        if (arrMessageBlocks.Length > 1)
+        {
+            this.blockContent = arrMessageBlocks[1].Substring(3);
+
+            if (this.blockContent.StartsWith("I"))
+            {
+                this.inputOutputIdentifier = this.blockContent.Substring(0, 1);
+                //Log this message details as it is Invalid.
+                _logger.LogInformation("The inbound message cannot be processed as it is an Input message.", _message);
+            }
+            else
+            {
+                this.inputOutputIdentifier = this.blockContent.Substring(0, 1);
+                this.messageType = /*Constants.CONS_MESSAGETYPESTART + */this.blockContent.Substring(1, 3);
+                this.inputTime = this.blockContent.Substring(4, 4);
+                //this.inputDate = this.blockContent.Substring(8, 6);
+                this.messageInputReference = this.blockContent.Substring(8, 28);
+                //this.recipientAddress = this.blockContent.Substring(14, 12);
+                //this.sessionNumber = this.blockContent.Substring(26, 4);
+                //this.sequenceNumbe = this.blockContent.Substring(30, 6);
+                this.outputDateTime = this.blockContent.Substring(36, 10);
+                this.messagePriority = this.blockContent.Substring(46, 1);
+            }
+        }
+    }
+}
+
+
+
+
+public class UserHeaderBlock : SwiftBlock
+{
+    string block3Start = null;
+    string bankingPriorityCode = null;
+
+    public string Block1Start
+    {
+
+        get
+        {
+            return this.block3Start;
+        }
+
+        set
+        {
+            this.block3Start = value;
+        }
+    }
+
+    public string BankingPriorityCode
+    {
+        get
+        {
+            return this.bankingPriorityCode;
+        }
+    }
+
+    string isitcVersionIdentifier = null;
+    string messageUserReference = null;
+
+    public string IsitcVersionIdentifier
+    {
+        get
+        {
+            return this.isitcVersionIdentifier;
+        }
+    }
+
+    public string MessageUserReference
+    {
+        get
+        {
+            return this.messageUserReference;
+        }
+    }        
+
+    public UserHeaderBlock(string _message)
+    {
+        this.blockIdentifier = "{3:";
+
+        if (_message.Contains("{3:"))
+        {
+            this.blockContent = _message.Substring(_message.IndexOf("{3:"), (_message.IndexOf("}}") - _message.IndexOf("{3:")));
+
+            if (_message.Contains("{108:"))
+            {
+                this.messageUserReference = _message.Substring(_message.IndexOf("{108:"), (_message.IndexOf("}}") - _message.IndexOf("{108:")));
+            }
+        }
+    }
+
+}
+
+
+
+
+
+public class TextBlock(ILogger<TextBlock> logger) : SwiftBlock
+{
+    string message;
+    private String CrLf = "";
+    private String LineBreak = ":";
+    List<SwiftTag> tags = new List<SwiftTag>();
+    List<Sequence> sequences = null;//new List<Sequence>();
+    private string block4Start;
+    private string tagCompData;
+    private readonly ILogger<TextBlock> _logger = logger;
+
+    public string Block4Start
+    {
+
+        get
+        {
+            return this.block4Start;
+        }
+
+        set
+        {
+            this.block4Start = value;
+        }
+    }
+
+    public List<Sequence> Sequence
+    {
+        get
+        {
+            return this.sequences;
+        }
+    }
+
+    public List<SwiftTag> SwiftTag
+    {
+        get
+        {
+            return this.tags;
+        }
+    }
+
+    public string TagCompData
+    {
+        get
+        {
+            return this.tagCompData;
+        }
+        set
+        {
+            this.tagCompData = value;
+        }
+    }
+    
+    public TextBlock(string _message, string _tagCompData) : this(default!)
+    {
+        char[] c = { '\r', '\n' };
+        String s = new String(c);
+        setCrLf(s);
+
+        if (_message.Length > 0)
+        {
+            this.blockIdentifier = "4:";
+            this.blockContent = _message.Substring(_message.IndexOf("{4:"), (_message.LastIndexOf("}") - _message.IndexOf("{4:")));
+            this.message = blockContent;
+            this.tagCompData = _tagCompData;
+            this.parseTags();
+        }
+    }        
+
+    private void setCrLf(string newCrLf)
+    {
+        this.CrLf = newCrLf;
+    }
+
+    void parseTags()
+    {
+        //parse and add tags to list
+        //parse and add tags to list
+        SwiftTag tag = null;
+        string[] arrTag = null;
+        string[] arrTagVal = null;
+        string tagCode = string.Empty;
+        string tagValue = string.Empty;
+        bool tagfound = false;
+        int lineNbr = 0;
+
+
+        XmlDocument doc = new XmlDocument();
+        XmlReader xReader = XmlReader.Create(new StringReader(this.tagCompData));
+
+        System.Data.DataSet ds = new System.Data.DataSet();
+        ds.ReadXml(xReader);
+
+        System.Data.DataTable dtTagCompData = ds.Tables[0];
+        System.Data.DataRow[] drTagValue = null;
+        System.Data.DataRow[] drTagHaDelimeter = null;
+
+        foreach (String line in message.Split(CrLf.ToCharArray()))
+        {
+            //Case when line does not start with ':' and is the  value of the previous tag
+            if (line != string.Empty && !line.StartsWith(":") && !line.Contains(":"))
+            {
+                SwiftTag stag = tags.Where(x => x.TagCode.Equals(tagCode)).LastOrDefault();
+                tags.Remove(stag);
+                tag = new SwiftTag(stag.TagName, stag.TagCode, (stag.TagValue + " " + line).Trim().ToString(), stag.CompPosition, stag.InstanceNumber, stag.LineNbr);
+                tags.Add(tag);
+            }
+
+            if (line != string.Empty && line.StartsWith(":"))
+            {
+                //tagCode = string.Empty;
+                tagValue = string.Empty;
+                tagfound = false;
+
+                arrTag = line.Split(new[] { Convert.ToChar(":") }, 4);  // This check is used to keep value of tag unchange, if Value contains extra ':' then value will remain as it is.
+                lineNbr = lineNbr + 1;
+
+
+                //foreach (var arrItem in arrTag)
+                //{
+                for (int iTag = 0; iTag < arrTag.Length; iTag++)
+                {
+                    if (arrTag[iTag] != null && arrTag[iTag] != string.Empty)
+                    {
+                        if ((arrTag[iTag].Length == 3 || arrTag[iTag].Length == 2) && tagfound == false) //Added condition for length =2 MT398 and MT396 messages.
+                        {
+                            tagCode = arrTag[iTag];
+                            drTagValue = null;
+                            tagfound = true;
+                        }
+                        else
+                        {
+                            drTagValue = dtTagCompData.Select("Tag ='" + tagCode + "'");
+
+
+                            arrTagVal = new string[arrTag[iTag].Split('/').Length];
+                            arrTagVal = arrTag[iTag].Split('/');
+
+                            if (arrTagVal.Length != drTagValue.Length)
+                            {
+                                arrTagVal = arrTagVal.Where(w => w != string.Empty).ToArray();
+                            }
+                            //-----Start MT103 70 Tag Handling------
+                            /*:70:/BNF/REF:FFC FIERA AXIUM INFRASTRUC
+                                    TURE NORTH AMERICA IV L.P.,CUSTODY 
+                                    BANK OF JAPAN, LTD. AC.12345-1234*/
+                            //if 70 tag has above tagvalue with extra : in tagvalue then do not split 
+                            /*if 70 tag has :70:/INV/abc/SDF-96//1234-234///ROC/98I U87
+                             It contain /// in value so don not split this value into two diffrent value*/
+
+                            if (tagCode == "70")
+                            {
+                                arrTag = line.Split(new[] { Convert.ToChar(":") }, 3);//if extra colon come in to tag value then sont split
+                                arrTagVal = new string[1];// Array reset
+                                arrTagVal[0] = arrTag[iTag];//asign single tagvalue of 70 tag into arrTagVal
+
+                            }
+                            //-------End MT103 70 tag--------------
+                            //start :Commented to resolve MT398 TAg76 issue fix 
+                            //if (arrTagVal.Length != drTagValue.Length && arrTagVal.Length > drTagValue.Length && arrTagVal.Length >=4)
+                            //{
+
+                            //string[] stringSeparators = new string[] { "//" };
+                            //arrTagVal = arrTag[iTag].Split(stringSeparators, StringSplitOptions.None);  
+                            //}
+                            //End
+
+                            //New code for MT398 Tag76 issue fix and Tag 70D issue fix
+                            if (arrTagVal.Length != drTagValue.Length && arrTagVal.Length > drTagValue.Length)
+                            {
+                                //Start - New Code for handling Tag 70D split based on Postfix and component count
+                                if (tagCode == "70D")
+                                {
+                                    string SplitChar = string.Empty;
+
+                                    if (!string.IsNullOrEmpty(drTagValue[0]["Postfix"].ToString()))
+                                    {
+                                        SplitChar = drTagValue[0]["Postfix"].ToString();
+                                    }
+                                    else
+                                    {
+                                        SplitChar = "//";
+                                    }
+
+                                    string[] stringSeparators = new string[] { SplitChar };//In case of 70D, split will be based on postfix of 1st component
+                                    arrTagVal = arrTag[iTag].Split(stringSeparators, StringSplitOptions.None);
+                                }
+                                //End - New Code for handling Tag 70D split based on Postfix and component count
+
+                                if (arrTagVal.Length >= 4 || drTagValue.Length == 1)
+                                {
+                                    string[] stringSeparators = new string[] { "//" };
+                                    arrTagVal = arrTag[iTag].Split(stringSeparators, StringSplitOptions.None);
+
+                                }
+                            }
+                            //End New code for MT398 TAg76 issue fix 
+
+                            //MT970 code changes , message value without separator //
+                            //if tag table has this field on
+                            try
+                            {
+                                drTagHaDelimeter = dtTagCompData.Select("HasDelimiter ='" + 0 + "' and tagCode in ('60F','60M','62F','62M','64','61')");
+                                if (drTagHaDelimeter.Length > 0 && (tagCode == "60F" || tagCode == "60M" || tagCode == "62F" || tagCode == "62M" || tagCode == "64" || tagCode == "61"))
+                                {
+                                    if (arrTagVal.Length < drTagValue.Length)
+                                    {
+                                        ParseMt970(tagCode, ref arrTagVal);
+                                    }
+                                } //has separator if
+                                //end 
+                            }
+                            catch (Exception ex)
+                            {
+                                continue;
+                            }
+
+                            for (int iTagVal = 0; iTagVal < arrTagVal.Length; iTagVal++)
+                            {
+                                tag = new SwiftTag(tagCode.Substring(0, 2), tagCode, arrTagVal[iTagVal], (iTagVal + 1).ToString(), "1", lineNbr.ToString());
+                                tags.Add(tag);
+                            }
+
+                        }
+                    }
+
+                }
+                //For TagCode that dosn't have values 
+                if (tagCode != null && tagCode != string.Empty && drTagValue == null)
+                {
+                    tag = new SwiftTag(tagCode.Substring(0, 2), tagCode, null, "1", "1", lineNbr.ToString());
+                    tags.Add(tag);
+                }
+            }
+
+        }
+    }
+
+    public SwiftTag this[string _tagname]
+    {
+        get
+        {
+            SwiftTag tag = tags.Find(item => item.TagName == _tagname);
+
+            return tag;
+        }
+    }
+
+
+    public void ParseMt970(string tagCode, ref string[] arrTagVal) //arrTagVal_0, string arrTagVal_1  )
+    {
+        string strNonSplitValue = "";
+        string[] arrTagVal970 = null;
+        if (tagCode == "60F" || tagCode == "60M" || tagCode == "62F" || tagCode == "62M" || tagCode == "64")
+        {
+            arrTagVal970 = new string[4];
+            strNonSplitValue = arrTagVal[0];
+            arrTagVal970[0] = strNonSplitValue.Substring(0, 1);
+            arrTagVal970[1] = strNonSplitValue.Substring(1, 6);
+            arrTagVal970[2] = strNonSplitValue.Substring(7, 3);
+            arrTagVal970[3] = strNonSplitValue.Substring(10).TrimEnd(',');
+            arrTagVal = new string[4];
+            Array.Copy(arrTagVal970, arrTagVal, 4);
+        }
+
+        if (tagCode == "61")
+        {
+            int n;
+            arrTagVal970 = new string[10];
+            strNonSplitValue = arrTagVal[0];
+            arrTagVal970[0] = strNonSplitValue.Substring(0, 6);
+            int nAmountEndPos = 0;
+            // check if entry date provided
+            if (!int.TryParse(strNonSplitValue.Substring(6, 1), out n))
+            {
+                arrTagVal970[1] = ""; //no entry date
+                //if (!int.TryParse(strNonSplitValue.Substring(12, 2), out n))
+                if (!int.TryParse(strNonSplitValue.Substring(7, 1), out n)) //RC/RD mark
+                {
+
+                    arrTagVal970[2] = strNonSplitValue.Substring(6, 2); //RC/RD mark
+                    //transaction type : S/N/F
+                    if (strNonSplitValue.IndexOf("N") == -1)
+                    {
+                        if (strNonSplitValue.IndexOf("S") == -1)
+                            nAmountEndPos = strNonSplitValue.IndexOf("F");
+                        else
+                            nAmountEndPos = strNonSplitValue.IndexOf("S");
+                    }
+                    else
+                        nAmountEndPos = strNonSplitValue.IndexOf("N");
+
+                    int length = nAmountEndPos - 8; //7
+                    arrTagVal970[3] = ""; //Funds code 
+                    arrTagVal970[4] = strNonSplitValue.Substring(8, length).TrimEnd(',');
+                    arrTagVal970[5] = strNonSplitValue.Substring(nAmountEndPos, 1); //transaction type
+                    arrTagVal970[6] = strNonSplitValue.Substring(nAmountEndPos + 1, 3);//Identification Code
+                    arrTagVal970[7] = strNonSplitValue.Substring(nAmountEndPos + 4);
+                    arrTagVal970[8] = arrTagVal[1]; // arrTag[0].Split("//")[1];//, StringSplitOptions.None))[1];
+                    arrTagVal970[9] = "";
+                }
+                else
+                {
+                    //arrTagVal970[2] = strNonSplitValue.Substring(11, 2); //RC/RD mark
+                    arrTagVal970[2] = strNonSplitValue.Substring(6, 1); //C/D mark
+                    if (strNonSplitValue.IndexOf("N") == -1)
+                    {
+                        if (strNonSplitValue.IndexOf("S") == -1)
+                            nAmountEndPos = strNonSplitValue.IndexOf("F");
+                        else
+                            nAmountEndPos = strNonSplitValue.IndexOf("S");
+                    }
+                    else
+                        nAmountEndPos = strNonSplitValue.IndexOf("N");
+
+                    int length = nAmountEndPos - 7; // 12;
+                    arrTagVal970[3] = ""; //Funcode 
+                    arrTagVal970[4] = strNonSplitValue.Substring(7, length);
+                    arrTagVal970[5] = strNonSplitValue.Substring(nAmountEndPos, 1); //transaction type
+                    arrTagVal970[6] = strNonSplitValue.Substring(nAmountEndPos + 1, 3);//Identification Code
+                    arrTagVal970[7] = strNonSplitValue.Substring(nAmountEndPos + 4);
+                    arrTagVal970[8] = arrTagVal[1]; // arrTag[0].Split("//")[1];//, StringSplitOptions.None))[1];
+                    arrTagVal970[9] = "";
+                }
+            }
+            else
+            {
+                arrTagVal970[1] = strNonSplitValue.Substring(6, 4);// entry date
+
+                if (!int.TryParse(strNonSplitValue.Substring(11, 1), out n)) //debit credit mark 
+                {
+                    arrTagVal970[2] = strNonSplitValue.Substring(10, 2);//C/D mark
+                    if (strNonSplitValue.IndexOf("N") == -1)
+                    {
+                        if (strNonSplitValue.IndexOf("S") == -1)
+                            nAmountEndPos = strNonSplitValue.IndexOf("F");
+                        else
+                            nAmountEndPos = strNonSplitValue.IndexOf("S");
+                    }
+                    else
+                        nAmountEndPos = strNonSplitValue.IndexOf("N");
+
+                    int length = nAmountEndPos - 12;
+                    arrTagVal970[3] = ""; //Funcode 
+                    arrTagVal970[4] = strNonSplitValue.Substring(12, length);
+                    arrTagVal970[5] = strNonSplitValue.Substring(nAmountEndPos, 1); //transaction type
+                    arrTagVal970[6] = strNonSplitValue.Substring(nAmountEndPos + 1, 3);//Identification Code
+                    arrTagVal970[7] = strNonSplitValue.Substring(nAmountEndPos + 4);
+                    arrTagVal970[8] = arrTagVal[1]; // arrTag[0].Split("//")[1];//, StringSplitOptions.None))[1];
+                    arrTagVal970[9] = "";
+
+                }
+                else
+                {
+                    arrTagVal970[2] = strNonSplitValue.Substring(10, 1);//RC/RD mark
+                    if (strNonSplitValue.IndexOf("N") == -1)
+                    {
+                        if (strNonSplitValue.IndexOf("S") == -1)
+                            nAmountEndPos = strNonSplitValue.IndexOf("F");
+                        else
+                            nAmountEndPos = strNonSplitValue.IndexOf("S");
+                    }
+                    else
+                        nAmountEndPos = strNonSplitValue.IndexOf("N");
+
+                    int length = nAmountEndPos - 11;
+                    arrTagVal970[3] = ""; //Funcode 
+                    arrTagVal970[4] = strNonSplitValue.Substring(11, length);
+                    arrTagVal970[5] = strNonSplitValue.Substring(nAmountEndPos, 1); //transaction type
+                    arrTagVal970[6] = strNonSplitValue.Substring(nAmountEndPos + 1, 3);//Identification Code
+                    arrTagVal970[7] = strNonSplitValue.Substring(nAmountEndPos + 4);
+                    arrTagVal970[8] = arrTagVal[1]; // arrTag[0].Split("//")[1];//, StringSplitOptions.None))[1];
+                    arrTagVal970[9] = ""; //additional info
+                }
+            }
+            arrTagVal = new string[10];
+            Array.Copy(arrTagVal970, arrTagVal, 10);
+        }
+    }
+
+
+}
+
+
+
+public class SwiftTag
+{
+    private string tagName;
+    private string tagValue;
+    private string tagQualifierId;
+    private string tagCode;
+    private string regExFormat;
+    private string tagCompPosition;
+    private string tagInstanceNumber;
+    private string lineNbr;
+
+    public string TagName
+    {
+        get
+        {
+            return tagName;
+        }
+    }
+
+    public string TagValue
+    {
+        get
+        {
+            return tagValue;
+        }
+    }
+
+    public string TagCode
+    {
+        get
+        {
+            return this.tagCode;
+        }
+    }
+
+    public string CompPosition
+    {
+        get
+        {
+            return this.tagCompPosition;
+        }
+    }
+
+    public string InstanceNumber
+    {
+        get
+        {
+            return this.tagInstanceNumber;
+        }
+    }
+
+    public string LineNbr
+    {
+        get
+        {
+            return this.lineNbr;
+        }
+    }
+
+    public SwiftTag(string _tagname, string _tagCode, string _tagvalue, string _tagCompPosition, string _tagInstanceNumber)
+    {
+        tagName = _tagname;
+        tagValue = _tagvalue;
+        tagCode = _tagCode;
+        tagCompPosition = _tagCompPosition;
+        tagInstanceNumber = _tagInstanceNumber;
+    }
+
+    public SwiftTag(string _tagname, string _tagCode, string _tagvalue, string _tagCompPosition, string _tagInstanceNumber, string _lineNbr)
+    {
+        tagName = _tagname;
+        tagValue = _tagvalue;
+        tagCode = _tagCode;
+        tagCompPosition = _tagCompPosition;
+        tagInstanceNumber = _tagInstanceNumber;
+        lineNbr = _lineNbr;
+    }
+
+}
+
+
+
+public class Sequence
+{
+    List<SwiftTag> tags = null;//new List<SwiftTag>();
+    List<Sequence> relatedSequences = null;
+    private bool isMandatory;
+    private string seqNo;
+    private string seqInstanceNumber;
+
+    public List<SwiftTag> Tags
+    {
+        get
+        {
+            return this.tags;
+        }
+        set
+        {
+            this.tags = value;
+        }
+    }
+
+    public List<Sequence> RelatedSequences
+    {
+        get
+        {
+            return this.relatedSequences;
+        }
+        set
+        {
+            this.relatedSequences = value;
+        }
+    }
+
+    public bool IsMandatory
+    {
+        get
+        {
+            return isMandatory;
+        }
+        set
+        {
+            this.isMandatory = value;
+        }
+    }
+
+    public string SeqNo
+    {
+        get
+        {
+            return seqNo;
+        }
+        set
+        {
+            this.seqNo = value;
+        }
+    }
+
+    public string SeqInstanceNumber
+    {
+        get
+        {
+            return seqInstanceNumber;
+        }
+        set
+        {
+            this.seqInstanceNumber = value;
+        }
+    }
+
+    public Sequence()
+    {
+
+    }
+
+    public SwiftTag this[string _tagname]
+    {
+        get
+        {
+            SwiftTag tag = tags.Find(item => item.TagName == _tagname);
+
+            return tag;
+        }
+    }
+
+    #region PropertiesUsedInWCF
+    /// <summary>
+    /// Gets or Sets Parent Sequence Name
+    /// </summary>
+    public string swiftParentSeqName { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Child Sequence Name
+    /// </summary>
+    public string swiftSeqName { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Parent Sequence Position
+    /// </summary>
+    public int swiftParentSeqPosition { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Sequence Position
+    /// </summary>
+    public int swiftSeqPosition { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Sequence position assigned by windows service
+    /// </summary>
+    public int swiftActualSeqPosition { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Sequence Instance Number
+    /// </summary>
+    public int swiftSeqInstance { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Is Sequence Mandatory
+    /// </summary>
+    public bool swiftIsSeqMandatory { get; set; }
+
+    /// <summary>
+    /// Gets or Sets Tag Code
+    /// </summary>
+    public string swiftTagCode { get; set; }
+
+    /// <summary>
+    /// Gets or Sets count
+    /// </summary>
+    public int swiftRecordCount { get; set; }
+
+    #endregion
+}
