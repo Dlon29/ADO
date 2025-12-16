@@ -1,27 +1,18 @@
-using System.Collections.Generic;
-using LAVA.SwiftInbound.Subscriber.Core.Models;
-
-namespace LAVA.SwiftInbound.Subscriber.Shared.Interface
+public class InboundSwiftMessageCollection : List<InboundSwiftMessage>
 {
-    public interface ISwiftInboundFactory
+    private readonly ILogger<InboundSwiftMessageCollection> _logger ;
+
+    #region inbound processing        
+
+    public InboundSwiftMessageCollection(ILogger<InboundSwiftMessageCollection> logger) 
     {
-        /// <summary>
-        /// Create a SwiftInboundMQ entity from raw payload.
-        /// </summary>
-        SwiftInboundMQ Create(string swiftInboundMQPayload);
-
-        /// <summary>
-        /// Read and parse SWIFT messages from MQ payload based on allowed message types.
-        /// </summary>
-        List<string> ReadSwiftMessages(
-            string mqPayload,
-            string correlationId,
-            string tagCompData,
-            string messageTypes);
-
-        /// <summary>
-        /// Map a parsed InboundSwiftMessage to SwiftInboundMQ entity.
-        /// </summary>
-        SwiftInboundMQ MapToSwiftInboundMQ(InboundSwiftMessage message);
+        _logger = logger;            
     }
-}
+
+    public InboundSwiftMessageCollection(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename) /*: this(default!)*/
+    {            
+        createSwiftMessages(_messages, _tagCompData, lstMessageFilename);
+    }
+
+    void createSwiftMessages(List<string> _messages, string _tagCompData, List<KeyValuePair<string, string>> lstMessageFilename)
+    {
