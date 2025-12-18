@@ -1,391 +1,63 @@
-using Newtonsoft.Json.Serialization;
-
- 
-
-var builder = WebApplication.CreateBuilder(args);
-
- 
-
-// Add services to the container.
-
- 
-
-builder.Services.AddControllers();
-
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-
-builder.Services.AddEndpointsApiExplorer();
-
-builder.Services.AddSwaggerGen();
-
- 
-
-//JSON Serializer
-
-builder.Services.AddControllers().AddNewtonsoftJson(options=>
-
-options.SerializerSettings.ReferenceLoopHandling=Newtonsoft.Json.ReferenceLoopHandling.Ignore).AddNewtonsoftJson(
-
-    options=>options.SerializerSettings.ContractResolver=new DefaultContractResolver());
-
- 
-
- 
-
- 
-
-var app = builder.Build();
-
- 
-
-//Enable CORS
-
-app.UseCors(c => c.AllowAnyHeader().AllowAnyOrigin().AllowAnyMethod());
-
- 
-
-// Configure the HTTP request pipeline.
-
-if (app.Environment.IsDevelopment())
-
+public async Task<string> GetSwiftTagComponentDataAsync(CancellationToken ct)
 {
-
-    app.UseSwagger();
-
-    app.UseSwaggerUI();
-
-}
-
- 
-
-app.UseAuthorization();
-
- 
-
-app.MapControllers();
-
- 
-
-app.Run();
-
-
-
-
-
-
-
-
-
-
-
-
-{
-
-  "ConnectionStrings": {
-
-    "todoAppDBCon": "<<Your SQL Server Connection String here>>"
-
-  },
-
-  "Logging": {
-
-    "LogLevel": {
-
-      "Default": "Information",
-
-      "Microsoft.AspNetCore": "Warning"
-
-    }
-
-  },
-
-  "AllowedHosts": "*"
-
-}
-
-
-
-
-
-
-
-
-
-
-using Microsoft.AspNetCore.Http;
-
-using Microsoft.AspNetCore.Mvc;
-
-using System.Data;
-
-using System.Data.SqlClient;
-
-using System.Security.AccessControl;
-
- 
-
-namespace WebApplication1.Controllers
-
-{
-
-    [Route("api/[controller]")]
-
-    [ApiController]
-
-    public class TodoAppController : ControllerBase
-
+    _logger.LogInformation("Fetching Swift Tag Component Data from LAVA db.");
+    try
     {
-
-        private IConfiguration _configuration ;
-
-        public TodoAppController(IConfiguration configuration)
-
+        using var conn = new SqlConnection(_connString);
+        using (var cmd = new SqlCommand("dbo.p_GetSwiftData", conn))
         {
+            cmd.CommandType = System.Data.CommandType.StoredProcedure;
+            
+            await conn.OpenAsync(ct);
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            
+            // Load results into a DataTable to mirror the legacy DataSet behavior
+            var dt = new DataTable("SwiftTagComponent");
+            dt.Load(reader);
 
-            _configuration = configuration;
-
- 
-
+            // Using your existing conversion logic
+            return Common.Common.ConvertObjectToXMLString(dt);
         }
-
- 
-
-        [HttpGet]
-
-        [Route("GetNotes")]
-
-        public JsonResult GetNotes()
-
-        {
-
-            string query = "select * from dbo.Notes";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using(SqlConnection myCon=new SqlConnection(sqlDatasource))
-
-            {
-
-                myCon.Open();
-
-                using(SqlCommand myCommand = new SqlCommand(query,myCon))
-
-                {
-
-                    myReader=myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
- 
-
-            return new JsonResult(table);
-
-        }
-
- 
-
-        [HttpPost]
-
-        [Route("AddNotes")]
-
-        public JsonResult AddNotes([FromForm] string newNotes)
-
-        {
-
-            string query = "insert into dbo.Notes values(@newNotes)";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using (SqlConnection myCon = new SqlConnection(sqlDatasource))
-
-            {
-
-                myCon.Open();
-
-                using (SqlCommand myCommand = new SqlCommand(query, myCon))
-
-                {
-
-                    myCommand.Parameters.AddWithValue("@newNotes", newNotes);
-
-                    myReader = myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
- 
-
-            return new JsonResult("Added Successfully");
-
-        }
-
- 
-
-        [HttpDelete]
-
-        [Route("DeleteNotes")]
-
-        public JsonResult DeleteNotes(int id)
-
-        {
-
-            string query = "delete from dbo.Notes where id=@id";
-
-            DataTable table = new DataTable();
-
-            string sqlDatasource = _configuration.GetConnectionString("todoAppDBCon");
-
-            SqlDataReader myReader;
-
-            using (SqlConnection myCon = new SqlConnection(sqlDatasource))
-
-            {
-
-                myCon.Open();
-
-                using (SqlCommand myCommand = new SqlCommand(query, myCon))
-
-                {
-
-                    myCommand.Parameters.AddWithValue("@id", id);
-
-                    myReader = myCommand.ExecuteReader();
-
-                    table.Load(myReader);
-
-                    myReader.Close();
-
-                    myCon.Close();
-
-                }
-
-            }
-
- 
-
-            return new JsonResult("Deleted Successfully");
-
-        }
-
- 
-
     }
-
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error fetching Swift Tag Component Data.");
+        throw;
+    }
 }
 
 
+public async Task ConsumeMessagesAsync(CancellationToken ct)
+{
+    try
+    {
+        // Fetch the generic data once at startup
+        _logger.LogInformation("Initializing Swift Inbound Consumer - Loading Tag Component Data.");
+        string contextTagCompData = await _swiftInboundRepository.GetSwiftTagComponentDataAsync(ct);
 
-
-
-
-
-
-
-import { NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-
-import { AppComponent } from './app.component';
-import {HttpClientModule} from '@angular/common/http';
-
-@NgModule({
-  declarations: [
-    AppComponent
-  ],
-  imports: [
-    BrowserModule,
-    HttpClientModule
-  ],
-  providers: [],
-  bootstrap: [AppComponent]
-})
-export class AppModule { }
-
-
-
-
-
-
-
-Changes in app.component.ts:
-
- import { Component } from '@angular/core';
-
-import {HttpClient} from '@angular/common/http';
-
-@Component({
-  selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css']
-})
-export class AppComponent {
-  title = 'todoapp';
-  readonly APIUrl="http://localhost:5038/api/todoapp/";
-
-  constructor(private http:HttpClient){
-  }
-  notes:any=[];
-
-  refreshNotes(){
-    this.http.get(this.APIUrl+'GetNotes').subscribe(data=>{
-      this.notes=data;
-    })
-  }
-
-  ngOnInit(){
-    this.refreshNotes();
-  }
-
-  addNotes(){
-    var newNotes=(<HTMLInputElement>document.getElementById("newNotes")).value;
-    var formData=new FormData();
-    formData.append("newNotes",newNotes);
-    this.http.post(this.APIUrl+'AddNotes',formData).subscribe(data=>{
-      alert(data);
-      this.refreshNotes();
-    })
-  }
-
-
-   deleteNotes(id:any){
-    
-    this.http.delete(this.APIUrl+'DeleteNotes?id='+id).subscribe(data=>{
-      alert(data);
-      this.refreshNotes();
-    })
-  }
+        foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+        {
+            try
+            {
+                _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
+                
+                // ReadSwiftMessages signature: (payload, tagData)
+                var swiftInboundMQList = _swiftInboundFactory.ReadSwiftMessages(swiftInboundPayload, contextTagCompData);
+                
+                if (swiftInboundMQList != null && swiftInboundMQList.Count > 0)
+                {
+                    // Assuming you want to process the first message in the list
+                    await _swiftInboundRepository.AddAsync<SwiftInboundMQ>(swiftInboundMQList[0], ct);
+                }
+            }
+            catch (Exception payloadEx)
+            {
+                _logger.LogError(payloadEx, "Error while processing message payload.");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Critical error in ConsumeMessagesAsync.");
+    }
 }
-
-Ø Changes in app.component.html:
-
- <h2>Todo App</h2>
-
-<input id="newNotes">
-<button (click)="addNotes()">Add Notes</button>
-
-<h3 *ngFor="let note of notes">
-  <b>* {{note.description}}</b>
-  <button (click)="deleteNotes(note.id)">Delete Notes</button>
-</h3>
