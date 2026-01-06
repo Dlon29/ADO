@@ -1,118 +1,39 @@
-using Microsoft.AspNetCore.Mvc;
-using WebApplicationADO.Data;
-using WebApplicationADO.Models;
+=> This is an example of Swift Msg that will be on the SFTP path in a file:
 
-namespace WebApplicationADO.Controllers
-{
-    public class LeadsController : Controller
-    {
-        public IActionResult Index()
-        {
-            List<LeadsEntity> leads = new List<LeadsEntity>();
-
-            LeadRepository leadRepository = new LeadRepository();
-
-            leads = leadRepository.GetAllLeads();
-
-            return View(leads);
-        }
-
-
-        public IActionResult EditLead(int Id)
-        {
-            LeadsEntity leads = new LeadsEntity();
-
-            LeadRepository leadRepository = new LeadRepository();
-
-            leads = leadRepository.GetLeadById(Id);
-
-            return View(leads);
-        }
-
-        public IActionResult EditLeadDetails(int Id, LeadsEntity leadDetails) 
-        {
-            try
-            {
-                if (ModelState.IsValid)
-                {
-                    if (leadDetails.NextFollowUpDate < leadDetails.LeadDate)
-                    {
-                        ViewBag.Message = "Follow Up date cannot be less tha Lead date";
-                        return View("AddLead");
-                    }
-
-                    LeadRepository _DbLead = new LeadRepository();
-                    if (_DbLead.EditLeadDetails(Id,leadDetails))
-                    {
-                        return RedirectToAction("Index");
-                    }
-                }
-
-                return View();
-            }
-            catch
-            {
-                return View();
-            }
-        }
-
-
-        public ActionResult AddLead()
-        {
-            return View();
-        }
-
-        public ActionResult AddNewLead(LeadsEntity leadDetails) 
-        {
-            try
-            {
-                if (ModelState.IsValid)
-                {
-                    if(leadDetails.NextFollowUpDate < leadDetails.LeadDate)
-                    {
-                        ViewBag.Message = "Follow Up date cannot be less tha Lead date";
-                        return View("AddLead");
-                    }
-
-                    LeadRepository _DbLead = new LeadRepository();
-                    if (_DbLead.AddLead(leadDetails))
-                    {
-                        return RedirectToAction("Index");
-                    }
-                }
-
-                return View();
-            }
-            catch
-            {
-                return View();
-            }
-        }
-
-        public ActionResult DeleteLead(int Id)
-        {
-            LeadsEntity leads = new LeadsEntity();
-
-            LeadRepository leadRepository = new LeadRepository();
-
-            leads = leadRepository.GetLeadById(Id);
-
-            return View(leads);
-        }
-
-        public IActionResult DeleteLeadDetails(int Id, LeadsEntity leadDetails)
-        {
-
-                    LeadRepository _DbLead = new LeadRepository();
-                    if (_DbLead.DeleteLeadDetails(Id, leadDetails))
-                    {
-                        return RedirectToAction("Index");
-                    }
-                
-
-                return View();
-            
-
-        }
-    }
-}
+{1:F01STUSUS33AXXX7222368166}{2:O5480828180731NDEADKKKDXXX15653985151807310228N}{4:
+:16R:GENL
+:20C::SEME//20180730TM722225
+:23G:INST
+:16R:LINK
+:13A::LINK//542
+:20C::RELA//GO4026779000
+:16S:LINK
+:16R:STAT
+:25D::MTCH//NMAT
+:16R:REAS
+:24B::NMAT//CMIS
+:70D::REAS//CP HAS INCORRECT INX
+:16S:REAS
+:16S:STAT
+:16S:GENL
+:16R:SETTRAN
+:35B:ISIN DK0060252690
+Pandora A/S                        
+:36B::SETT//UNIT/59400,
+:97A::SAFE//020001010265578
+:22F::SETR//TRAD
+:22H::REDE//DELI
+:22H::PAYM//FREE
+:98A::SETT//20180817
+:98A::TRAD//20180730
+:16R:SETPRTY
+:95P::REAG//NDEADKKK
+:16S:SETPRTY
+:16R:SETPRTY
+:95P::BUYR//MLILGB3LESF
+:16S:SETPRTY
+:16R:SETPRTY
+:95P::PSET//VPDKDKKK
+:16S:SETPRTY
+:16S:SETTRAN
+-}{5:{CHK:85E8A5E817A3}}
