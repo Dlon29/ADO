@@ -1,3 +1,5 @@
+I have this project in .NET 4.8 that reads SFTP files containing Swift messages , applies some parsing logic and sends the result to an SP to persist in DB, I'll send the project in parts as there's a prompt line limit, let me know the limit and also I'll mention the end of project in the last prompt so that you can connect and analyze all the prompts together, I want you to tell me what each class and it's method does exactly in detail
+
 => This is an example of Swift Msg that will be on the SFTP path in a file:
 
 {1:F01STUSUS33AXXX7222368166}{2:O5480828180731NDEADKKKDXXX15653985151807310228N}{4:
