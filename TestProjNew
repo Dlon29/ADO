@@ -218,4 +218,5 @@ public class SwiftInboundFactory : ISwiftInboundFactory
     }
 }
 
-=> I've kept the Common.cs, InboundSwiftMessage.cs and their subsequent classes as it is , no change (correct me if I'm wrong)
+=> Now, since we're subscribing messages from MQ, we'll get the message in the swiftInboundPayload (it can contain multiple messages , we're separating them with '$' similarly as in the .NET 4.8 project) 
+I've kept the Common.cs, InboundSwiftMessage.cs, ApplicationHeaderBlock.cs, BasicHeaderBlock.cs, Sequence.cs, SwiftBlock.cs, SwiftTag.cs, TextBlock.cs, UserHeaderBlock.cs classes as it is , no change (correct me if I'm wrong)
