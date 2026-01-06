@@ -1,0 +1,221 @@
+=> SwiftInboundConsumer.cs :
+
+public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                             ISubscriber swiftInboundMQSubscriber,
+                             ISwiftInboundFactory swiftInboundMQFactory,
+                             IRepository swiftInboundMQRepository) : ISwiftInboundConsumer
+{
+    private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+    private readonly IRepository _swiftInboundRepository = swiftInboundMQRepository;
+    private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;        
+
+    public async Task ConsumeMessagesAsync(CancellationToken ct)
+    {
+        try
+        {                
+            _logger.LogInformation("Initializing Swift Inbound Consumer - Loading Tag Component Data.");
+            string contextTagCompData = await _swiftInboundRepository.GetSwiftTagComponentDataAsync(ct);
+
+            foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+            {
+                try
+                {
+                    _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
+                    
+                    var swiftInboundMQList = _swiftInboundFactory.ReadSwiftMessages(contextTagCompData, swiftInboundPayload);
+
+                    if (swiftInboundMQList != null && swiftInboundMQList.Count > 0)
+                    {                            
+                        await _swiftInboundRepository.AddAsync<SwiftInboundMQ>(swiftInboundMQList[0], ct);
+                    }
+                }
+                catch (Exception payloadEx)
+                {
+                    _logger.LogError(payloadEx, "Error while processing message payload.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Critical error in ConsumeMessagesAsync.");
+        }
+    }
+}
+
+=> SwiftInboundRepository.cs :
+
+public class SwiftInboundRepository(IConfiguration cfg, ILogger<SwiftInboundRepository> logger) : IRepository
+{
+    private readonly ILogger<SwiftInboundRepository> _logger = logger;
+    private readonly string _connString = cfg.GetConnectionString("LAVA") ?? string.Empty;        
+
+    public async Task<string> GetSwiftTagComponentDataAsync(CancellationToken ct)
+    {
+        _logger.LogInformation("Fetching Swift Tag Component Data from LAVA db.");
+        try
+        {
+            using var conn = new SqlConnection(_connString);
+            using (var cmd = new SqlCommand("dbo.p_GetSwiftTagComponentData", conn))
+            {
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+
+                await conn.OpenAsync(ct);
+                using var reader = await cmd.ExecuteReaderAsync(ct);
+                
+                var dt = new DataTable("SwiftTagComponent");
+                dt.Load(reader);
+                
+                return LAVA.SwiftInbound.Subscriber.Core.Common.ConvertObjectToXMLString(dt);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching Swift Tag Component Data.");
+            throw;
+        }
+    }
+
+    public async Task AddAsync<T>(T swiftInboundMQ, CancellationToken ct) where T : SwiftInboundMQ
+    {
+        _logger.LogInformation("Add MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}", swiftInboundMQ.CorrelationID);
+        try
+        {
+            using var conn = new SqlConnection(_connString);
+            using (var cmd = new SqlCommand("dbo.p_ProcessInboundSwiftMessage_Test", conn))
+            {
+                cmd.CommandType = System.Data.CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@pMsgType", swiftInboundMQ.MessageType);
+                cmd.Parameters.AddWithValue("@xmlInboundSwiftMessageData", swiftInboundMQ.InboundSwiftMessageData);
+                cmd.Parameters.AddWithValue("@pUserId", swiftInboundMQ.UserID);
+                cmd.Parameters.AddWithValue("@pXMLSwiftMessageData", swiftInboundMQ.SwiftMessageData);
+                cmd.Parameters.AddWithValue("@IsSuccess", swiftInboundMQ.IsSuccess);
+                cmd.Parameters.AddWithValue("@pProcessedFileName", swiftInboundMQ.ProcessedFileName);
+                await conn.OpenAsync(ct);
+                await cmd.ExecuteNonQueryAsync(ct);
+            };
+            await conn.CloseAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error while adding MQ swift inbound message to LAVA db. CorrelationID: {CorrelationID}. Exception: {ErrorMsg}",
+                            swiftInboundMQ.CorrelationID, ex.Message);
+            throw;
+        }
+    }
+}
+
+=> SwiftInboundFactory.cs :
+
+public class SwiftInboundFactory : ISwiftInboundFactory
+{
+    private readonly ILogger<SwiftInboundFactory> _logger;        
+    private readonly string _tagCompData;
+    
+    public SwiftInboundFactory(ILogger<SwiftInboundFactory> logger, string tagCompData)
+    {
+        _logger = logger;
+        _tagCompData = tagCompData;
+    }
+   
+    public List<SwiftInboundMQ> ReadSwiftMessages(string tagCompData, string swiftInboundPayload)
+    {
+        List<SwiftInboundMQ> processedMessages = new List<SwiftInboundMQ>();
+        List<KeyValuePair<string, string>> lstMessageFilename = new List<KeyValuePair<string, string>>();
+        List<string> lstRawMessages = new List<string>();
+
+        try
+        {                
+            string[] fileContent = swiftInboundPayload.Split("$".ToCharArray());
+
+            if (fileContent != null && fileContent.Length > 0)
+            {
+                foreach (string message in fileContent)
+                {
+                    /*if (string.IsNullOrWhiteSpace(message)) continue;*/
+
+                    // 2. Mock a FileName/Unique ID since it's an MQ message now
+                    string mockFileName = Guid.NewGuid().ToString("N") + ".txt";
+
+                    // 3. Process the raw message into the old InboundSwiftMessage structure (for parsing logic)
+                    // USES THE PRIVATE FIELD _tagCompData INSTEAD OF THE METHOD PARAMETER
+                    InboundSwiftMessage inboundMessage = ProcessRawMessage(message, _tagCompData, mockFileName);
+
+                    if (inboundMessage.IsValidMessage)
+                    {
+                        // 4. Map the parsed message to the new DTO (SwiftInboundMQ)
+                        SwiftInboundMQ mqMessage = UpdateInboundMessagesStatus(inboundMessage);
+                        processedMessages.Add(mqMessage);
+
+                        //_logger.LogInformation(dbName + " - MT" + inboundMessage.MessageType, "Parsed inbound swift message. Mock File - {0}", mockFileName);
+                    }
+                    else
+                    {
+                       // _logger.LogInformation(dbName, "Discarded message due to invalid format.");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            //_logger.LogError(dbName, "Exception in ReadSwiftMessages while processing MQ payload.", ex);
+            // Optionally rethrow or return empty list based on error handling policy
+        }
+
+        return processedMessages;
+    }
+
+    // Helper method to keep your core parsing logic isolated (No change to this helper)
+    private InboundSwiftMessage ProcessRawMessage(string _message, string _tagCompData, string filename)
+    {
+        // This is where your old InboundSwiftMessage logic lives
+        return new InboundSwiftMessage(_message, _tagCompData, filename);
+    }
+
+    // Helper method to map the old parsed object to the new DTO (No change to this method)
+    private SwiftInboundMQ UpdateInboundMessagesStatus(InboundSwiftMessage message)
+    {
+        // This mapping logic is based on the logic found in your old UpdateInboundMessagesStatus
+
+        // 1. Map Swift Tags (TblTagComp)
+        DataTable dtSwiftTag = LAVA.SwiftInbound.Subscriber.Core.Common.CreateDataTable(message.Text.SwiftTag);
+        dtSwiftTag.TableName = "TblTagComp";
+        string xmlSwiftData = LAVA.SwiftInbound.Subscriber.Core.Common.GetXMLData(dtSwiftTag);
+        xmlSwiftData = xmlSwiftData.Replace("'", "&apos;"); // Escape single quotes
+
+        // 2. Map Inbound Message Data (Header/Summary XML)
+        StringBuilder sbSwiftMesage = new StringBuilder();
+        StringBuilder sbAttributeList = new StringBuilder();
+        // ... (Build sbSwiftMesage and sbAttributeList as per your existing logic) ...
+        // Example logic from your old code:
+        sbSwiftMesage.Append(
+            message.Text["20"].TagValue + ";" + // SwiftMessageId
+            string.Empty + ";" + // RelatedSwiftMsgId
+            message.MessageType + ";" + // SwiftMsgType
+            message.MessageText + ";" + // MessageText
+            "Inbound" + ";" + // MessageDirection
+            45 + ";" + // MessageStatusId
+            (message.Text["{108:"] != null ? message.Text["{108:"].TagValue : string.Empty) + ";" + // InboundMUR
+            message.Text["20"].TagValue + ";" + // InboundReference
+            message.ApplicationHeaderText.RecipientAddress + "|" // RecipientAddress
+        );
+
+        sbAttributeList.Append("SwiftMessageId|RelatedSwiftMsgId|SwiftMsgType|MessageText|MessageDirection|MessageStatusId|InboundMUR|InboundReference|RecipientAddress");
+        string swiftMessageXml = LAVA.SwiftInbound.Subscriber.Core.Common.ConvertStringToXML(sbSwiftMesage.ToString(), sbAttributeList.ToString(), ';').ToString();
+        swiftMessageXml = swiftMessageXml.Replace("'", "&apos;"); // Escape single quotes
+
+        // 3. Create and populate the DTO
+        return new SwiftInboundMQ
+        {
+            MessageType = message.MessageType,
+            InboundSwiftMessageData = swiftMessageXml,
+            UserID = "dcolaco", // Hardcoded user ID from your original code
+            SwiftMessageData = xmlSwiftData,
+            IsSuccess = true, // Default to true upon successful parsing
+            ProcessedFileName = message.FileName, // Mocked GUID
+            CorrelationID = message.FileName // Use filename as Correlation ID for traceability
+        };
+    }
+}
+
+=> I've kept the Common.cs, InboundSwiftMessage.cs and their subsequent classes as it is , no change (correct me if I'm wrong)
