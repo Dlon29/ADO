@@ -1,3 +1,5 @@
+I've migrated the project in .NET 9 and also now instead of reading SFTP files, we'll read IBM MQs.
+
 => SwiftInboundConsumer.cs :
 
 public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
