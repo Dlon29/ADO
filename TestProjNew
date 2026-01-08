@@ -209,3 +209,16 @@ public class SwiftInboundFactory : ISwiftInboundFactory
 
 => Now, since we're subscribing messages from MQ, we'll get the message in the swiftInboundPayload (it can contain multiple messages , we're separating them with '$' similarly as in the .NET 4.8 project) 
 I've kept the Common.cs, InboundSwiftMessage.cs, ApplicationHeaderBlock.cs, BasicHeaderBlock.cs, Sequence.cs, SwiftBlock.cs, SwiftTag.cs, TextBlock.cs, UserHeaderBlock.cs classes as it is , no change (correct me if I'm wrong)
+
+
+Here is the issue, I've created two class library projects (Core & Shared) this Interface is in the Shared project which is inherited by SwiftInboundFactory class in the Core project, the methods ProcessRawMessage & UpdateInboundMessagesStatus contain 
+reference to class InboundSwiftMessage which is in the Core project, I'm stuck since the Core project is already referring the Shared project and the Shared project cannot refer Core and it will create a 'Cycle' error and also I can't move the InboundSwiftMessage class 
+in the shared project since it contains logger and other logic, which I've already shared with you. Now, when I run this the interface cannot find references to InboundSwiftMessage class. What is the best solution for this Architectural issue.
+
+
+ public interface ISwiftInboundFactory
+ {              
+     List<SwiftInboundMQ> ReadSwiftMessages(string tagCompData, string swiftInboundPayload);
+     InboundSwiftMessage ProcessRawMessage(string _message, string tagCompData, string filename);
+     SwiftInboundMQ UpdateInboundMessagesStatus(InboundSwiftMessage message);
+ }
