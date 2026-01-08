@@ -1,0 +1,37 @@
+System.AggregateException: 'Some services are not able to be constructed (Error while validating the service descriptor 'ServiceType: LAVA.SwiftInbound.Subscriber.Shared.Interface.ISwiftInboundFactory Lifetime: Transient ImplementationType: LAVA.SwiftInbound.Subscriber.Core.UnitOfWork.SwiftInboundFactory': Unable to resolve service for type 'System.String' while attempting to activate 'LAVA.SwiftInbound.Subscriber.Core.UnitOfWork.SwiftInboundFactory'.) (Error while validating the service descriptor 'ServiceType: LAVA.SwiftInbound.Subscriber.Shared.Interface.ISwiftInboundConsumer Lifetime: Transient ImplementationType: LAVA.SwiftInbound.Subscriber.Core.SwiftInboundConsumer': Unable to resolve service for type 'System.String' while attempting to activate 'LAVA.SwiftInbound.Subscriber.Core.UnitOfWork.SwiftInboundFactory'.) (Error while validating the service descriptor 'ServiceType: Microsoft.Extensions.Hosting.IHostedService Lifetime: Singleton ImplementationType: LAVA.SwiftInbound.Subscriber.Service.SubscriberWorker': Unable to resolve service for type 'System.String' while attempting to activate 'LAVA.SwiftInbound.Subscriber.Core.UnitOfWork.SwiftInboundFactory'.)'
+
+
+using LAVA.SwiftInbound.Subscriber.Service;
+using LAVA.SwiftInbound.Subscriber.Core;
+using LAVA.SwiftInbound.Subscriber.Core.Repositories;
+using LAVA.SwiftInbound.Subscriber.Core.UnitOfWork;
+using LAVA.SwiftInbound.Subscriber.Shared.Interface;
+using LAVA.SwiftInbound.Subscriber.Shared.Models;
+using SMTBUSA.Messaging.IBMMQ;
+using SMTBUSA.Messaging.IBMMQ.Shared.Interface;
+using SMTBUSA.Messaging.IBMMQ.Shared.Models;
+
+
+var host = Host.CreateDefaultBuilder(args)
+                .ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
+                .UseWindowsService()
+                .ConfigureServices((ctx, services) =>
+                {
+                    services.Configure<IBMMQConnectionSettings>(ctx.Configuration.GetSection("IBMMQConnectionSettings"));
+                    services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
+                    services.AddTransient<ISubscriber, IBMMQSubscriber>();
+                    services.AddTransient<IRepository, SwiftInboundRepository>();
+                    services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>();
+                    services.AddTransient<ISwiftInboundConsumer, SwiftInboundConsumer>();
+                    services.AddHostedService<SubscriberWorker>();
+                }).ConfigureLogging(logging =>
+                {
+                    logging.ClearProviders();
+                    logging.AddConsole();
+                    logging.SetMinimumLevel(LogLevel.Trace);
+                    logging.AddLog4Net("log4net.config");
+                })
+                .Build();
+
+await host.RunAsync();
+
