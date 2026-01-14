@@ -1,63 +1,28 @@
-public async Task<string> GetSwiftTagComponentDataAsync(CancellationToken ct)
+namespace LAVA.SwiftInbound.Subscriber.Shared.Models
 {
-    _logger.LogInformation("Fetching Swift Tag Component Data from LAVA db.");
-    try
+    public class AppSettings
     {
-        using var conn = new SqlConnection(_connString);
-        using (var cmd = new SqlCommand("dbo.p_GetSwiftData", conn))
-        {
-            cmd.CommandType = System.Data.CommandType.StoredProcedure;
-            
-            await conn.OpenAsync(ct);
-            using var reader = await cmd.ExecuteReaderAsync(ct);
-            
-            // Load results into a DataTable to mirror the legacy DataSet behavior
-            var dt = new DataTable("SwiftTagComponent");
-            dt.Load(reader);
-
-            // Using your existing conversion logic
-            return Common.Common.ConvertObjectToXMLString(dt);
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error fetching Swift Tag Component Data.");
-        throw;
+        public int RetryInterval { get; set; }
     }
 }
 
+ "AppSettings": {
+   "RetryInterval": 15 //In seconds 
+ }  
 
-public async Task ConsumeMessagesAsync(CancellationToken ct)
+Program.cs:
+ services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
+
+SubscriberWorker:
+public class SubscriberWorker(ILogger<SubscriberWorker> logger,
+                        IOptions<AppSettings> appSettings,
+                        ISwiftInboundConsumer swiftInboundMQConsumer) : BackgroundService
 {
-    try
-    {
-        // Fetch the generic data once at startup
-        _logger.LogInformation("Initializing Swift Inbound Consumer - Loading Tag Component Data.");
-        string contextTagCompData = await _swiftInboundRepository.GetSwiftTagComponentDataAsync(ct);
+    private readonly ILogger<SubscriberWorker> _logger = logger;
+    private readonly AppSettings _appSettings = appSettings.Value;
+    private readonly ISwiftInboundConsumer _swiftInboundMQConsumer = swiftInboundMQConsumer;
 
-        foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
-        {
-            try
-            {
-                _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
-                
-                // ReadSwiftMessages signature: (payload, tagData)
-                var swiftInboundMQList = _swiftInboundFactory.ReadSwiftMessages(swiftInboundPayload, contextTagCompData);
-                
-                if (swiftInboundMQList != null && swiftInboundMQList.Count > 0)
-                {
-                    // Assuming you want to process the first message in the list
-                    await _swiftInboundRepository.AddAsync<SwiftInboundMQ>(swiftInboundMQList[0], ct);
-                }
-            }
-            catch (Exception payloadEx)
-            {
-                _logger.LogError(payloadEx, "Error while processing message payload.");
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Critical error in ConsumeMessagesAsync.");
-    }
-}
+
+ Task.Delay(TimeSpan.FromSeconds(_appSettings.RetryInterval), ct).GetAwaiter().GetResult();
+
+
