@@ -1,14 +1,92 @@
- public async Task PublishMessagesAsync(CancellationToken ct) 
- {
-     try 
-     {
-         List<string> fileNames = await _swiftInboundRepository.GetSwiftFileNamesAsync(ct);
-     }
-     catch (Exception ex)
-     {
-         _logger.LogError(ex, "Critical error in PublishMessagesAsync.");
-     }
- }
+public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
+                             ISubscriber swiftInboundMQSubscriber,
+                             IPublisher swiftInboundMQPublisher,
+                             ISwiftInboundFactory swiftInboundMQFactory,
+                             IRepository swiftInboundMQRepository) : ISwiftInboundConsumer
+{
+    private readonly ISubscriber _swiftInboundMQSubscriber = swiftInboundMQSubscriber;
+    private readonly IPublisher _swiftInboundMQPublisher = swiftInboundMQPublisher;
+    private readonly IRepository _swiftInboundRepository = swiftInboundMQRepository;
+    private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;
+    string ackNackResp = string.Empty;
+
+    public async Task ConsumeMessagesAsync(CancellationToken ct)
+    {
+        try
+        {                
+            _logger.LogInformation("Initializing Swift Inbound Consumer - Loading Tag Component Data.");
+            string contextTagCompData = await _swiftInboundRepository.GetSwiftTagComponentDataAsync(ct);
+
+            foreach (var swiftInboundPayload in _swiftInboundMQSubscriber.ReadMessages(ct))
+            {
+                try
+                {
+                    _logger.LogInformation("Consumed swift inbound MQ message. Payload: {SwiftInboundPayload}", swiftInboundPayload);
+                    
+                    var swiftInboundMQList = _swiftInboundFactory.ReadSwiftMessages(contextTagCompData, swiftInboundPayload);
+
+                    if (swiftInboundMQList != null && swiftInboundMQList.Count > 0)
+                    {  
+                        foreach(var msg in swiftInboundMQList)
+                        {
+                            await _swiftInboundRepository.AddAsync(msg, ct);
+                            ackNackResp = "ACK";
+                        }                            
+                    }
+                }
+                catch (Exception payloadEx)
+                {
+                    _logger.LogError(payloadEx, "Error while processing message payload.");
+                    ackNackResp = "NACK";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Critical error in ConsumeMessagesAsync.");
+        }
+    }
+
+    public async Task PublishMessagesAsync(CancellationToken ct) 
+    {
+        var responseBldr = new StringBuilder();
+        const string ACK = "ACK", NACK = "NACK", PIPE_DELIMITER = "|";
+        Dictionary<string, SwiftInboundMQUpdate> positionRespDict = [];
+        try 
+        {
+            List<string> fileNames = await _swiftInboundRepository.GetSwiftFileNamesAsync(ct);
+            string swiftMsgId = fileNames.SwiftMsgId;
+
+            if (!string.IsNullOrWhiteSpace(fileNames))
+            {
+                responseBldr.AppendLine(fileNames + PIPE_DELIMITER + ackNackResp);
+
+                positionRespDict.Add(swiftMsgId, new SwiftInboundMQUpdate
+                {
+                    SwiftMsgId = swiftMsgId,                        
+                    AckNackStatus = ackNackResp                         
+                });
+            }
+
+            if (responseBldr.Length > 0)
+            {
+                XElement statusXML = new("Records", positionRespDict.Select(kvp => {
+                    return new XElement("Record",
+                                        new XElement("SwiftMsgId", kvp.Key),                                            
+                                        new XElement("ACKStatus", kvp.Value.AckNackStatus));
+                }));
+
+                await _swiftInboundMQPublisher.Publish(responseBldr.ToString(), null, ct);
+                await _swiftInboundRepository.UpdateSwiftACKStatusAsync(statusXML.ToString(), ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Critical error in PublishMessagesAsync.");
+        }
+    }
+}
 
 
  public async Task<List<string>> GetSwiftFileNamesAsync(CancellationToken ct)
