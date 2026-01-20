@@ -1,0 +1,179 @@
+ public async Task PublishMessagesAsync(CancellationToken ct) 
+ {
+     try 
+     {
+         List<string> fileNames = await _swiftInboundRepository.GetSwiftFileNamesAsync(ct);
+     }
+     catch (Exception ex)
+     {
+         _logger.LogError(ex, "Critical error in PublishMessagesAsync.");
+     }
+ }
+
+
+ public async Task<List<string>> GetSwiftFileNamesAsync(CancellationToken ct)
+ {
+     var results = new List<string>();
+
+     using var conn = new SqlConnection(_connString);
+     using var cmd = new SqlCommand("dbo.p_GetSwiftFileNames", conn)
+     {
+         CommandType = System.Data.CommandType.StoredProcedure
+     };
+
+     await conn.OpenAsync(ct);
+
+     using var reader = await cmd.ExecuteReaderAsync(ct);
+     while (await reader.ReadAsync(ct))
+     {
+         results.Add(reader.GetString(0));
+     }
+
+     return results;
+ }        
+
+ public async Task UpdateSwiftACKStatusAsync(string positionUpdateXml, CancellationToken ct)
+ {
+     _logger.LogInformation("Starting bulk update for positions with Ack/Nack status in DB for successfully published MQ messages. PositionUpdateXML: {positionUpdateXml}", positionUpdateXml);
+
+     try
+     {
+         using (var conn = new SqlConnection(_connString))
+         {
+             using (var cmd = new SqlCommand("dbo.p_UpdateSwiftACKStatus", conn))
+             {
+                 cmd.CommandType = System.Data.CommandType.StoredProcedure;
+
+                 // Log all parameters being sent to the Stored Procedure
+                 _logger.LogDebug("Setting parameters for p_UpdateSwiftACKStatus SP: @PositionUpdateXML={positionUpdateXml}", positionUpdateXml);
+                 cmd.Parameters.AddWithValue("@SwiftAckXML", positionUpdateXml);
+                 await conn.OpenAsync(ct);
+                 await cmd.ExecuteNonQueryAsync(ct);
+             }
+             ;
+             await conn.CloseAsync();
+         }
+         _logger.LogInformation("Bulk Update for positions with Ack/Nack status processing completed successfully");
+     }
+     catch (Exception ex)
+     {
+         _logger.LogError(ex, "Error occurred while updating position request. PositionUpdateXML: {positionUpdateXml}. Exception: {ErrorMsg}", positionUpdateXml, ex.Message);
+         throw;
+     }
+
+ }
+
+The following are the SPs:
+
+CREATE PROCEDURE [dbo].[p_GetSwiftFileNames]
+AS 
+BEGIN
+	SET NOCOUNT ON
+
+	SELECT 
+		SwiftMsgId,
+		FileName
+	FROM DBO.SwiftMsgInstanceTemp
+	WHERE MessageStatusId = 45
+	AND ISNULL(FileName, '') <> ''
+END
+
+
+
+CREATE PROCEDURE [dbo].[p_UpdateSwiftACKStatus]
+(
+    @SwiftAckXML XML = NULL 
+)
+AS
+BEGIN
+    SET NOCOUNT ON
+
+	DECLARE @MQ_STATUS_READY_TO_PROCESS INT,
+			@MQ_STATUS_ERROR INT,
+			@hdoc INT,
+			@BANCSAsOfDate DateTime,
+			@DefaultPriceDate DateTime = '12/31/9999' 
+
+	SELECT @MQ_STATUS_READY_TO_PROCESS = lava.dbo.f_GetDomainLookupValue('CDSETLPROCESSSTATUS', 'CDSETLSTATUSREADYTOPROCESS')  --100    
+	SELECT @MQ_STATUS_ERROR = lava.dbo.f_GetDomainLookupValue('CDSETLPROCESSSTATUS', 'CDSETLSTATUSERROR')  --400
+
+	IF ((@MQ_STATUS_READY_TO_PROCESS IS NULL) OR (@MQ_STATUS_ERROR IS NULL))
+	BEGIN
+		RAISERROR ('Error in p_UpdateCDSMQPositionStatus: Required variable for CDSETLPROCESSSTATUS is NULL or missing.', 16, 1)
+		RETURN
+	END
+
+	SELECT @BANCSAsOfDate = MAX(GPAsOfDate)
+	FROM opsUploadInfo
+	 
+	DECLARE @PositionUpdate TABLE
+    (
+        SwiftMsgId INT,		
+		ACKStatus VARCHAR(4)		
+    )
+
+	BEGIN TRY
+
+		IF @SwiftAckXML IS NOT NULL
+        BEGIN
+            EXEC sp_xml_preparedocument @hdoc OUTPUT, @SwiftAckXML 
+
+            INSERT INTO @PositionUpdate 
+			(
+				SwiftMsgId, ACKStatus
+			)
+            SELECT
+                SwiftMsgId,				
+				ACKStatus				
+            FROM
+                OPENXML(@hdoc, '/Records/Record', 1)
+                WITH (
+						RecordIdentifier INT 'SwiftMsgId',						
+						ACKStatus VARCHAR(4) 'ACKStatus'
+					 )
+
+            EXEC sp_xml_removedocument @hdoc 
+        END
+
+		BEGIN TRAN
+
+		-- Updating existing records if any
+		UPDATE 
+			SMIT
+		SET 
+			MessageStatusId = CASE WHEN ( TMP_POS.ACKStatus = 'ACK' )  THEN 1 
+								   WHEN ( TMP_POS.ACKStatus = 'NACK' ) THEN 2
+								   ELSE 
+									   SMIT.MessageStatusId
+							  END,			
+			ModifiedDate = GETDATE()
+		FROM 
+			dbo.SwiftMsgInstanceTemp AS SMIT 
+			INNER JOIN @PositionUpdate AS TMP_POS
+		ON 
+			SMIT.SwiftMsgId = TMP_POS.SwiftMsgId		
+		
+        COMMIT TRAN
+	END TRY
+
+	BEGIN CATCH
+	    IF ( @@TRANCOUNT > 0 )
+		BEGIN
+			ROLLBACK TRANSACTION
+		END
+
+        DECLARE @ErrMsg NVARCHAR(4000), @ErrSeverity INT;
+        SELECT @ErrMsg = ERROR_MESSAGE(), @ErrSeverity = ERROR_SEVERITY();
+        RAISERROR(@ErrMsg, @ErrSeverity, 1)
+    END CATCH
+
+	SET NOCOUNT OFF
+
+END
+
+This Publish method will bulk publish messages in the MQ:
+
+await _positionMQPublisher.Publish(responseBldr.ToString(), null, ct);
+
+After this we will call this method to update the statuses
+await _positionRepository.UpdateSwiftACKStatusAsync(statusXML.ToString(), ct);
