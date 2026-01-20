@@ -8,8 +8,7 @@ public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
     private readonly IPublisher _swiftInboundMQPublisher = swiftInboundMQPublisher;
     private readonly IRepository _swiftInboundRepository = swiftInboundMQRepository;
     private readonly ISwiftInboundFactory _swiftInboundFactory = swiftInboundMQFactory;
-    private readonly ILogger<SwiftInboundConsumer> _logger = logger;
-    string ackNackResp = string.Empty;
+    private readonly ILogger<SwiftInboundConsumer> _logger = logger;    
 
     public async Task ConsumeMessagesAsync(CancellationToken ct)
     {
@@ -30,15 +29,13 @@ public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
                     {  
                         foreach(var msg in swiftInboundMQList)
                         {
-                            await _swiftInboundRepository.AddAsync(msg, ct);
-                            ackNackResp = "ACK";
+                            await _swiftInboundRepository.AddAsync(msg, ct);                            
                         }                            
                     }
                 }
                 catch (Exception payloadEx)
                 {
-                    _logger.LogError(payloadEx, "Error while processing message payload.");
-                    ackNackResp = "NACK";
+                    _logger.LogError(payloadEx, "Error while processing message payload.");                    
                 }
             }
         }
@@ -49,43 +46,43 @@ public class SwiftInboundConsumer(ILogger<SwiftInboundConsumer> logger,
     }
 
     public async Task PublishMessagesAsync(CancellationToken ct) 
+{
+    var responseBldr = new StringBuilder();
+    string ackNackResp = "ACK", PIPE_DELIMITER = "|";
+    Dictionary<string, SwiftInboundMQUpdate> positionRespDict = [];
+    try 
     {
-        var responseBldr = new StringBuilder();
-        const string ACK = "ACK", NACK = "NACK", PIPE_DELIMITER = "|";
-        Dictionary<string, SwiftInboundMQUpdate> positionRespDict = [];
-        try 
+        List<string> fileNames = await _swiftInboundRepository.GetSwiftFileNamesAsync(ct);
+        string swiftMsgId = fileNames.SwiftMsgId;
+
+        if (!string.IsNullOrWhiteSpace(fileNames))
         {
-            List<string> fileNames = await _swiftInboundRepository.GetSwiftFileNamesAsync(ct);
-            string swiftMsgId = fileNames.SwiftMsgId;
+            responseBldr.AppendLine(fileNames + PIPE_DELIMITER + ackNackResp);
 
-            if (!string.IsNullOrWhiteSpace(fileNames))
+            positionRespDict.Add(swiftMsgId, new SwiftInboundMQUpdate
             {
-                responseBldr.AppendLine(fileNames + PIPE_DELIMITER + ackNackResp);
-
-                positionRespDict.Add(swiftMsgId, new SwiftInboundMQUpdate
-                {
-                    SwiftMsgId = swiftMsgId,                        
-                    AckNackStatus = ackNackResp                         
-                });
-            }
-
-            if (responseBldr.Length > 0)
-            {
-                XElement statusXML = new("Records", positionRespDict.Select(kvp => {
-                    return new XElement("Record",
-                                        new XElement("SwiftMsgId", kvp.Key),                                            
-                                        new XElement("ACKStatus", kvp.Value.AckNackStatus));
-                }));
-
-                await _swiftInboundMQPublisher.Publish(responseBldr.ToString(), null, ct);
-                await _swiftInboundRepository.UpdateSwiftACKStatusAsync(statusXML.ToString(), ct);
-            }
+                SwiftMsgId = swiftMsgId,                        
+                AckNackStatus = ackNackResp                         
+            });
         }
-        catch (Exception ex)
+
+        if (responseBldr.Length > 0)
         {
-            _logger.LogError(ex, "Critical error in PublishMessagesAsync.");
+            XElement statusXML = new("Records", positionRespDict.Select(kvp => {
+                return new XElement("Record",
+                                    new XElement("SwiftMsgId", kvp.Key),                                            
+                                    new XElement("ACKStatus", kvp.Value.AckNackStatus));
+            }));
+
+            await _swiftInboundMQPublisher.Publish(responseBldr.ToString(), null, ct);
+            await _swiftInboundRepository.UpdateSwiftACKStatusAsync(statusXML.ToString(), ct);
         }
     }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Critical error in PublishMessagesAsync.");
+    }
+}
 }
 
 
