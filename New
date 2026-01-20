@@ -254,55 +254,37 @@ After this we will call this method to update the statuses
 await _positionRepository.UpdateSwiftACKStatusAsync(statusXML.ToString(), ct);
 
 
-I'm getting this error when I run the service in the Program.cs class:
-System.AggregateException: 'Some services are not able to be constructed (Error while validating the service descriptor 'ServiceType: SMTBUSA.Messaging.IBMMQ.Shared.Interface.ISubscriber Lifetime: Transient ImplementationType: SMTBUSA.Messaging.IBMMQ.IBMMQSubscriber': Unable to resolve service for type 'System.String' while attempting to activate 'SMTBUSA.Messaging.IBMMQ.IBMMQSubscriber'.)'
-InvalidOperationException: Error while validating the service descriptor 'ServiceType: SMTBUSA.Messaging.IBMMQ.Shared.Interface.ISubscriber Lifetime: Transient ImplementationType: SMTBUSA.Messaging.IBMMQ.IBMMQSubscriber': Unable to resolve service for type 'System.String' while attempting to activate 'SMTBUSA.Messaging.IBMMQ.IBMMQSubscriber'.
-InvalidOperationException: Unable to resolve service for type 'System.String' while attempting to activate 'SMTBUSA.Messaging.IBMMQ.IBMMQSubscriber'.
+protected override async Task ExecuteAsync(CancellationToken ct)
+{
 
-using LAVA.SwiftInbound.Subscriber.Service;
-using LAVA.SwiftInbound.Subscriber.Core;
-using LAVA.SwiftInbound.Subscriber.Core.Repositories;
-using LAVA.SwiftInbound.Subscriber.Core.UnitOfWork;
-using LAVA.SwiftInbound.Subscriber.Shared.Interface;
-using LAVA.SwiftInbound.Subscriber.Shared.Models;
-using Microsoft.Extensions.Options;
-using SMTBUSA.Messaging.IBMMQ;
-using SMTBUSA.Messaging.IBMMQ.Shared.Interface;
-using SMTBUSA.Messaging.IBMMQ.Shared.Models;
+    _logger.LogInformation("LAVA Swift Inbound Subscriber Service started...");
 
-
-var host = Host.CreateDefaultBuilder(args)
-                .ConfigureAppConfiguration(cfg => cfg.AddJsonFile("appsettings.json"))
-                .UseWindowsService()
-                .ConfigureServices((ctx, services) =>
-                {                                        
-                    services.AddTransient<ISubscriber, IBMMQSubscriber>();
-                    services.Configure<IBMMQConnectionSettings>("Subscriber", ctx.Configuration.GetSection("IBMMQConnectionSettings:Subscriber"));
-                    services.Configure<IBMMQConnectionSettings>("Subscriber.Ack", ctx.Configuration.GetSection("IBMMQConnectionSettings:Subscriber.Ack"));
-                    services.Configure<AppSettings>(ctx.Configuration.GetSection("AppSettings"));
-                    services.AddTransient<ISubscriber>(sp =>
-                             new IBMMQSubscriber(
-                                    sp.GetRequiredService<IOptionsMonitor<IBMMQConnectionSettings>>(),
-                                    "Subscriber",
-                                    sp.GetRequiredService<ILogger<IBMMQSubscriber>>()
-                                ));
-                    services.AddTransient<IPublisher>(sp =>
-                             new IBMMQPublisher(
-                                    sp.GetRequiredService<IOptionsMonitor<IBMMQConnectionSettings>>(),
-                                    "Subscriber.Ack",
-                                    sp.GetRequiredService<ILogger<IBMMQPublisher>>()
-                                ));
-                    services.AddTransient<IRepository, SwiftInboundRepository>();
-                    services.AddTransient<ISwiftInboundFactory, SwiftInboundFactory>();
-                    services.AddTransient<ISwiftInboundConsumer, SwiftInboundConsumer>();
-                    services.AddHostedService<SubscriberWorker>();
-                }).ConfigureLogging(logging =>
-                {
-                    logging.ClearProviders();
-                    logging.AddConsole();
-                    logging.SetMinimumLevel(LogLevel.Trace);
-                    logging.AddLog4Net("log4net.config");
-                })
-                .Build();
-
-await host.RunAsync();
+    try
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await _swiftInboundMQConsumer.ConsumeMessagesAsync(ct);
+                await _swiftInboundMQConsumer.PublishMessagesAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error while consuming swift MQ messages.");
+            }
+            finally
+            {
+                Task.Delay(TimeSpan.FromSeconds(_appSettings.RetryInterval), ct).GetAwaiter().GetResult();
+            }
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        _logger.LogInformation("LAVA Swift Inbound Subscriber Service no longer listening to messages");
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Unexpected error in the worker loop");
+        throw;
+    }
+}
