@@ -71,3 +71,23 @@ var statusXml = new XElement(
 );
 
 await _swiftInboundRepository.UpdateSwiftACKStatusAsync(statusXml.ToString(), ct);
+
+
+while (!ct.IsCancellationRequested)
+{
+    try
+    {
+        var consumeTask = _swiftInboundMQConsumer.ConsumeMessagesAsync(ct);
+        var publishTask = _swiftInboundMQConsumer.PublishMessagesAsync(ct);
+
+        await Task.WhenAll(consumeTask, publishTask);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error while consuming swift MQ messages.");
+    }
+    finally
+    {
+        await Task.Delay(TimeSpan.FromSeconds(_appSettings.RetryInterval), ct);
+    }
+}
