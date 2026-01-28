@@ -1,265 +1,363 @@
-I have this project in .NET 4.8 that reads SFTP files containing Swift messages , applies some parsing logic and sends the result to an SP to persist in DB, I'll send the project in parts as there's a prompt line limit, let me know the limit and also I'll mention the end of project in the last prompt so that you can connect and analyze all the prompts together, I want you to tell me what each class and it's method does exactly in detail
+<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+	<DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+		<LastPrinted>2013-05-24T20:44:28Z</LastPrinted>
+		<Created>2013-03-26T17:40:10Z</Created>
+		<LastSaved>2013-05-24T20:45:21Z</LastSaved>
+		<Company>Sumitomo Trust &amp; Banking Co (USA)</Company>
+		<Version>14.00</Version>
+	</DocumentProperties>
+	<OfficeDocumentSettings xmlns="urn:schemas-microsoft-com:office:office">
+		<AllowPNG/>
+	</OfficeDocumentSettings>
+	<ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
+		<WindowHeight>10005</WindowHeight>
+		<WindowWidth>10005</WindowWidth>
+		<WindowTopX>120</WindowTopX>
+		<WindowTopY>135</WindowTopY>
+		<ProtectStructure>False</ProtectStructure>
+		<ProtectWindows>False</ProtectWindows>
+	</ExcelWorkbook>
+	<Styles>
+		<Style ss:ID="Default" ss:Name="Normal">
+			<Alignment ss:Vertical="Bottom"/>
+			<Borders/>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+			<Interior/>
+			<NumberFormat/>
+			<Protection/>
+		</Style>
+		<Style ss:ID="s62">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom"/>
+		</Style>
+		<Style ss:ID="s64">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#B8CCE4" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s66">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s67">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s68">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+			<NumberFormat ss:Format="Short Date"/>
+		</Style>
+		<Style ss:ID="s73">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+			<NumberFormat ss:Format="#,##0"/>
+		</Style>
+		<Style ss:ID="s74">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+		</Style>
+		<Style ss:ID="s75">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+			<NumberFormat ss:Format="#,##0.0000000"/>
+		</Style>
+		<Style ss:ID="s78">
+			<Alignment ss:Horizontal="Left" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+		</Style>
 
-=> This is an example of Swift Msg that will be on the SFTP path in a file:
+		<Style ss:ID="s750">
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+			<NumberFormat ss:Format="#,##0"/>
+		</Style>
+		<Style ss:ID="s751">
+			<Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"
+			 ss:Bold="1"/>
+			<Interior ss:Color="#B8CCE4" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s752">
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"
+			 ss:Bold="1"/>
+			<NumberFormat ss:Format="#,##0"/>
+			<Interior ss:Color="#B8CCE4" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s753">
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"
+				 ss:Color="#000000"/>
+			</Borders>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"
+			 ss:Bold="1"/>
+			<NumberFormat ss:Format="#,##0.00"/>
+			<Interior ss:Color="#B8CCE4" ss:Pattern="Solid"/>
+		</Style>
+		<Style ss:ID="s754">
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+			<NumberFormat ss:Format="#,##0.00"/>
+		</Style>
+		<Style ss:ID="s755">
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#000000"/>
+			<NumberFormat ss:Format="#,##0.000"/>
+		</Style>
+		<Style ss:ID="s756">
+			<Interior ss:Color="#4F81BD" ss:Pattern="Solid"/>
+			<Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+			<Font ss:FontName="Calibri" x:Family="Swiss" ss:Size="11" ss:Color="#FFFFFF"
+		   ss:Bold="1"/>
+			<NumberFormat ss:Format="#,##0.00"/>
+			<Borders>
+				<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+				<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+			</Borders>
+		</Style>
+	</Styles>
+	<Worksheet ss:Name="EuroclearSettOPSViewReport">
+		<Names>
+			<NamedRange ss:Name="Print_Titles" ss:RefersTo="=EuroclearSettlementOPSViewReport!R2"/>
+		</Names>
+		<Table ss:ExpandedColumnCount="24" ss:ExpandedRowCount="2000000" x:FullColumns="1"
+		   x:FullRows="1" ss:DefaultRowHeight="15">
+			<Column ss:AutoFitWidth="0" ss:Width="50"/>
+			<Column ss:AutoFitWidth="0" ss:Width="80"/>
+			<Column ss:AutoFitWidth="0" ss:Width="50.25"/>
+			<Column ss:AutoFitWidth="0" ss:Width="42"/>
+			<Column ss:AutoFitWidth="0" ss:Width="45"/>
+			<Column ss:AutoFitWidth="0" ss:Width="82"/>
+			<Column ss:AutoFitWidth="0" ss:Width="40"/>
+			<Column ss:AutoFitWidth="0" ss:Width="80"/>
+			<Column ss:AutoFitWidth="0" ss:Width="60"/>
+			<Column ss:AutoFitWidth="0" ss:Width="63"/>
+			<Column ss:AutoFitWidth="0" ss:Width="70"/>
+			<Column ss:AutoFitWidth="0" ss:Width="70"/>
+			<Column ss:AutoFitWidth="0" ss:Width="70"/>
+			<Column ss:AutoFitWidth="0" ss:Width="40"/>
+			<Column ss:AutoFitWidth="0" ss:Width="70"/>
+			<Column ss:AutoFitWidth="0" ss:Width="40"/>
+			<Column ss:AutoFitWidth="0" ss:Width="50"/>
+			<Column ss:AutoFitWidth="0" ss:Width="60"/>			
+			<Column ss:AutoFitWidth="0" ss:Width="60"/>
+			<Column ss:AutoFitWidth="0" ss:Width="50"/>
+			<Column ss:AutoFitWidth="0" ss:Width="41.25"/>
+			<Column ss:AutoFitWidth="0" ss:Width="50"/>
+			<Column ss:AutoFitWidth="0" ss:Width="50"/>
+			<Column ss:Width="170"/>
+			<Row ss:AutoFitHeight="0" ss:Height="40" ss:StyleID="s64">
+				<Cell ss:MergeAcross="23" ss:StyleID="s67">
+					<Data ss:Type="String">Euroclear Settlement OPS View</Data>
+					<NamedCell
+				ss:Name="Print_Titles"/>
+				</Cell>
+			</Row>
+			<Row ss:AutoFitHeight="0" ss:Height="30.75" ss:StyleID="s64">
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Tran Nbr</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Mnemonic Code</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Brk Nbr</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Catg</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Free/vP</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Acct Grp</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Acct Code</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Lending Process</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Security Code</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Face Amt</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Price</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">G1 Net $ Exchange</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Currency</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">DEL/REC</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Switch Amount</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Transmit Y/N</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">EUROCLEAR Acct</Data>
+				</Cell>				
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Switch SWIFT Status</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Cancel Switch SWIFT Status</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">MT530 SWIFT Status</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Manual Settle Y/N</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">G1 Status</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Settlement Status</Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">Notes</Data>
+				</Cell>
+			</Row>
+			<!--INSERTROWS-->
 
-{1:F01STUSUS33AXXX7222368166}{2:O5480828180731NDEADKKKDXXX15653985151807310228N}{4:
-:16R:GENL
-:20C::SEME//20180730TM722225
-:23G:INST
-:16R:LINK
-:13A::LINK//542
-:20C::RELA//GO4026779000
-:16S:LINK
-:16R:STAT
-:25D::MTCH//NMAT
-:16R:REAS
-:24B::NMAT//CMIS
-:70D::REAS//CP HAS INCORRECT INX
-:16S:REAS
-:16S:STAT
-:16S:GENL
-:16R:SETTRAN
-:35B:ISIN DK0060252690
-Pandora A/S                        
-:36B::SETT//UNIT/59400,
-:97A::SAFE//020001010265578
-:22F::SETR//TRAD
-:22H::REDE//DELI
-:22H::PAYM//FREE
-:98A::SETT//20180817
-:98A::TRAD//20180730
-:16R:SETPRTY
-:95P::REAG//NDEADKKK
-:16S:SETPRTY
-:16R:SETPRTY
-:95P::BUYR//MLILGB3LESF
-:16S:SETPRTY
-:16R:SETPRTY
-:95P::PSET//VPDKDKKK
-:16S:SETPRTY
-:16S:SETTRAN
--}{5:{CHK:85E8A5E817A3}}
+			<Row ss:AutoFitHeight="0" ss:Height="30.75" ss:StyleID="s64">
+				<Cell ss:StyleID="s67" ss:MergeAcross="9">
+					<Data ss:Type="String"></Data>
+				</Cell>
+				<Cell ss:StyleID="s67">
+					<Data ss:Type="String">G1 NET TOTAL:</Data>
+				</Cell>
+				<Cell ss:StyleID="s756"><Data ss:Type="Number"><!--INSERTTOTAL--></Data></Cell>
+				<Cell ss:StyleID="s67" ss:MergeAcross="11">
+					<Data ss:Type="String"></Data>
+				</Cell>
+			</Row>
 
+		</Table>
+		<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+			<PageSetup>
+				<Layout x:Orientation="Landscape"/>
+				<Footer x:Data="&amp;L&amp;D&amp;RPage &amp;P of &amp;N"/>
+			</PageSetup>
+			<Unsynced/>
+			<Print>
+				<ValidPrinterInfo/>
+				<Scale>45</Scale>
+				<HorizontalResolution>1000</HorizontalResolution>
+				<VerticalResolution>1000</VerticalResolution>
+			</Print>
+			<Selected/>
+			<FreezePanes/>
+			<FrozenNoSplit/>
+			<SplitHorizontal>2</SplitHorizontal>
+			<TopRowBottomPane>2</TopRowBottomPane>
+			<ActivePane>2</ActivePane>
+			<Panes>
+				<Pane>
+					<Number>3</Number>
+				</Pane>
+				<Pane>
+					<Number>2</Number>
+					<ActiveRow>1</ActiveRow>
+				</Pane>
+			</Panes>
+			<ProtectObjects>False</ProtectObjects>
+			<ProtectScenarios>False</ProtectScenarios>
+		</WorksheetOptions>
 
-
-
-SwiftTagOptionId	Tag	TagCode	TagValue	Option	CompPosition	RegexFormat	Prefix	Postfix	HasDelimiter
-1	13C	13	NULL	C	1	^/(CLSTIME|RNCTIME|SNDTIME)/[0-9]{4}([+]|[-])[0-9]{4}$	NULL	NULL	1
-2	20	20	NULL	-1	1	[A-z 0-9]{1,16}	NULL	NULL	1
-3	21	21	NULL	-1	1	[A-z 0-9]{1,16}	NULL	NULL	1
-4	23B	23	NULL	B	1	NULL	NULL	NULL	1
-5	23E	23	NULL	E	1	NULL	NULL	NULL	1
-6	26T	26	NULL	T	1	NULL	NULL	NULL	1
-7	32A	32	NULL	A	1	[0-9]{2}[01][0-2][0-3][0-9]{1}	NULL	NULL	1
-7	32A	32	NULL	A	2	[A-z]{3}	NULL	NULL	1
-7	32A	32	NULL	A	3	[0-9]{1,12}.[0-9]{0,2}	NULL	NULL	1
-8	33B	33	NULL	B	1	[A-z]{3}	NULL	NULL	1
-8	33B	33	NULL	B	2	[0-9]{1,12}.[0-9]{0,2}	NULL	NULL	1
-9	36	36	NULL	-1	1	NULL	NULL	NULL	1
-10	50A	50	NULL	A	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-10	50A	50	NULL	A	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-11	50F	50	NULL	F	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-11	50F	50	NULL	F	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-12	50K	50	NULL	K	1	NULL	NULL	NULL	1
-12	50K	50	NULL	K	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-13	51A	51	NULL	A	1	NULL	NULL	NULL	1
-14	52A    	52	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-14	52A    	52	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-15	52C	52	NULL	C	1	^/(CLSTIME|RNCTIME|SNDTIME)/[0-9]{4}([+]|[-])[0-9]{4}$	NULL	NULL	1
-16	52D    	52	NULL	D    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-16	52D    	52	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-17	53A    	53	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-17	53A    	53	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-18	53B    	53	NULL	B    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-18	53B    	53	NULL	B    	2	^.{1,35}$	NULL	NULL	1
-19	53D    	53	NULL	D    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-19	53D    	53	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-20	54A    	54	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-20	54A    	54	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-21	54B    	54	NULL	B    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-21	54B    	54	NULL	B    	2	^.{1,35}$	NULL	NULL	1
-22	54D    	54	NULL	D    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-22	54D    	54	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-23	55A	55	NULL	A	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-23	55A	55	NULL	A	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-24	55B	55	NULL	B	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-24	55B	55	NULL	B	2	^.{1,35}$	NULL	NULL	1
-25	55D	55	NULL	D	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-25	55D	55	NULL	D	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-26	56A    	56	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-26	56A    	56	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-27	56C	56	NULL	C	1	NULL	NULL	NULL	1
-28	56D    	56	NULL	D    	1	^/{0,1}([A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-28	56D    	56	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-29	57A    	57	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-29	57A    	57	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-30	57B    	57	NULL	B    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-30	57B    	57	NULL	B    	2	^.{1,35}$	NULL	NULL	1
-31	57C	57	NULL	C	1	NULL	NULL	NULL	1
-32	57D    	57	NULL	D    	1	^/{0,1}([A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-32	57D    	57	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-33	58A    	58	NULL	A    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-33	58A    	58	NULL	A    	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-34	58D    	58	NULL	D    	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-34	58D    	58	NULL	D    	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-35	59	59	NULL	-1	1	NULL	NULL	NULL	1
-35	59	59	NULL	-1	2	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-36	59A	59	NULL	A	1	^(/[A-z]{1})?(/[A-z 0-9]{1,34})?$	NULL	NULL	1
-36	59A	59	NULL	A	2	[A-Z]{4}[A-Z]{2}[0-9A-Z]{2}([0-9A-Z]{3})?	NULL	NULL	1
-37	70	70	NULL	-1	1	^.{1,35}(?:(?:\r\n|[\r\n]).{1,35}){0,3}$	NULL	NULL	1
-38	71A	71	NULL	A	1	[A-z]{3}	NULL	NULL	1
-39	71F	71	NULL	F	1	[A-z]{3}	NULL	NULL	1
-39	71F	71	NULL	F	2	[0-9]{1,12}.[0-9]{0,2}	NULL	NULL	1
-40	71G	71	NULL	G	1	[A-z]{3}	NULL	NULL	1
-40	71G	71	NULL	G	2	[0-9]{1,12}.[0-9]{0,2}	NULL	NULL	1
-41	72	72	NULL	-1	1	\/([A-Z0-9]{1,8})\/.{0,32}~((\/([A-Z0-9]{1,8})\/.{0,32})|(\/\/.{1,33}))	NULL	NULL	1
-42	77B	77	NULL	B	1	NULL	NULL	NULL	1
-43	25	25	NULL	-1	1	^.{1,35}$	NULL	NULL	1
-44	30	30	NULL	-1	1	[0-9]{2}[01][0-2][0-3][0-9]{1}	NULL	NULL	1
-45	32B	32	NULL	B	1	[A-z]{3}	NULL	NULL	1
-45	32B	32	NULL	B	2	NULL	NULL	NULL	1
-46	50	50	NULL	-1	1	NULL	NULL	NULL	1
-47	50C	50	NULL	C	1	NULL	NULL	NULL	1
-48	79	79	NULL	-1	1	NULL	NULL	NULL	1
-49	11S	11	NULL	S	1	NULL	NULL	NULL	1
-49	11S	11	NULL	S	2	[0-9]{2}[01][0-2][0-3][0-9]{1}	NULL	NULL	1
-49	11S	11	NULL	S	3	NULL	NULL	NULL	1
-50	XX	XX	NULL	-1	1	NULL	NULL	NULL	1
-51	13A	13	NULL	A	1		:	NULL	1
-51	13A	13	NULL	A	2		//	NULL	1
-52	13B	13	NULL	B	1		:	/	1
-52	13B	13	NULL	B	2		NULL	/	1
-52	13B	13	NULL	B	3		NULL	NULL	1
-53	16R	16	NULL	R	1		NULL	NULL	1
-54	16S	16	NULL	S	1		NULL	NULL	1
-55	17B	17	NULL	B	1		:	//	1
-55	17B	17	NULL	B	2		NULL	NULL	1
-56	19A	19	NULL	A	1		:	//	1
-56	19A	19	NULL	A	2		NULL	NULL	1
-56	19A	19	NULL	A	3		NULL	NULL	1
-56	19A	19	NULL	A	4		NULL	NULL	1
-57	20C	20	NULL	C	1		:	//	1
-57	20C	20	NULL	C	2		NULL	NULL	1
-58	22F	22	NULL	F	1		:	/	1
-58	22F	22	NULL	F	2			/	1
-58	22F	22	NULL	F	3				1
-59	22H	22	NULL	H	1		:	//	1
-59	22H	22	NULL	H	2				1
-60	23G	23	NULL	G	1				1
-60	23G	23	NULL	G	2				1
-61	25D	25	NULL	D	1		:	/	1
-61	25D	25	NULL	D	2			/	1
-61	25D	25	NULL	D	3				1
-62	28E	28	NULL	E	1			/	1
-62	28E	28	NULL	E	2				1
-63	35B	35	NULL	B	1				1
-63	35B	35	NULL	B	2				1
-64	36B	36	NULL	B	1		:	//	1
-64	36B	36	NULL	B	2			/	1
-64	36B	36	NULL	B	3				1
-65	70E	70	NULL	E	1		:	//	1
-65	70E	70	NULL	E	2				1
-66	92A	92	NULL	A	1		:	//	1
-66	92A	92	NULL	A	2				1
-66	92A	92	NULL	A	3				1
-67	92C	92	NULL	C	1		:	/	1
-67	92C	92	NULL	C	2			/	1
-67	92C	92	NULL	C	3				1
-68	94B	94	NULL	B	1		:	/	1
-68	94B	94	NULL	B	2			/	1
-68	94B	94	NULL	B	3				1
-68	94B	94	NULL	B	4				1
-69	95C	95	NULL	C	1		:	//	1
-69	95C	95	NULL	C	2				1
-70	95P	95	NULL	P	1		:	//	1
-70	95P	95	NULL	P	2				1
-71	95Q	95	NULL	Q	1		:	//	1
-71	95Q	95	NULL	Q	2				1
-72	95R	95	NULL	R	1		:	/	1
-72	95R	95	NULL	R	2			/	1
-72	95R	95	NULL	R	3				1
-73	97A	97	NULL	A	1		:	//	1
-73	97A	97	NULL	A	2				1
-74	97B	97	NULL	B	1		:	/	1
-74	97B	97	NULL	B	2			/	1
-74	97B	97	NULL	B	3			/	1
-74	97B	97	NULL	B	4				1
-75	97E	97	NULL	E	1		:	//	1
-75	97E	97	NULL	E	2				1
-76	98A	98	NULL	A	1		:	//	1
-76	98A	98	NULL	A	2				1
-77	98B	98	NULL	B	1		:	//	1
-77	98B	98	NULL	B	2			/	1
-77	98B	98	NULL	B	3				1
-78	98C	98	NULL	C	1		:	//	1
-78	98C	98	NULL	C	2				1
-78	98C	98	NULL	C	3				1
-79	98E	98	NULL	E	1		:	//	1
-79	98E	98	NULL	E	2				1
-79	98E	98	NULL	E	3				1
-79	98E	98	NULL	E	4				1
-79	98E	98	NULL	E	5				1
-80	99B	99	NULL	B	1		:	//	1
-80	99B	99	NULL	B	2				1
-81	24B	24	NULL	B	1		:	/	1
-81	24B	24	NULL	B	2			/	1
-81	24B	24	NULL	B	3				1
-82	70D	70	NULL	D	1		 :	//	1
-82	70D	70	NULL	D	2				1
-83	94C	94	NULL	C	1		:	//	1
-83	94C	94	NULL	C	2				1
-84	94F	94	NULL	F	1		:	//	1
-84	94F	94	NULL	F	2			/	1
-84	94F	94	NULL	F	3				1
-85	94H	94	NULL	H	1		:	//	1
-85	94H	94	NULL	H	2				1
-86	94L	94	NULL	L	1		:	//	1
-86	94L	94	NULL	L	2				1
-87	95L	95	NULL	L	1		:	//	1
-87	95L	95	NULL	L	2				1
-89	11A	11	NULL	A	1		:	//	1
-89	11A	11	NULL	A	2		NULL	NULL	1
-90	12A	12	NULL	A	1		:	/	1
-90	12A	12	NULL	A	2			/	1
-90	12A	12	NULL	A	3				1
-91	12B	12	NULL	B	1		:	/	1
-91	12B	12	NULL	B	2			/	1
-91	12B	12	NULL	B	3				1
-92	12C	12	NULL	C	1		:	//	1
-92	12C	12	NULL	C	2				1
-93	70C	70	NULL	C	1		:	//	1
-93	70C	70	NULL	C	2		NULL	NULL	1
-94	90A	90	NULL	A	1		:	//	1
-94	90A	90	NULL	A	2			/	1
-94	90A	90	NULL	A	3				1
-94	90A	90	NULL	A	4				1
-95	90B	90	NULL	B	1		:	//	1
-95	90B	90	NULL	B	2			/	1
-95	90B	90	NULL	B	3				1
-95	90B	90	NULL	B	4				1
-96	92B	92	NULL	B	1		:	//	1
-96	92B	92	NULL	B	2		NULL	/	1
-96	92B	92	NULL	B	3		NULL	/	1
-96	92B	92	NULL	B	4		NULL	NULL	1
-97	95S	95	NULL	S	1		:	/	1
-97	95S	95	NULL	S	2		NULL	/	1
-97	95S	95	NULL	S	3		NULL	/	1
-97	95S	95	NULL	S	4		NULL	/	1
-97	95S	95	NULL	S	5		NULL	NULL	1
-98	99A	99	NULL	A	1		:	//	1
-98	99A	99	NULL	A	2		NULL	NULL	1
-98	99A	99	NULL	A	3		NULL	NULL	1
-99	20U	20	NULL	U	1		:	//	1
-99	20U	20	NULL	U	2		NULL	NULL	1
-100	97D	97	NULL	D	1		:	/	1
-100	97D	97	NULL	D	2		NULL	/	1
-100	97D	97	NULL	D	3		NULL	NULL	1
-101	36D	36	NULL	D	1		:	//	1
-101	36D	36	NULL	D	2		NULL	/	1
-101	36D	36	NULL	D	3		NULL	NULL	1
-102	20N	20	NULL	N	1		:	//	1
-102	20N	20	NULL	N	2		NULL	NULL	1
-103	94T	94	NULL	T	1		:	//	1
-103	94T	94	NULL	T	2		NULL	NULL	1
-104	95D	95	NULL	D	1		:	//	1
-104	95D	95	NULL	D	2		NULL	NULL	1
+	</Worksheet>
+</Workbook>
