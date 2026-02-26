@@ -1,74 +1,16 @@
+/*-------------------------------Insert Table Schema into temp table #TMP_OPERATION_SHEET -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_OPERATION_SHEET') IS NULL 
+	BEGIN
+		SELECT * 
+		INTO 
+			#TMP_OPERATION_SHEET
+		FROM 
+			LAVA.dbo.f_CreateOperationSheetSchema()
+	END
 
+	/*-------------------------------Insert data into  #TMP_OPERATION_SHEET -----------------------------------------------------------------------------*/
+	EXEC p_GetOperationSheet @BatchRunDate = @AsOfDate, @Identifier = 2
 
-
-
-
-
-
-
-
-
-
-/**  
-**  Procedure :  dbo.[p_GetCashMovementDashboard]
-**                
-**  Author:  Sonal Puthran
-**  Date:    09/09/2020
-**
-**  Description :
-**      Display projected and settled payments for customers and counter parties in Cash Movement Dashboard
-**         
-**  History Log
-**  09/09/2020   Sonal Puthran		P2468.1 : Initialized
-**  07/19/2021   Sonal Puthran		Changes done to fix user issue - Null handled for citi account
-**  07/20/2021   Sonal Puthran		Changes done to net pair off for DTC, FICC
-**  07/27/2021   Sonal Puthran		Changes done to display failed records 
-**  09/09/2021   Narendra Aseri		P2468.1 (R3) : Used FedStatus instead of G1Status to calculate SettledNetExchange.
-**  09/09/2021	 Francis Gustilo	P2468.1 : In the FAILS section, the conditions for Payable To / Receivable From should be opposite between COUNTERPARTIES and ACCOUNTS. 
-**  09/13/2021	 Sonal Puthran		P2468.1 : In the Domestic Bony Triparty, conditions were updated to consider settled payments under Settled Recievable/Payable amounts.
-**  09/20/2021	 Francis Gustilo	P2468.1 : Making sure SumiLife Triparty Repos on Access Edge ( FinderNbr = 0000NY ) rolls under NY Branch. 
-**  09/22/2021	 Sonal Puthran		P2468.1 (R3) : Correcting logic to net payments for Counterparty (Section - CUSTOMER-COUNTERPARTY-PAIROFF) 
-**  10/04/2021	 Sonal Puthran		P2468.1 (R4) : In Fails section, Wire will be applicable when funds/payment is returned back to client.   
-**  10/04/2021	 Sonal Puthran		P2468.1 (R4) : SPO Charge Emails to be referred from DomainLookup. 
-**  10/07/2021	 Sonal Puthran		P2468.1 (R4) : Resolving ALM 562. Match CashMovement Extract with Cash Movement Dashboard. 
-**  10/07/2021	 Francis Gustilo	P2468.1 (R4) : ALM 523 / M761 : For Triparty Repos, performinig pair-offs / new + pulls independently 
-**	10/08/2021	 Narendra Aseri		P2468.1 (R5) : Replaced unqualified join with correct join (replaced , with CROSS JOIN). This is as part of SQL 2019 migration. 
-**	10/14/2021	 Sonal Puthran		P2468.1 (R5) : Fixed ALM 569. Disable Wire link when payment is receivable.
-**	10/14/2021	 Francis Gustilo	P2468.1 (R5) : Resolution to ALM 565. Previously failed loans should be displayed in cash movement dashboard. 
-**	10/21/2021	 Sonal Puthran		P2468.1 (R6) : Resolution to ALM 577. Corrected logic around PayableAmount for DTC Pair Off Section. 
-**  11/05/2021   Francis Gustilo	M777 : Resolution to issue where the approve/wire functions were disabled. 
-**  11/19/2021   Francis Gustilo	M778 : LAVA CM - Triparty Repo Section - To Be Approved counts NY Branch TRF even if Settled Payable To is $0 See attached thread for more details
-										   Open attached thread for more details on the maintenance log.
-**  11/19/2021   Francis Gustilo	M779 : For Triparty Repos, the rebate interest got netted in to the receivable. Open attached thread for more details on the maintenance log.
-**  2/02/2022    Roshan Patil		P18889 : Filter data for BNYM and Citibank Settlement location
-**  10/04/2021	 James Zhang		P10129 convert to SQL 2019 compatibility level version	
-**  05/20/2022	 Narendra Aseri		P2468.2 : Changes for Domestic Bony Triparty section.
-**  08/08/2022	 Sanju Wadhwani		P2468.2 : Changes for Domestic Bony Triparty section.
-**  11/21/2022	 Francis Gustilo	P2468.2 : Setting remarks to 'Fund Transfer' for Domestic Bony Triparty section.
-**  11/29/2022	 Francis Gustilo	Version 14.2.0 ( R2 ) : Domesitic Triparty S/L : For TPUID ( BrkNbr ) sub sections, Cash Wire Code should be retrieved from the Broker Cash Wire Code maintenance.
-**  11/29/2022	 Francis Gustilo	Version 14.2.0 ( R2 ) : Internal Transfers S/L : Enabled Wire / Approval buttons when there is cash movement for either Settled Receivable From 
-									or Settled Payable To
-**  02/17/2023	 Francis Gustilo	P2468.3 Addendum 8.1.1 : NET the Payments for domestic Triparty UID (BoNY Triparty section). 2)	The change requested is that each TP UID be a separate line item, 
-									regardless of the counterparty. Here is the BoNY Triparty section with netting done by TP UID. 
-**  07/31/2023   Francis Gustilo    LAVA M92 / INC0032915  - LAVA Cash Movement Dashboard Customer Repo section missing some customers. 
-**  10/17/2023   Francis Gustilo    Version 15.0.0 ( R5 )  :Resolution to ALM1409.
-**  06/07/2024	 Raghavan Jayaraman ALM 1590 resolution ( DTC Pair-off activity shows incorrect CUSIP #), SecCodes logic fix based on Category.
-**	07/26/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added changes related to Principal Short Name, so that the dashboard will be driven by PSN rather than Acctgrp name 
-**	08/06/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added temp table #TMP_SKIPNETPAIROFF to handle the PairOff skippingnet logic using AcctGrpId and ProductId
-**	08/06/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added ProductId along with PSN and passing ProductIs in AcctGrpId column when AcctGrpId is null or 0 in #TMP_CASH_MOVEMENT
-**  08/12/2024   Sonal Rastogi      PRJ0058590 Nippon : Replaced Account Grp Name with Principal SN.
-**  10/25/2024	 Amol Shinde		PRJ0058610 Gunma (R2): Resolution to ALM 1625. Updated logic for netting of turnaround transactions on Customer Repo Payments section.
-**  10/25/2024	 Amol Shinde		PRJ0058590 Nippon Repo (R2): Resolution to ALM 1658. Applied EffectiveBegin and EffectiveDateEnd conditions for AccountGroupProductPrincipalMapping.
-**  11/22/2024	 Roshan Patil		PRJ0058610 Gunma (R3): Resolution to ALM 1666. Applied ISNULL condition to avoid HaTurnaroundPO with null values when trade data is not available.
-**	11/26/2024	 Amol Shinde		PRJ0058610 Gunma (R3): Resolution to ALM 1630. Updated logic for netting of turnaround/pair off and New/Pull transactions on Customer Repo Payments section.
-**	12/04/2024	 Amol Shinde		PRJ0058610 Gunma (R3): Resolution to ALM 1674. Removed regular pair offs transactions while netting on Customer Repo Payments section.
-**	12/30/2024	 Amol Shinde		PRJ0058610 Gunma (R4): Resolution to ALM 1675. Added condition to enable wire only if payable to amount is > 0 while netting on Customer Repo Payments section.
-**      USAGE: 
-						
-			EXEC SC_p_GetCashMovementDashboard @AsOfDate=N'04/02/2025'
-			EXEC SC_p_GetCashMovementDashboard @AsOfDate=N'01/16/2026'
-
-**/
 
 CREATE PROCEDURE [dbo].[SC_p_GetCashMovementDashboard]
 (
