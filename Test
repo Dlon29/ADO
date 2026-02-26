@@ -1,729 +1,2361 @@
---------------------------------START TABLE SCRIPT FOR Security---------------------------------------------------------
 
-USE [REFERENCE]
-GO
 
-IF EXISTS
+
+
+
+
+
+
+
+
+
+/**  
+**  Procedure :  dbo.[p_GetCashMovementDashboard]
+**                
+**  Author:  Sonal Puthran
+**  Date:    09/09/2020
+**
+**  Description :
+**      Display projected and settled payments for customers and counter parties in Cash Movement Dashboard
+**         
+**  History Log
+**  09/09/2020   Sonal Puthran		P2468.1 : Initialized
+**  07/19/2021   Sonal Puthran		Changes done to fix user issue - Null handled for citi account
+**  07/20/2021   Sonal Puthran		Changes done to net pair off for DTC, FICC
+**  07/27/2021   Sonal Puthran		Changes done to display failed records 
+**  09/09/2021   Narendra Aseri		P2468.1 (R3) : Used FedStatus instead of G1Status to calculate SettledNetExchange.
+**  09/09/2021	 Francis Gustilo	P2468.1 : In the FAILS section, the conditions for Payable To / Receivable From should be opposite between COUNTERPARTIES and ACCOUNTS. 
+**  09/13/2021	 Sonal Puthran		P2468.1 : In the Domestic Bony Triparty, conditions were updated to consider settled payments under Settled Recievable/Payable amounts.
+**  09/20/2021	 Francis Gustilo	P2468.1 : Making sure SumiLife Triparty Repos on Access Edge ( FinderNbr = 0000NY ) rolls under NY Branch. 
+**  09/22/2021	 Sonal Puthran		P2468.1 (R3) : Correcting logic to net payments for Counterparty (Section - CUSTOMER-COUNTERPARTY-PAIROFF) 
+**  10/04/2021	 Sonal Puthran		P2468.1 (R4) : In Fails section, Wire will be applicable when funds/payment is returned back to client.   
+**  10/04/2021	 Sonal Puthran		P2468.1 (R4) : SPO Charge Emails to be referred from DomainLookup. 
+**  10/07/2021	 Sonal Puthran		P2468.1 (R4) : Resolving ALM 562. Match CashMovement Extract with Cash Movement Dashboard. 
+**  10/07/2021	 Francis Gustilo	P2468.1 (R4) : ALM 523 / M761 : For Triparty Repos, performinig pair-offs / new + pulls independently 
+**	10/08/2021	 Narendra Aseri		P2468.1 (R5) : Replaced unqualified join with correct join (replaced , with CROSS JOIN). This is as part of SQL 2019 migration. 
+**	10/14/2021	 Sonal Puthran		P2468.1 (R5) : Fixed ALM 569. Disable Wire link when payment is receivable.
+**	10/14/2021	 Francis Gustilo	P2468.1 (R5) : Resolution to ALM 565. Previously failed loans should be displayed in cash movement dashboard. 
+**	10/21/2021	 Sonal Puthran		P2468.1 (R6) : Resolution to ALM 577. Corrected logic around PayableAmount for DTC Pair Off Section. 
+**  11/05/2021   Francis Gustilo	M777 : Resolution to issue where the approve/wire functions were disabled. 
+**  11/19/2021   Francis Gustilo	M778 : LAVA CM - Triparty Repo Section - To Be Approved counts NY Branch TRF even if Settled Payable To is $0 See attached thread for more details
+										   Open attached thread for more details on the maintenance log.
+**  11/19/2021   Francis Gustilo	M779 : For Triparty Repos, the rebate interest got netted in to the receivable. Open attached thread for more details on the maintenance log.
+**  2/02/2022    Roshan Patil		P18889 : Filter data for BNYM and Citibank Settlement location
+**  10/04/2021	 James Zhang		P10129 convert to SQL 2019 compatibility level version	
+**  05/20/2022	 Narendra Aseri		P2468.2 : Changes for Domestic Bony Triparty section.
+**  08/08/2022	 Sanju Wadhwani		P2468.2 : Changes for Domestic Bony Triparty section.
+**  11/21/2022	 Francis Gustilo	P2468.2 : Setting remarks to 'Fund Transfer' for Domestic Bony Triparty section.
+**  11/29/2022	 Francis Gustilo	Version 14.2.0 ( R2 ) : Domesitic Triparty S/L : For TPUID ( BrkNbr ) sub sections, Cash Wire Code should be retrieved from the Broker Cash Wire Code maintenance.
+**  11/29/2022	 Francis Gustilo	Version 14.2.0 ( R2 ) : Internal Transfers S/L : Enabled Wire / Approval buttons when there is cash movement for either Settled Receivable From 
+									or Settled Payable To
+**  02/17/2023	 Francis Gustilo	P2468.3 Addendum 8.1.1 : NET the Payments for domestic Triparty UID (BoNY Triparty section). 2)	The change requested is that each TP UID be a separate line item, 
+									regardless of the counterparty. Here is the BoNY Triparty section with netting done by TP UID. 
+**  07/31/2023   Francis Gustilo    LAVA M92 / INC0032915  - LAVA Cash Movement Dashboard Customer Repo section missing some customers. 
+**  10/17/2023   Francis Gustilo    Version 15.0.0 ( R5 )  :Resolution to ALM1409.
+**  06/07/2024	 Raghavan Jayaraman ALM 1590 resolution ( DTC Pair-off activity shows incorrect CUSIP #), SecCodes logic fix based on Category.
+**	07/26/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added changes related to Principal Short Name, so that the dashboard will be driven by PSN rather than Acctgrp name 
+**	08/06/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added temp table #TMP_SKIPNETPAIROFF to handle the PairOff skippingnet logic using AcctGrpId and ProductId
+**	08/06/2024	 Deepti Chakrawarty	PRJ0058590 Nippon : Added ProductId along with PSN and passing ProductIs in AcctGrpId column when AcctGrpId is null or 0 in #TMP_CASH_MOVEMENT
+**  08/12/2024   Sonal Rastogi      PRJ0058590 Nippon : Replaced Account Grp Name with Principal SN.
+**  10/25/2024	 Amol Shinde		PRJ0058610 Gunma (R2): Resolution to ALM 1625. Updated logic for netting of turnaround transactions on Customer Repo Payments section.
+**  10/25/2024	 Amol Shinde		PRJ0058590 Nippon Repo (R2): Resolution to ALM 1658. Applied EffectiveBegin and EffectiveDateEnd conditions for AccountGroupProductPrincipalMapping.
+**  11/22/2024	 Roshan Patil		PRJ0058610 Gunma (R3): Resolution to ALM 1666. Applied ISNULL condition to avoid HaTurnaroundPO with null values when trade data is not available.
+**	11/26/2024	 Amol Shinde		PRJ0058610 Gunma (R3): Resolution to ALM 1630. Updated logic for netting of turnaround/pair off and New/Pull transactions on Customer Repo Payments section.
+**	12/04/2024	 Amol Shinde		PRJ0058610 Gunma (R3): Resolution to ALM 1674. Removed regular pair offs transactions while netting on Customer Repo Payments section.
+**	12/30/2024	 Amol Shinde		PRJ0058610 Gunma (R4): Resolution to ALM 1675. Added condition to enable wire only if payable to amount is > 0 while netting on Customer Repo Payments section.
+**      USAGE: 
+						
+			EXEC SC_p_GetCashMovementDashboard @AsOfDate=N'04/02/2025'
+			EXEC SC_p_GetCashMovementDashboard @AsOfDate=N'01/16/2026'
+
+**/
+
+CREATE PROCEDURE [dbo].[SC_p_GetCashMovementDashboard]
 (
-    SELECT *
-    FROM sys.objects
-    WHERE object_id = OBJECT_ID(N'dbo.Security')
-          AND type IN ( N'U' )
+	@AsOfDate	DATETIME
 )
-   AND NOT EXISTS
-(
-    SELECT *
-    FROM sys.objects
-    WHERE object_id = OBJECT_ID(N'dbo.Security_GCR')
-          AND type IN ( N'U' )
-)
+AS
 BEGIN
-	IF EXISTS
-    (
-        SELECT *
-        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-        WHERE CONSTRAINT_NAME = 'PK_Security'
-    )
-        ALTER TABLE dbo.Security DROP CONSTRAINT PK_Security;
-
-
-	/****** Object:  Indexes [IX_Security]    Script Date: 2/17/2026 8:24:18 AM ******/
-	DROP INDEX IF EXISTS [IX_Security_1] ON [dbo].[Security];
-	GO
 	
-	DROP INDEX IF EXISTS [IX_Security_2] ON [dbo].[Security];
-	GO
+	SET NOCOUNT ON
 	
-	DROP INDEX IF EXISTS [IX_Security_3] ON [dbo].[Security];
-	GO
 	
-	DROP INDEX IF EXISTS [IX_Security_4] ON [dbo].[Security];
-	GO
+	DECLARE @SystemDate DATETIME
+	DECLARE @ACCTGRPID INT
+	DECLARE @PAIROFF_CATEGORY AS VARCHAR(10)
+	DECLARE @RET_CATEGORY AS VARCHAR(10)
+	DECLARE @NEW_CATEGORY AS VARCHAR(10)
+	DECLARE @NEW_OR_RET   AS VARCHAR(20)
+
+	DECLARE @TRIPARTY_REPO_TRADETYPE AS VARCHAR(20)
+	DECLARE @TRIPARTY_SECLEND_TRADETYPE AS VARCHAR(50)
+	DECLARE @SECURITIES_LEND_TRADETYPE AS VARCHAR(50)
+	DECLARE @BILATERAL_REPO_TRADETYPE AS VARCHAR(20) 
+	DECLARE @FICC_TRADETYPE AS VARCHAR(20) 
+	--DECLARE @FED_DEPOIND AS VARCHAR(20) 
+	DECLARE @EURO_DEPOIND AS VARCHAR(20) 
+	DECLARE @DTC_DEPOIND AS VARCHAR(20) 
+	DECLARE @FICC_DEPOIND AS VARCHAR(20) 
+	DECLARE @DUE_TO_BONY AS VARCHAR(20) 
+	DECLARE @G1_STATUS_SETTLED AS VARCHAR(20)
+	DECLARE @IS_FICC_MATCHED_YES AS CHAR(1)
+	DECLARE @IS_FICC_MATCHED_NO AS CHAR(1)
+	DECLARE @IS_FICC_MATCHED_TRUE AS BIT
+	DECLARE @IS_FICC_MATCHED_FALSE AS BIT
+
+	DECLARE @CM_SECTION_DOMAINLOOKUP_ID AS INT
+	DECLARE @CUSTOMER_REPO_PAYMENT_SECTIONID AS INT
+	DECLARE @CUSTOMER_CP_PAIROFF_SECTIONID AS INT
+	DECLARE @INTERNAL_REPO_SECTIONID AS INT
+	DECLARE @EUROCLEAR_SETTLEMENT_SECTIONID AS INT
+	DECLARE @FICC_SECTIONID AS INT
+	DECLARE @DTC_SECTIONID AS INT
+	DECLARE @TRIPARTY_REPO_SECTIONID AS INT
+	DECLARE @DOMESTIC_TRIPARTY_SECLEND_SECTIONID AS INT
+	DECLARE @INTERNAL_TRANSFER_SEC_LEND_SECTIONID AS INT
+	DECLARE @FAILS_SECTIONID AS INT
+	DECLARE @RECONCILIATION_SECTIONID AS INT
+
+	DECLARE @NEW_RET_SUFFIX AS VARCHAR(20)
+	DECLARE @PAIR_OFF_SUFFIX AS VARCHAR(20)
+	DECLARE @NET_SUFFIX AS VARCHAR(20)
+	DECLARE @FICC_PREFIX AS VARCHAR(20)
+	DECLARE @INTERNAL_REPO_DUE_TO_LENDING_FED AS VARCHAR(50)
+	DECLARE @INTERNAL_REPO_DUE_TO_CUSTODY_FED AS VARCHAR(50)
+	DECLARE @INTERNAL_REPO_DUE_TO_LENDING_DTC AS VARCHAR(50)
+	DECLARE @INTERNAL_REPO_DUE_TO_CUSTODY_DTC AS VARCHAR(50)
+	DECLARE @INTERNAL_REPO_DUE_TO_LENDING_FICC AS VARCHAR(50)
+	DECLARE @INTERNAL_REPO_DUE_TO_CUSTODY_FICC AS VARCHAR(50)
+
+	DECLARE @CP_BONY_TRIPARTY AS VARCHAR(20)
+	DECLARE @CP_BONY_DUE_TO_LENDING AS VARCHAR(50)
+	DECLARE @CP_BONY_DUE_TO_CUSTODY AS VARCHAR(50)
+	DECLARE @TRIPARTY_ACESS_EDGE_WDH AS VARCHAR(20)
+	DECLARE @NO_ACTIVITY AS VARCHAR(20)
 	
-	DROP INDEX IF EXISTS [IX_Security_5] ON [dbo].[Security];
-	GO
+	DECLARE @RECON_SEC_LENDING AS VARCHAR(50)
+	DECLARE @RECON_TRIPARTY_REPO AS VARCHAR(50)
+	DECLARE @RECON_LENDING_ACCOUNT AS VARCHAR(50)
+	DECLARE @RECON_FAIL AS VARCHAR(50)
+
+	DECLARE @DUE_TO_LENDING AS VARCHAR(50)
+	DECLARE @DUE_TO_CUSTODY AS VARCHAR(50)
+	DECLARE @G1_STATUS_FAILED AS VARCHAR(10)
+	DECLARE @LENDING_ACCOUNT AS VARCHAR(20)
+	DECLARE @CUSTODY_ACCOUNT AS VARCHAR(20)
+	DECLARE @TRIPARTY_REPO_DEBIT_ACCOUNT AS VARCHAR(20)
+	DECLARE @CASH_WIRE_CODE_LENDING AS VARCHAR(10)
+	DECLARE @CASH_WIRE_CODE_CUSTODY AS VARCHAR(10)
+	DECLARE @CASH_WIRE_CODE_BONY_TP_ACCOUNT AS VARCHAR(10)
+	DECLARE @RECIPIENT_NAME_LENDING AS VARCHAR(50)
+	DECLARE @RECIPIENT_NAME_CUSTODY AS VARCHAR(50)	
+	DECLARE @RECIPIENT_NAME_BONY_TP_ACCOUNT AS VARCHAR(50)
+	DECLARE @G1_STATUS_CANCELLED AS VARCHAR(50)
+	DECLARE @EXCLUDE_EUROCLEAR AS VARCHAR(20)
+	DECLARE @IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID AS VARCHAR(MAX)
+	DECLARE @IS_SKIP_NET_PAIROFF_ACCTGRPID AS VARCHAR(MAX)
+	DECLARE @EXCLUDE_EUR_CCY AS VARCHAR(3)
+	DECLARE @SPOCHARGE_SENDER_EMAIL AS VARCHAR(MAX)
+	DECLARE @SPOCHARGE_SENDER_DISPLAY_NAME AS VARCHAR(MAX)
+	DECLARE @SPOCHARGE_TO_EMAIL_ID AS VARCHAR(MAX)
+	DECLARE @SPOCHARGE_TO_EMAIL_DISPLAY_NAME AS VARCHAR(MAX)
+	DECLARE @SPOCHARGE_CC_EMAIL_ID AS VARCHAR(MAX)
+	DECLARE @SPOCHARGE_CC_EMAIL_DISPLAY_NAME AS VARCHAR(MAX)
 	
-	DROP INDEX IF EXISTS [IX_Security_6] ON [dbo].[Security];
-	GO
+	DECLARE @NYB_TRIPARTY_REPO_ACCTGRPID AS INT 
+	DECLARE @NYB_TRIPARTY_REPO_FINDER AS VARCHAR(6) 
+	DECLARE @ReferenceDate AS DATETIME
+	DECLARE @REPO_TYPE VARCHAR(10) = '%REPO%'
+	DECLARE @ACTIVEREPO_TYPE VARCHAR(10) = 'A'
+	DECLARE @PairOff AS CHAR(2)
+	DECLARE @Turnaround AS CHAR(2)
+
+	SET @PAIROFF_CATEGORY  = 'P/o'
+	SET @RET_CATEGORY  = 'RET'
+	SET @NEW_CATEGORY  = 'NEW'
+	SET @NEW_OR_RET = @NEW_CATEGORY + '/' + @RET_CATEGORY
+
+
+
+	SET @TRIPARTY_REPO_TRADETYPE  = 'Triparty Repo'
+	SET @BILATERAL_REPO_TRADETYPE  = 'Bilateral Repo'
+	SET @TRIPARTY_SECLEND_TRADETYPE  = 'Triparty Sec Lending'
+	SET @SECURITIES_LEND_TRADETYPE  = 'Securities Lending'		
+	SET @FICC_TRADETYPE = 'FICC'
+	--SET @FED_DEPOIND  = 'FED'
+	SET @EURO_DEPOIND = 'FED'
+	SET @DTC_DEPOIND = 'DTC'
+	SET @FICC_DEPOIND = 'FICC'
+	SET @DUE_TO_BONY = 'BONY'
+	SET @G1_STATUS_SETTLED = 'Settled'
+	SET @G1_STATUS_FAILED = 'Failed'
+	SET @IS_FICC_MATCHED_TRUE = 1
+	SET @IS_FICC_MATCHED_FALSE = 0
+	SET @IS_FICC_MATCHED_YES = 'Y'
+	SET @IS_FICC_MATCHED_NO = 'N'
+	SET @NEW_RET_SUFFIX = ' -  New/Ret'
+	SET @PAIR_OFF_SUFFIX = 'Pair-Off'
+	SET @NET_SUFFIX =' - Net'
+	SET @FICC_PREFIX = 'FICC'
+	SET @CUSTOMER_REPO_PAYMENT_SECTIONID = 1
+	SET @INTERNAL_REPO_SECTIONID = 2
+	SET @CUSTOMER_CP_PAIROFF_SECTIONID = 3
+	SET @EUROCLEAR_SETTLEMENT_SECTIONID = 4 --SET @FED_SETTLEMENT_SECTIONID = 4
+	--SET @FICC_SECTIONID = 6
+	--SET @DTC_SECTIONID = 7
+	SET @TRIPARTY_REPO_SECTIONID = 6
+	--SET @DOMESTIC_TRIPARTY_SECLEND_SECTIONID = 9
+	--SET @INTERNAL_TRANSFER_SEC_LEND_SECTIONID = 10
+	SET @FAILS_SECTIONID = 7
+	SET @RECONCILIATION_SECTIONID = 8
+	SET @INTERNAL_REPO_DUE_TO_LENDING_FED = 'DUE TO LENDING (FED)'
+	SET @INTERNAL_REPO_DUE_TO_CUSTODY_FED = 'DUE TO CUSTODY (FED)'
+	SET @INTERNAL_REPO_DUE_TO_LENDING_DTC = 'DUE TO LENDING (DTC)'
+	SET @INTERNAL_REPO_DUE_TO_CUSTODY_DTC = 'DUE TO CUSTODY (DTC)'
+	SET @INTERNAL_REPO_DUE_TO_LENDING_FICC = 'DUE TO LENDING (FICC)'
+	SET @INTERNAL_REPO_DUE_TO_CUSTODY_FICC = 'DUE TO CUSTODY (FICC)'
+	SET @CP_BONY_TRIPARTY = 'BONY TP ACCOUNT'
+	SET @CP_BONY_DUE_TO_LENDING = 'DUE TO LENDING (BONY)'
+	SET @CP_BONY_DUE_TO_CUSTODY = 'DUE TO CUSTODY (BONY)'
+	SET @TRIPARTY_ACESS_EDGE_WDH = 'WDH'
+
+	SET @RECON_SEC_LENDING = 'Sec Lending'
+	SET @RECON_TRIPARTY_REPO = 'Tri Party Repo'
+	SET @RECON_LENDING_ACCOUNT = 'Lending Account'
+	SET @RECON_FAIL = 'Fail'
+	SET @NO_ACTIVITY = 'NO ACTIVITY'
+	SET @DUE_TO_LENDING = 'DUE_TO_LENDING'
+	SET @DUE_TO_CUSTODY = 'DUE_TO_CUSTODY'
+	SET @CASH_WIRE_CODE_LENDING = 'LENDING'
+	SET @CASH_WIRE_CODE_CUSTODY = 'CUSTODY'
+	SET @CASH_WIRE_CODE_BONY_TP_ACCOUNT = 'BONYTRIFAX'
+	SET @RECIPIENT_NAME_LENDING = 'SMTB USA LENDING ACCOUNT'
+	SET @RECIPIENT_NAME_CUSTODY = 'SMTB USA CUSTODY ACCOUNT'	
+	SET @RECIPIENT_NAME_BONY_TP_ACCOUNT = 'BONY DOMESTIC TP'
+	SET @G1_STATUS_CANCELLED = 'Cancelled'
+	SET @PairOff = 'PO'
+	SET @Turnaround = 'TA'
+
+	SELECT @CM_SECTION_DOMAINLOOKUP_ID = DomainLookupID 
+	FROM dbo.DomainLookUpID 
+	WHERE LookUpCode = 'CashMovementSections'
+
+	SELECT @LENDING_ACCOUNT = dbo.f_GetDomainLookupValue('CashMovement', 'Lending Account') 
+	SELECT @CUSTODY_ACCOUNT = dbo.f_GetDomainLookupValue('CashMovement', 'Custody Account')
+	SELECT @TRIPARTY_REPO_DEBIT_ACCOUNT = dbo.f_GetDomainLookupValue('CashMovement', 'Triparty Repo Debit Account')
+	SELECT @EXCLUDE_EUROCLEAR = dbo.f_GetDomainLookupValue('CashMovement', 'EXCLUDE_MOVEMENTS')
+	SELECT @IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID = dbo.f_GetDomainLookupValue('CashMovement', 'SkipNettingTripartyReposAcctGrpIDs')
+	SELECT @IS_SKIP_NET_PAIROFF_ACCTGRPID = dbo.f_GetDomainLookupValue('CashMovement', 'SkipNettingPairOffAcctGrpIDs')	
+	SELECT @EXCLUDE_EUR_CCY = dbo.f_GetDomainLookupValue('CashMovement', 'EXCLUDE_EUR_CCY')
+	SELECT @NYB_TRIPARTY_REPO_ACCTGRPID = CONVERT(INT,dbo.f_GetDomainLookupValue('TRIPARTY_REPO_NYB', 'DefaultAcctGrpID')) 
+	SELECT @NYB_TRIPARTY_REPO_FINDER = dbo.f_GetDomainLookupValue('TRIPARTY_REPO_NYB', 'FinderNbr') 
+	SELECT @SPOCHARGE_SENDER_EMAIL = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_SENDER_EMAIL') 
+	SELECT @SPOCHARGE_SENDER_DISPLAY_NAME = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_SENDER_DISPLAYNAME') 
+	SELECT @SPOCHARGE_TO_EMAIL_ID = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_TO_EMAIL') 
+	SELECT @SPOCHARGE_TO_EMAIL_DISPLAY_NAME = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_TO_EMAIL_DISPLAY_NAME') 
+	SELECT @SPOCHARGE_CC_EMAIL_ID = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_CC_EMAIL') 
+	SELECT @SPOCHARGE_CC_EMAIL_DISPLAY_NAME = dbo.f_GetDomainLookupValue('CashMovement', 'SPOCHARGE_CC_EMAIL_DISPLAY_NAME') 
+
+	SELECT 
+		@SystemDate = SC_TRAN_DATE_YMD
+	FROM 
+		GLOBALONE.DBO.SYSTEM 
 	
-	DROP INDEX IF EXISTS [IX_Security_7] ON [dbo].[Security];
-	GO
-
-    EXEC sp_rename 'Security', 'Security_GCR';
-
-	CREATE TABLE dbo.Security
-	(		
-		SecID				 INT			 NOT NULL,
-		SecCategoryID        INT             NOT NULL,		
-		CountryID            INT             NOT NULL,		
-		SecCode              VARCHAR (12)    NULL,
-		SecTypeAbb           VARCHAR (2)     NULL,
-		CUSIP                VARCHAR (9)     NULL,
-		SEDOL                VARCHAR (7)     NULL,
-		ISIN                 VARCHAR (12)    NULL,
-		SecurityDesc1        VARCHAR (40)    NULL,
-		SecurityDesc2        VARCHAR (40)    NULL,
-		SecurityCategoryCode VARCHAR (3)     NOT NULL,
-		CCYCode              VARCHAR (10)    NOT NULL,
-		ISOCountry           VARCHAR (2)     NOT NULL,
-		CountryName          VARCHAR (40)    NOT NULL,		
-		SecType              VARCHAR (1)     NULL,
-		PaymentFrequencyCode VARCHAR (10)    NULL,		
-		DatedDate            DATETIME        NULL,
-		MaturityDate         DATETIME        NULL,		
-		CouponRate           DECIMAL (12, 7) NULL,
-		BankSecurityNbr      VARCHAR (12)    NULL,
-		TickSymb             VARCHAR (12)    NULL,
-		Class1               VARCHAR (10)    NULL,
-		Class2               VARCHAR (10)    NULL,
-		Class3               VARCHAR (10)    NULL,
-		PoolNbr              VARCHAR (10)    NULL,		
-		NumDaysDelay         INT             NULL,		
-		FirstInterestDate    DATETIME        NULL,
-		NextInterestDate     DATETIME        NULL,
-		RecordDate           DATETIME        NULL,
-		PrevInterestDate     DATETIME        NULL,		
-		NextCallDate         DATETIME        NULL,		
-		SecTypeCode          VARCHAR (7)     NULL,
-		BucketSecurityType   CHAR (2)        NULL,
-		BucketSecurityLoc    CHAR (2)        NULL,
-		ProdSortCode         SMALLINT        NULL,
-		BaNCSSecId			 VARCHAR(35)	 NULL,
-		MarketPlace			 VARCHAR(35)	 NULL,
-		CouponRateFull		 DECIMAL(31,15)	 NULL,
-		SecurityDesc		 VARCHAR(105)	 NULL,
-		SecurityDescShort	 VARCHAR(35)	 NULL,
-		InstrmntTypeMnmnc	 DECIMAL(5,0)	 NULL,
-		InstrmntTypeDesc	 VARCHAR(65)	 NULL,
-		InstrmntSubTypeMnmnc VARCHAR(5)	     NULL,
-		InstrmntSubTypeDesc	 VARCHAR(65)	 NULL,
-		SMTBUSAPriceGroupID	 VARCHAR(400)	 NULL,
-		BaNCSBusinessDate	 DATE			 NULL,
-		FileHeaderDate		 DATETIME		 NULL,
-		PoolFactor			 DECIMAL(31,15)	 NULL,
-		FactorDate			 VARCHAR(10)	 NULL,
-		Price				 DECIMAL(31,15)	 NULL,
-		CommonCode			 VARCHAR(35)	 NULL,
-		PayDate				 DATETIME		 NULL,
-		PricingDate			 DATETIME		 NULL,
-		PriceGroupID		 INT			 NULL,
-		RecordIdentifier	 VARCHAR(35)	 NULL,
-		CreatedBy			 VARCHAR(50)	 NULL,
-		CreatedDate			 DATETIME		 NULL,
-		ModifiedBy			 VARCHAR(50)	 NULL,
-		ModifiedDate         DATETIME        NULL,			
-		CONSTRAINT PK_Security
-			PRIMARY KEY CLUSTERED (SecID ASC)
-			WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON,
-				  ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-				 ) ON [PRIMARY]
-	) ON [PRIMARY];
-
-END;
-
-GO
-
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecID'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecID'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecCategoryID'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecCategoryID'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CountryID'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CountryID'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecTypeAbb'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecTypeAbb'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CUSIP'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CUSIP'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SEDOL'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SEDOL'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'ISIN'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ISIN'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecurityDesc1'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc1'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecurityDesc2'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc2'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecurityCategoryCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityCategoryCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CCYCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CCYCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'ISOCountry'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ISOCountry'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CountryName'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CountryName'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecType'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecType'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PaymentFrequencyCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PaymentFrequencyCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'DatedDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'DatedDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'MaturityDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'MaturityDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CouponRate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CouponRate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'BankSecurityNbr'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BankSecurityNbr'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'TickSymb'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'TickSymb'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'Class1'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class1'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'Class2'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class2'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'Class3'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class3'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PoolNbr'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PoolNbr'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'NumDaysDelay'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NumDaysDelay'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'FirstInterestDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FirstInterestDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'NextInterestDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NextInterestDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'RecordDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'RecordDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PrevInterestDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PrevInterestDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'NextCallDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NextCallDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecTypeCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecTypeCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'BucketSecurityType'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BucketSecurityType'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'BucketSecurityLoc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BucketSecurityLoc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'ProdSortCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ProdSortCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'BaNCSSecId'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BaNCSSecId'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'MarketPlace'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'MarketPlace'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CouponRateFull'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CouponRateFull'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecurityDesc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SecurityDescShort'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDescShort'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'InstrmntTypeMnmnc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntTypeMnmnc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'InstrmntTypeDesc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntTypeDesc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'InstrmntSubTypeMnmnc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntSubTypeMnmnc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'InstrmntSubTypeDesc'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntSubTypeDesc'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'SMTBUSAPriceGroupID'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SMTBUSAPriceGroupID'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'BaNCSBusinessDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BaNCSBusinessDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'FileHeaderDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FileHeaderDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PoolFactor'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PoolFactor'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'FactorDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FactorDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'Price'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Price'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CommonCode'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CommonCode'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PayDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PayDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PricingDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PricingDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'PriceGroupID'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PriceGroupID'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'RecordIdentifier'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'RecordIdentifier'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CreatedBy'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CreatedBy'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'CreatedDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CreatedDate'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'ModifiedBy'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ModifiedBy'
-GO
-
-IF  EXISTS (SELECT * FROM sys.fn_listextendedproperty(N'MS_Description' , N'SCHEMA',N'dbo', N'TABLE',N'Security', N'COLUMN',N'ModifiedDate'))
-EXEC sys.sp_dropextendedproperty @name=N'MS_Description' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ModifiedDate'
-GO
-
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Security Table ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecID'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Sec Category table ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecCategoryID'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Country Table ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CountryID'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Sec ID in G+, could be either of CUSIP, ISIN or SEDOL based on SecTypeAbb' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Indictor for SecCode column' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecTypeAbb'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Sec ID in USA or CAD' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CUSIP'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Sec ID in UK' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SEDOL'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Sec ID in global' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ISIN'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Sec explanation' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc1'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'DTC for bond' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc2'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stock or Bond' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityCategoryCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Currency Code, such us USD or AUD' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CCYCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ table ISOCountry' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ISOCountry'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Country where sec name issued' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CountryName'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Sec table Type' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecType'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bond payment Frequency, Semi Annual, Qualter and etc.' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PaymentFrequencyCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bond modified date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'DatedDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bond Maturity Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'MaturityDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Fix Income Coupon Rate' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CouponRate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bank Security Nbr' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BankSecurityNbr'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Stock Ticker Symbol' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'TickSymb'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'EQ or FI' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class1'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bond, Corpration Bond or Rights' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class2'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'MBS, for example, FREDDIE MAC or FANNIE MAE' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Class3'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'MBS, for example, FR RA7707, FN CB8526' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PoolNbr'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Num Days table Delay' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NumDaysDelay'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ First Interest table Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FirstInterestDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Next Interest table Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NextInterestDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Record table Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'RecordDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Prev Interest table Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PrevInterestDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'G+ Next Call table Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'NextCallDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Security Type Code' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecTypeCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bucket Security Type' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BucketSecurityType'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Bucket Security Location' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BucketSecurityLoc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Prod Sort Code' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ProdSortCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'BaNCS Security ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BaNCSSecId'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Market Place' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'MarketPlace'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Coupon Rate Full' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CouponRateFull'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Security Description from CDS' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDesc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Security Description Short from CDS' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SecurityDescShort'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Instrmnt Type Mnmnc' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntTypeMnmnc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Instrmnt Type Desc' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntTypeDesc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Instrmnt SubType Mnmnc' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntSubTypeMnmnc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Instrmnt SubType Desc' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'InstrmntSubTypeDesc'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'SMTBUSA Price Group ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'SMTBUSAPriceGroupID'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'BaNCSBusiness date from header record' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'BaNCSBusinessDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'File generationg datetime from header record' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FileHeaderDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Pool Factor' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PoolFactor'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Factor Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'FactorDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Price' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'Price'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Common Code' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CommonCode'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Pay Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PayDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Pricing Date' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PricingDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Price Group ID' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'PriceGroupID'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Record Identifier' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'RecordIdentifier'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'User who Created' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CreatedBy'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Creation Dateime' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'CreatedDate'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Record modified by user' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ModifiedBy'
-GO
-
-EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'Record modified time by user' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Security', @level2type=N'COLUMN',@level2name=N'ModifiedDate'
-GO
-
-
-IF EXISTS
-(
-    SELECT *
-    FROM sys.objects
-    WHERE object_id = OBJECT_ID(N'dbo.Security')
-          AND type IN ( N'U' )
-)
-   AND EXISTS
-(
-    SELECT *
-    FROM sys.objects
-    WHERE object_id = OBJECT_ID(N'dbo.Security_GCR')
-          AND type IN ( N'U' )
-)
-
-BEGIN
-
-TRUNCATE TABLE dbo.Security
-
-INSERT INTO dbo.Security 
-(
-	   SecID
-	  ,SecCategoryID
-	  ,CountryID
-	  ,SecCode
-	  ,SecTypeAbb
-	  ,CUSIP
-	  ,SEDOL
-	  ,ISIN
-	  ,SecurityDesc1
-	  ,SecurityDesc2
-	  ,SecurityCategoryCode
-	  ,CCYCode
-	  ,ISOCountry
-	  ,CountryName
-	  ,SecType
-	  ,PaymentFrequencyCode
-	  ,DatedDate
-	  ,MaturityDate
-	  ,CouponRate
-	  ,BankSecurityNbr
-	  ,TickSymb
-	  ,Class1
-	  ,Class2
-	  ,Class3
-	  ,PoolNbr
-	  ,NumDaysDelay
-	  ,FirstInterestDate
-	  ,NextInterestDate
-	  ,RecordDate
-	  ,PrevInterestDate
-	  ,NextCallDate
-	  ,SecTypeCode
-	  ,BucketSecurityType
-	  ,BucketSecurityLoc
-	  ,ProdSortCode	    
-	  ,BaNCSBusinessDate
-	  ,FileHeaderDate	  
-	  ,CreatedBy
-	  ,CreatedDate 	  
-	  ,ModifiedDate	  
-)
-
-SELECT 
-	   SecID
-	  ,SecCategoryID
-	  ,CountryID
-	  ,SecCode
-	  ,SecTypeAbb
-	  ,CUSIP
-	  ,SEDOL
-	  ,ISIN
-	  ,SecurityDesc1
-	  ,SecurityDesc2
-	  ,SecurityCategoryCode
-	  ,CCYCode
-	  ,ISOCountry
-	  ,CountryName
-	  ,SecType
-	  ,PaymentFrequencyCode
-	  ,DatedDate
-	  ,MaturityDate
-	  ,CouponRate
-	  ,BankSecurityNbr
-	  ,TickSymb
-	  ,Class1
-	  ,Class2
-	  ,Class3
-	  ,PoolNbr
-	  ,NumDaysDelay
-	  ,FirstInterestDate
-	  ,NextInterestDate
-	  ,RecordDate
-	  ,PrevInterestDate
-	  ,NextCallDate
-	  ,SecTypeCode
-	  ,BucketSecurityType
-	  ,BucketSecurityLoc
-	  ,ProdSortCode	    
-	  ,BaNCSBusinessDate = GETDATE()
-	  ,FileHeaderDate = GETDATE()	  
-	  ,CreatedBy = SUSER_SNAME()
-	  ,CreatedDate = GETDATE()	  
-	  ,ModifiedDate	  
-
-FROM dbo.Security_GCR
-
+	SET @ReferenceDate = CASE WHEN ( @AsOfDate > @SystemDate ) THEN @SystemDate 
+							  ELSE @AsOfDate 
+							  END 
+
+
+	IF OBJECT_ID('tempdb..#TMP_SKIPNETPAIROFF') IS NULL 
+	BEGIN
+		SELECT 
+			Qualifier as AcctGrp, 
+			QualifierCode as ProductId,
+			AGPPM.PrincipalShortName
+		INTO 
+			#TMP_SKIPNETPAIROFF
+		FROM 
+			dbo.f_SplitToTableColumnWise(@IS_SKIP_NET_PAIROFF_ACCTGRPID, ',', '|') AS SPLITFUNC
+		INNER JOIN  MOBETTER.DBO.AccountGroupProductPrincipalMapping AGPPM
+			ON AGPPM.AcctGrpID = SPLITFUNC.Qualifier
+			AND AGPPM.ProductID = SPLITFUNC.QualifierCode
+		WHERE 
+			( @AsOfDate BETWEEN AGPPM.EffectiveDateBegin AND AGPPM.EffectiveDateEnd )
+	END
+	
+	/*-------------------------------Insert Table Schema into temp table #TMP_MASTER_ACTIVITY -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_MASTER_ACTIVITY') IS NULL 
+	BEGIN
+		SELECT * 
+		INTO 
+			#TMP_MASTER_ACTIVITY
+		FROM 
+			LAVA.dbo.f_CreateMasterActivitySchema()
+	END
+
+	/*-------------------------------Insert data into  #TMP_MASTER_ACTIVITY -----------------------------------------------------------------------------*/
+	EXEC p_GetMasterActivity @BatchRunDate = @AsOfDate	
+	
+	-- P18889 : Apply logic on #TMP_MASTER_ACTIVITY tables to filter based on settlement locations.
+	
+	DELETE TMA FROM #TMP_MASTER_ACTIVITY TMA
+	LEFT JOIN (SELECT DISTINCT Depot,SettlementLocationID,SL.Value as SettlementLocation,SL.Geography  --P18889 : Checking Settlement Location for the Depo
+						FROM LAVA.dbo.DepoSettlementLocationMapping DSLM 
+						LEFT JOIN LAVA.dbo.f_GetSettlementLocations() SL 
+						ON DSLM.SettlementLocationID = SL.ID
+						WHERE DSLM.IsDeleted = 0) SL
+				ON TMA.DepoInd=SL.Depot
+		--P18889 : Join with Lava currency Setup to check if the Currency and SL is mapped
+				LEFT JOIN LAVA.dbo.RepoCurrencySetup RCS -- Roshan : Checking Settlement Location to Currency Mapping
+					ON RCS.SettlementLocationID = SL.SettlementLocationID AND RCS.CCYCode = TMA.CollCCYCode AND RCS.IsDeleted = 0
+	WHERE  --SL.Depot not in ('EURO', 'EURONI', 'EUROSL', 'EUROTL')
+	ISNULL(SL.Geography,'') NOT IN ('DOMESTIC') --BNYM and Citibank are Domestic SL- Removing Euroclear (GLOBAL) and BLANK
+			OR RCS.CCYCode IS NULL -- Check mapping with Repo Currency Setup	
+
+	/*-------------------------------Apply NBY Triparty Repo extended conditions -------------------------------------------------------------------------*/
+
+	SELECT DISTINCT TxnRefNbr, FinderNbr  
+	INTO #TMP_LN_FINDER 
+	FROM GLOBALONE.dbo.Loan 
+	WHERE (1=0)
+	
+	IF ( @SystemDate = @ReferenceDate ) 
+	BEGIN
+		INSERT #TMP_LN_FINDER ( TxnRefNbr, FinderNbr )
+		SELECT DISTINCT TxnRefNbr, FinderNbr  
+		FROM GLOBALONE.dbo.Loan 
+		WHERE ( @SystemDate = @ReferenceDate ) AND
+			  ( AsOfDate = @ReferenceDate )
+	END
+	ELSE	
+	BEGIN 
+		INSERT #TMP_LN_FINDER  ( TxnRefNbr, FinderNbr )
+		SELECT TxnRefNbr, FinderNbr  
+		FROM MOBETTER.dbo.ProcessedLoanHist 
+		WHERE ( AsOfDate = @ReferenceDate )
+	END
+
+	INSERT #TMP_LN_FINDER  ( TxnRefNbr, FinderNbr )
+	SELECT TxnRefNbr, FinderNbr  
+	FROM MOBETTER.dbo.ProcessedLoanHist AS TPL 
+	WHERE ( AsOfDate = LAVA.dbo.f_GetPrevBizDay(@ReferenceDate) ) AND 
+	( NOT EXISTS ( SELECT TxnRefNbr 
+				   FROM #TMP_LN_FINDER AS TMP_LN 
+				   WHERE TPL.TxnRefNbr = TMP_LN.TxnRefNbr ) )
+
+
+	UPDATE 
+		TMP_MA
+	SET 
+		AcctGrpID = @NYB_TRIPARTY_REPO_ACCTGRPID, 
+		AcctGrpName = TACCTGRP.AcctGrpName
+	FROM 
+		#TMP_MASTER_ACTIVITY AS TMP_MA
+		INNER JOIN #TMP_LN_FINDER AS TMP_LN 
+		ON 
+			( TMP_MA.TxnRefNbr = TMP_LN.TxnRefNbr ) 
+		
+		INNER JOIN MOBETTER.DBO.ACCOUNT AS TACCT 
+		ON 
+		   ( TMP_MA.AcctNbr = TACCT.AcctNbr )  AND 
+		   ( @AsOfDate BETWEEN TACCT.EffectiveDateBegin AND TACCT.EffectiveDateEnd ) AND 
+		   ( ISNULL(TACCT.IsDeleted,0) = 0 )  
+		INNER JOIN MOBETTER.DBO.ACCOUNTGROUP AS TACCTGRP 
+		ON 
+			( TACCTGRP.AcctGrpID = @NYB_TRIPARTY_REPO_ACCTGRPID )  AND 
+			( @AsOfDate BETWEEN TACCTGRP.EffectiveDateBegin AND TACCTGRP.EffectiveDateEnd ) AND 
+			( ISNULL(TACCTGRP.IsDeleted,0) = 0 )  
+	WHERE 
+		( ISNULL(TMP_LN.FinderNbr,'') = @NYB_TRIPARTY_REPO_FINDER ) AND 
+		( TMP_MA.TradeType = @TRIPARTY_REPO_TRADETYPE )  AND 
+		( TMP_MA.AcctGrpID != @NYB_TRIPARTY_REPO_ACCTGRPID )
+
+
+	/*-------------------------------Insert data into  #TMP_BROKER -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_BROKER') IS NULL 
+    BEGIN
+		SELECT TBRK.* 
+		INTO #TMP_BROKER
+		FROM MOBETTER.dbo.[Broker] AS TBRK
+		LEFT JOIN MOBETTER.dbo.TriPartyBank AS TTPBRK
+		ON ( TBRK.TriPartyID = TTPBRK.TriPartyID ) AND
+			( @AsOfDate BETWEEN TTPBRK.EffectiveDateBegin AND TTPBRK.EffectiveDateEnd ) AND 
+			( ISNULL(TTPBRK.IsDeleted,0) = 0 )
+		LEFT JOIN MOBETTER.dbo.TriPartyBankGroup AS TTPBRKGRP
+		ON ( TTPBRKGRP.TriPartyGrpID = TTPBRK.TriPartyGrpID ) AND
+			( @AsOfDate BETWEEN TTPBRKGRP.EffectiveDateBegin AND TTPBRKGRP.EffectiveDateEnd ) AND 
+			( ISNULL(TTPBRKGRP.IsDeleted,0) = 0 )
+		WHERE 
+			( @AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd ) AND 
+			( ISNULL(TBRK.IsDeleted,0) = 0 ) AND
+			( ISNULL(TTPBRKGRP.TriPartyGrpDesc,'') NOT IN (@EXCLUDE_EUROCLEAR)) 
+	END
+
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE id = OBJECT_ID('tempdb..#TMP_BROKER') AND name='IDX_TMP_BROKER')
+	BEGIN				   
+		CREATE INDEX IDX_TMP_BROKER ON #TMP_BROKER ( BrkNbr )
+	END
+
+	/*-------------------------------Insert data into  #TMP_BROKER_GROUP -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_BROKER_GROUP') IS NULL 
+    BEGIN
+		SELECT TBRKGRP.* 
+		INTO #TMP_BROKER_GROUP
+		FROM MOBETTER.dbo.[BrokerGroup] AS TBRKGRP		
+		WHERE 
+			( @AsOfDate BETWEEN TBRKGRP.EffectiveDateBegin AND TBRKGRP.EffectiveDateEnd ) AND 
+			( ISNULL(TBRKGRP.IsDeleted,0) = 0 )			
+	END
+
+	/*-------------------------------Insert data into #TMP_DOMAIN_LOOKUP_VALUE -----------------------------------------------------------------------------*/
+    IF OBJECT_ID('tempdb..#TMP_DOMAIN_LOOKUP_VALUE') IS NULL 
+    BEGIN
+		SELECT TDLV.* 
+		INTO #TMP_DOMAIN_LOOKUP_VALUE 
+		FROM dbo.DomainLookUpValue  TDLV
+		WHERE DomainLookUpID = @CM_SECTION_DOMAINLOOKUP_ID
+	END
+
+	Update #TMP_DOMAIN_LOOKUP_VALUE
+	Set Value = case when ValueDesc = 6 then 'Triparty Repo' when ValueDesc = 7 then 'Fails' when ValueDesc = 8 then 'Reconciliation' else Value end
+
+	Delete from #TMP_DOMAIN_LOOKUP_VALUE where ValueDesc in (9,10,11,12)
+		
+	/*-------------------------------Insert data into  #TMP_ACCOUNT_GROUP -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_ACCOUNT_GROUP') IS NULL 
+    BEGIN
+		SELECT TACCTGRP.* 
+		INTO #TMP_ACCOUNT_GROUP
+		FROM MOBETTER.dbo.[AccountGroup] AS TACCTGRP
+		WHERE 
+			( @AsOfDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd )	   AND 
+			( ISNULL(IsDeleted,0) = 0 ) AND
+			( AcctGrpID IN
+				(
+					SELECT
+						 AcctGrpID 
+					FROM
+						 MOBETTER.dbo.Account 
+					WHERE
+						 ( @AsOfDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd ) AND 
+						 ( ISNULL(IsDeleted,0) = 0 ) AND
+						 ( IsOwnRepo = 1 OR  IsFIRepo = 1 ) AND
+						 ( IsALDTriparty = 0)
+				) 
+			)			
+	END
+	
+	/*-------------------------------Insert data into  #TMP_ACCTGRP_PRODUCTPRINCIPAL -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_ACCTGRP_PRODUCTPRINCIPAL') IS NULL 
+    BEGIN
+		SELECT 
+			AGPPM.PrincipalShortName,	
+			ACCGRP.AcctGrpName,
+			AGPPM.ProductID, 
+			AGPPM.AcctGrpID, 
+			AGPPM.Principal	
+		INTO #TMP_ACCTGRP_PRODUCTPRINCIPAL
+		FROM 
+			MOBETTER.DBO.AccountGroupProductPrincipalMapping AGPPM
+		INNER JOIN #TMP_ACCOUNT_GROUP ACCGRP 
+		ON
+			ACCGRP.AcctGrpID = AGPPM.AcctGrpID
+		INNER JOIN MOBETTER.DBO.ProductLinePrincipalMatrix  PPM
+		ON 
+			AGPPM.ProductID = PPM.ProductID
+		WHERE 
+			ActivationStatus = @ACTIVEREPO_TYPE
+			AND ISNULL(AGPPM.IsDeleted,0) = 0  
+			AND ISNULL(PPM.IsDeleted,0) = 0 
+			AND ProductLine LIKE @REPO_TYPE
+			AND ( @AsOfDate BETWEEN AGPPM.EffectiveDateBegin AND AGPPM.EffectiveDateEnd )
+		ORDER BY
+			AGPPM.ProductID, 
+			AGPPM.AcctGrpID
+	END
+	/*-------------------------------Insert Table Schema into temp table #TMP_CASH_MOVEMENT -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_CASH_MOVEMENT') IS NULL 
+	BEGIN
+		SELECT * 
+		INTO 
+			#TMP_CASH_MOVEMENT
+		FROM 
+			LAVA.dbo.f_CreateCashMovementSchema()
+	END
+
+	TRUNCATE TABLE #TMP_CASH_MOVEMENT	
+
+	/*-------------------------------Insert data into #TMP_ACCTGRP_CASH_WIRE_CODE -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_ACCTGRP_CASH_WIRE_CODE') IS NULL 
+    BEGIN
+		SELECT 
+			TCWACCTGRP.AcctGrpID,
+			TCWACCTGRP.CashWireCode,
+			TCWACCTGRP.IsNetPairOff,
+			TCWACCTGRP.IsDisplayOnDashboard,
+			TCWACCTGRP.ProductID,
+			AGPPM.PrincipalShortName AS CashWirePrincipalShortName
+		INTO 
+			#TMP_ACCTGRP_CASH_WIRE_CODE
+		FROM 
+			dbo.[EuroclearCashMovementAcctGrpWireCode] AS TCWACCTGRP
+		INNER JOIN 
+			MOBETTER.dbo.AccountGroupProductPrincipalMapping  AGPPM
+		ON TCWACCTGRP.ProductId = AGPPM.ProductId
+		   AND TCWACCTGRP.Acctgrpid = AGPPM.Acctgrpid
+		WHERE 
+			( @AsOfDate BETWEEN TCWACCTGRP.EffectiveDateBegin AND TCWACCTGRP.EffectiveDateEnd ) 
+			AND ( @AsOfDate BETWEEN AGPPM.EffectiveDateBegin AND AGPPM.EffectiveDateEnd )
+			AND (ISNULL(TCWACCTGRP.IsDeleted,0) = 0 ) 
+	END
+	
+	--/*-------------------------------Insert data into ##TMP_BROKER_CASH_WIRE_CODE -----------------------------------------------------------------------------*/
+	IF OBJECT_ID('tempdb..#TMP_BROKER_CASH_WIRE_CODE') IS NULL 
+	BEGIN
+		SELECT 
+			TCWBRK.BrkNbr,
+			TCWBRK.CashWireCode				
+		INTO 
+			#TMP_BROKER_CASH_WIRE_CODE
+		FROM 
+			dbo.[EuroclearCashMovementBrokerWireCode] AS TCWBRK
+		WHERE 
+			( @AsOfDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd ) AND 
+			( ISNULL(IsDeleted,0) = 0 )			
+	END	
+	
+	IF OBJECT_ID('tempdb..#TMP_TP_BONY_DOMESTIC_BANK_GROUP') IS NULL 
+	BEGIN
+		SELECT 
+			TBL_TP_BANKGROUP.TriPartyGrpID,
+			TBL_TP_BANKGROUP.TriPartyGrpDesc				
+		INTO 
+			#TMP_TP_BONY_DOMESTIC_BANK_GROUP
+		FROM 
+			MOBETTER.dbo.TriPartyBankGroup AS TBL_TP_BANKGROUP
+		WHERE 
+			( @AsOfDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd ) AND 
+			( ISNULL(IsDeleted,0) = 0 ) AND 
+			( TBL_TP_BANKGROUP.TriPartyGrpID = 1 )	--BONY Domestic	
+	END		
+
+	--setting @EXCLUDE_EUR_CCY = 
+
+	--Create exchange rate table to USD for efficiency
+	SELECT DISTINCT CollCCYCode, USDFXRate = GLOBALONE.dbo.f_GetCurrencyConversion( @ReferenceDate, CollCCYCode,'EUR') 
+	INTO #TMP_CURRENCY_RATES
+	FROM #TMP_MASTER_ACTIVITY
+	
+	/*-------------------------------Insert into #TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT--------------------------------*/	
+	SELECT
+		TMP_MA.*,
+		ProjectedNetExchange = NetExchangeUSD,
+		SettledNetExchange =  CASE WHEN ( TradeType = @TRIPARTY_REPO_TRADETYPE  AND G1Status = @G1_STATUS_SETTLED  ) OR 
+										( TradeType != @TRIPARTY_REPO_TRADETYPE AND FedStatus = @G1_STATUS_SETTLED   )  THEN NetExchangeUSD 
+								   ELSE 0 
+								   END,
+		FailedNetExchange =   CASE WHEN ( TradeType = @TRIPARTY_REPO_TRADETYPE  AND G1Status = @G1_STATUS_FAILED  ) OR 
+										( TradeType != @TRIPARTY_REPO_TRADETYPE AND FedStatus = @G1_STATUS_FAILED   )  THEN NetExchangeUSD 
+								   ELSE 0 
+								   END
+	INTO 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT		 		
+	FROM 
+	(
+		SELECT TMP_MA_SRC.*, 
+			NetExchangeUSD = CASE WHEN ( TMP_MA_SRC.IsCashmovement = 1 ) THEN  ( NetExchange * TMP_CUR.USDFXRate )
+									ELSE 0 
+									END 
+		FROM 
+		(
+			SELECT *, 
+				   IsCashMovement = CASE WHEN ( G1Status <> @G1_STATUS_CANCELLED ) AND
+											  ( ISNULL(NetExchange,0) <> 0 ) AND
+											  ( FaceAmount <> 0 )	AND
+											  ( CollCCYCode <> ( CASE WHEN @EXCLUDE_EUR_CCY = 'Y' THEN 'EUR' ELSE '' END ) ) AND --For USD
+											  (
+												( SettlementDate = @AsOfDate ) OR 
+												(
+													( SettlementDate < @AsOfDate ) AND EXISTS ( SELECT TSETL.BGNREF FROM LAVA.DBO.SettlementStatus AS TSETL
+																							    WHERE ( TSETL.AsOfDate = @AsOfDate )     AND  
+																									  ( TSETL.BGNREF = TMP_MACT.BGNREF ) AND 
+																									  ( ISNULL(TSETL.AcctNbr, TMP_MACT.AcctNbr) = TMP_MACT.AcctNbr )  )
+																							   
+												)
+											  )  THEN  1
+									ELSE 0 
+									END 
+			FROM 
+				#TMP_MASTER_ACTIVITY AS TMP_MACT ) AS TMP_MA_SRC
+			INNER JOIN #TMP_CURRENCY_RATES AS TMP_CUR 
+				ON ( TMP_MA_SRC.CollCCYCode = TMP_CUR.CollCCYCode )
+	
+	) AS TMP_MA	
+
+	--========================================================================================================================================================
+	/*-------------------------------Payment Summary for Customers and Counter Parties - Insert into #TMP_PAYMENT_SUMMARY--------------------------------*/	
+	--========================================================================================================================================================
+
+	IF OBJECT_ID('tempdb..#TMP_PAYMENT_SUMMARY','U') IS NULL			
+	BEGIN
+		SELECT
+			SectionID = CONVERT(INT, 0),
+			Description = CONVERT(VARCHAR(MAX), ''),
+			TMP_ACCT_GRP.AcctGrpID,
+			TMP_ACCT_GRP.AcctGrpName,
+			BrkNbr = TMP_PAY_AMT.BrkNbr,			
+			BrkGrpCode = TMP_PAY_AMT.BrkGrpCode,
+			BrkGrpID = TMP_PAY_AMT.BrkGrpID,
+			DueToAccount = CONVERT(VARCHAR, ''),
+			SecCodes = CONVERT(VARCHAR(MAX), ''),
+			CashWireCode = CONVERT(VARCHAR(50),''),
+			ShowPaymentApproval = CONVERT(BIT, 0),
+			ShowMoneyWire = CONVERT(BIT, 0),
+			ProjectedReceivableFrom = TMP_PAY_AMT.ProjectedNetExchange,
+			ProjectedPayableTo = TMP_PAY_AMT.ProjectedNetExchange,
+			SettledReceivableFrom = TMP_PAY_AMT.SettledNetExchange,
+			SettledPayableTo = TMP_PAY_AMT.SettledNetExchange,
+			Remarks	=  CONVERT(VARCHAR(MAX), ''),
+			SummaryProductId  = CONVERT(INT,0),
+			SummaryPrincipalShortName = CONVERT(VARCHAR,NULL) 
+		INTO #TMP_PAYMENT_SUMMARY
+		FROM
+			#TMP_ACCOUNT_GROUP TMP_ACCT_GRP 
+			CROSS JOIN 
+				#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+		WHERE ( 1 = 0 )
+	END	
+
+	--Prepare Pair Off Section ( Customer )        
+	SELECT 
+		SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID,					
+		[Description] = PrincipalShortName + ' -  ' + @PAIR_OFF_SUFFIX ,
+		PrincipalShortName,
+		ProductId,
+		BrkNbr = '',
+		BrkGrpCode = '',			
+		DepoInd = '',		
+		ProjectedReceivableFrom = CASE WHEN PrincipalShortName IN (SELECT PrincipalShortName FROM #TMP_SKIPNETPAIROFF) THEN
+								  		SUM(CASE WHEN (ProjectedNetExchange < 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END )
+									ELSE
+									CASE WHEN SUM(ProjectedNetExchange) < 0 THEN SUM(ProjectedNetExchange) 
+											ELSE 0 
+											END
+									END,
+		ProjectedPayableTo = CASE WHEN PrincipalShortName IN (SELECT PrincipalShortName FROM #TMP_SKIPNETPAIROFF) THEN
+								  		SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END )
+								ELSE
+									CASE WHEN SUM(ProjectedNetExchange) > 0 THEN SUM(ProjectedNetExchange) 
+										ELSE 0 
+										END
+								END,
+		SettledReceivableFrom = CASE WHEN PrincipalShortName IN (SELECT PrincipalShortName FROM #TMP_SKIPNETPAIROFF) THEN
+								  		SUM(CASE WHEN (SettledNetExchange < 0) THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END )
+								ELSE
+									CASE WHEN SUM(SettledNetExchange) < 0 THEN SUM(SettledNetExchange) 
+											ELSE 0 
+											END
+								END,
+		SettledPayableTo = CASE WHEN PrincipalShortName IN (SELECT PrincipalShortName FROM #TMP_SKIPNETPAIROFF) THEN
+								  		SUM(CASE WHEN (SettledNetExchange > 0) THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END )
+							ELSE
+								CASE WHEN SUM(SettledNetExchange) > 0 THEN SUM(SettledNetExchange) 
+										ELSE 0 
+										END
+							END,  
+		Remarks	= @PAIR_OFF_SUFFIX	
+	INTO #TMP_CUSTOMER_PAIROFF
+	FROM
+	( 	 
+		SELECT 
+			PrincipalShortName,
+			ProductId,
+			TMP_PAY_AMT.AcctGrpID,	
+			TMP_PAY_AMT.SecCode,	
+			ProjectedNetExchange = SUM(ProjectedNetExchange),								  									
+			SettledNetExchange =SUM(SettledNetExchange)						 		
+		FROM
+			#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+		WHERE  		
+			( TMP_PAY_AMT.IsCashMovement = 1 ) AND 
+			( TMP_PAY_AMT.Category = @PAIROFF_CATEGORY ) AND
+			( TMP_PAY_AMT.TradeType IN ( @BILATERAL_REPO_TRADETYPE, @FICC_TRADETYPE ) ) AND
+			( 
+				TMP_PAY_AMT.DepoInd LIKE (@EURO_DEPOIND + '%') OR  
+				--TMP_PAY_AMT.DepoInd = @DTC_DEPOIND OR 
+				ISNULL(IsFICCMatched,@IS_FICC_MATCHED_NO) = @IS_FICC_MATCHED_YES
+				)	AND
+			(PrincipalShortName IS NOT NULL OR PrincipalShortName <> '') AND
+            (ProductID IS NOT NULL OR ProductID <> 0)	
+		GROUP BY 
+			PrincipalShortName, 
+			ProductId,
+			AcctGrpID, 
+			SecCode
+	
+	) AS Acct_PairOff
+	GROUP BY 
+		PrincipalShortName,
+		ProductId
+							
+
+	--Prepare Pair Off Section ( Counterparty ) 
+	SELECT 
+		SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID,
+		Description = TMP_PAY_AMT.BrkNbr + '(' + STUFF((SELECT DISTINCT ' / '+ TMP_MAST_ACT_SECCODE.SecCode 
+														FROM #TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_MAST_ACT_SECCODE
+														WHERE TMP_MAST_ACT_SECCODE.BrkNbr=TMP_PAY_AMT.BrkNbr AND  							
+															( TMP_MAST_ACT_SECCODE.Category = @PAIROFF_CATEGORY ) AND
+															( TMP_MAST_ACT_SECCODE.TradeType = @BILATERAL_REPO_TRADETYPE ) AND
+															( TMP_MAST_ACT_SECCODE.DepoInd LIKE @EURO_DEPOIND + '%' )
+														FOR XML PATH('')),2,1,'')
+								+ ' )',		
+		ProjectedReceivableFrom = CASE WHEN ( SUM(ProjectedNetExchange) > 0 ) THEN SUM(ProjectedNetExchange) 
+									   ELSE 0 
+									   END,
+		
+		ProjectedPayableTo = CASE WHEN ( SUM(ProjectedNetExchange) < 0 ) THEN SUM(ProjectedNetExchange) 
+								  ELSE 0 
+								  END,
+		
+		SettledReceivableFrom = CASE WHEN ( SUM(SettledNetExchange) > 0 ) THEN SUM(SettledNetExchange) 
+								     ELSE 0 
+									 END,
+		
+		SettledPayableTo = CASE WHEN ( SUM(SettledNetExchange) < 0 ) THEN SUM(SettledNetExchange) 
+								ELSE 0 
+								END,
+		TMP_BRK_CWC.CashWireCode,
+		TMP_PAY_AMT.BrkGrpID
+	INTO #TMP_CP_PAIROFF			
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+		LEFT JOIN 
+			#TMP_BROKER_CASH_WIRE_CODE AS TMP_BRK_CWC
+		ON
+			TMP_BRK_CWC.BrkNbr = TMP_PAY_AMT.BrkNbr
+	WHERE  			
+		( TMP_PAY_AMT.IsCashMovement = 1 ) AND 
+		( TMP_PAY_AMT.Category = @PAIROFF_CATEGORY ) AND
+		( TMP_PAY_AMT.TradeType = @BILATERAL_REPO_TRADETYPE ) AND
+		( TMP_PAY_AMT.DepoInd LIKE @EURO_DEPOIND + '%' )
+	GROUP BY 
+		TMP_PAY_AMT.BrkNbr, BrkGrpCode, TMP_BRK_CWC.CashWireCode, TMP_PAY_AMT.BrkGrpID
+
+
+	--Prepare Triparty Repo Section 
+	SELECT 
+		SectionID = @TRIPARTY_REPO_SECTIONID,
+		PrincipalShortName, 
+		ProductId,
+		Category, 		
+		ProjectedReceivableFrom = CASE WHEN TMP_PAY_AMT.PrincipalShortName IN (SELECT Items FROM f_split(@IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID ,',')) THEN
+								  			SUM(CASE WHEN (ProjectedNetExchange < 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END )
+									   ELSE 
+											CASE WHEN SUM(ISNULL(ProjectedNetExchange,0)) < 0 THEN SUM(ProjectedNetExchange) 
+												 ELSE 0 
+												 END
+									   END,
+							   
+		ProjectedPayableTo = CASE WHEN TMP_PAY_AMT.PrincipalShortName IN (SELECT Items FROM f_split(@IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID ,',')) THEN
+								  		SUM( CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) 
+												  ELSE 0 
+												  END )
+								  ELSE 
+										CASE WHEN SUM(ISNULL(ProjectedNetExchange,0)) > 0 THEN SUM(ProjectedNetExchange) 
+											 ELSE 0 
+											 END
+								  END,
+		
+		SettledReceivableFrom = CASE WHEN TMP_PAY_AMT.PrincipalShortName IN (SELECT Items FROM f_split(@IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID ,',')) THEN
+								  		SUM(CASE WHEN (SettledNetExchange < 0) THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END )
+									 ELSE 
+											CASE WHEN ( SUM(ISNULL(SettledNetExchange,0)) < 0 ) THEN SUM(SettledNetExchange) 
+												 ELSE 0 
+												 END
+									 END,
+
+		SettledPayableTo = CASE WHEN TMP_PAY_AMT.PrincipalShortName IN (SELECT Items FROM f_split(@IS_SKIP_NET_TRIPARTY_REPO_ACCTGRPID ,',')) THEN
+								  		SUM(CASE WHEN (SettledNetExchange > 0) THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END )
+								ELSE 
+									CASE WHEN SUM(ISNULL(SettledNetExchange,0)) > 0 THEN SUM(SettledNetExchange) 
+										 ELSE 0 
+										 END
+								END
+	INTO #TMP_TRIPARTY_REPO
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+	WHERE  						
+		( TradeType = @TRIPARTY_REPO_TRADETYPE ) AND 
+		( TMP_PAY_AMT.AcctGrpName IS NOT NULL )	 AND
+		( IsCashMovement = 1 ) AND
+		(PrincipalShortName IS NOT NULL OR PrincipalShortName <> '') AND
+		(ProductID IS NOT NULL OR ProductID <> 0)
+	GROUP BY 
+		PrincipalShortName, 
+		ProductId,
+		BrkGrpID,
+		SecCode, 
+		Category
+
+	-- Details for Triparty Bony Domestic Bank
+	SELECT 
+		SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID,
+		TMP_PAY_AMT.BrkNbr, 
+		TMP_PAY_AMT.SecCode, 
+		TPUID = ISNULL(TMP_PAY_AMT.TPUID, ''),	
+		TMP_PAY_AMT.BrkGrpCode,		
+		TMP_PAY_AMT.ProjectedNetExchange,
+		TMP_PAY_AMT.SettledNetExchange
+	INTO
+		#TMP_ACTIVITY_TP_BONY_DOM
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+		INNER JOIN
+			#TMP_BROKER TMP_BRK
+		ON
+			( TMP_PAY_AMT.BrkNbr = TMP_BRK.BrkNbr )
+		INNER JOIN
+			MOBETTER.dbo.TriPartyBank AS TBL_TP_BANK
+		ON
+			( TBL_TP_BANK.TriPartyID = TMP_BRK.TriPartyID ) AND
+			( @AsOfDate BETWEEN TBL_TP_BANK.EffectiveDateBegin AND TBL_TP_BANK.EffectiveDateEnd ) AND
+			( ISNULL(TBL_TP_BANK.IsDeleted,0) = 0 ) 
+		INNER JOIN
+			#TMP_TP_BONY_DOMESTIC_BANK_GROUP AS TMP_TP_BNY_BNK_GRP
+		ON
+			( TMP_TP_BNY_BNK_GRP.TriPartyGrpID = TBL_TP_BANK.TriPartyGrpID )
+	WHERE
+		( TMP_PAY_AMT.IsCashMovement = 1 ) AND 
+		( TMP_PAY_AMT.Category IN ( @NEW_CATEGORY, @RET_CATEGORY, @PAIROFF_CATEGORY ) )
+		
+	INSERT INTO #TMP_PAYMENT_SUMMARY
+	(
+		SectionID,
+		Description,
+		AcctGrpID,
+		AcctGrpName,
+		BrkNbr,
+		BrkGrpCode,
+		DueToAccount,		
+		ShowPaymentApproval,
+		ShowMoneyWire,
+		ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,
+		Remarks,
+		SummaryPrincipalShortName,
+		SummaryProductId
+	)
+	SELECT DISTINCT
+		SectionID = @CUSTOMER_REPO_PAYMENT_SECTIONID,
+		[Description] = APP.PrincipalShortName + (CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 0 THEN @NEW_RET_SUFFIX ELSE @NET_SUFFIX END),
+		AcctGrpID = 0,
+		AcctGrpName = '',	
+		BrkNbr = '',
+		BrkGrpCode = '',			
+		DueToAccount = '',		
+		ShowPaymentApproval =	CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+									CASE WHEN (	( (CASE 
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 ) 
+													THEN  SUM(ISNULL(ProjectedNetExchange,0) )
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+										       ELSE 0 END) > 0 ) OR
+												( SUM(CASE WHEN (ISNULL(PairOffType, '') != @PairOff) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END) = SUM(CASE WHEN (ISNULL(PairOffType, '') != @PairOff) THEN ( ISNULL(SettledNetExchange,0) ) ELSE 0 END) AND
+												( (CASE 
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 ) 
+													THEN  SUM(ISNULL(ProjectedNetExchange,0) )
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+										       ELSE 0 END) > 0) )
+											  )
+									THEN 1 
+									ELSE 0 END
+								ELSE
+									CASE WHEN (	( SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END) > 0 ) OR
+												( SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END) = SUM(CASE WHEN (SettledNetExchange > 0) THEN ( ISNULL(SettledNetExchange,0) ) ELSE 0 END) AND
+												( SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END) <> 0) )
+											  )
+									THEN 1 
+									ELSE 0 END
+								END,							
+		ShowMoneyWire =			CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+									CASE WHEN (CASE 
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 ) 
+													THEN  SUM(ISNULL(ProjectedNetExchange,0) )
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+													
+													WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 AND 
+														   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 )
+													THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+										       ELSE 0 END) > 0				
+									THEN 1 
+									ELSE 0 END
+								ELSE
+									CASE WHEN( SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END) <> 0)
+									THEN 1 
+									ELSE 0 END
+								END,
+		ProjectedReceivableFrom = CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+										CASE 
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) < 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) < 0 ) 
+											THEN  SUM(ISNULL(ProjectedNetExchange,0) )
+
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) >= 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '' )  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) < 0 )
+											THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) < 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) >= 0 )
+											THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)	
+										ELSE 0 END
+								  ELSE 
+									SUM(CASE WHEN (ProjectedNetExchange < 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) 
+								  END,
+		ProjectedPayableTo = CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+										CASE 
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 ) 
+											 THEN  SUM(ISNULL(ProjectedNetExchange,0) )
+
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 )
+											 THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) <= 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) > 0 )
+											 THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END)
+										ELSE 0 END
+							 ELSE 
+								SUM(CASE WHEN (ProjectedNetExchange > 0) THEN ( ISNULL(ProjectedNetExchange,0)) ELSE 0 END ) 
+							 END,
+		SettledReceivableFrom = CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+										CASE 
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) < 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) < 0 ) 
+											THEN  SUM(ISNULL(SettledNetExchange,0) )
+
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) >= 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '' )  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) < 0 )
+											THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END)
+
+											WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) < 0 AND 
+												  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) >= 0 )
+											THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END)	
+										ELSE 0 END
+								ELSE 
+									SUM( (CASE WHEN (SettledNetExchange < 0) THEN ( ISNULL(SettledNetExchange,0) ) ELSE 0 END) ) 
+								END,
+		SettledPayableTo = CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 1 THEN
+									CASE 
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) > 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) > 0 ) 
+											 THEN  SUM(ISNULL(SettledNetExchange,0) )
+
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) > 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) <= 0 )
+											 THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END)
+
+											 WHEN (SUM(CASE WHEN (ISNULL(PairOffType, '') = @Turnaround)  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) <= 0 AND 
+												   SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END ) > 0 )
+											 THEN  SUM(CASE WHEN (ISNULL(PairOffType, '') = '')  THEN ( ISNULL(SettledNetExchange,0)) ELSE 0 END)
+										ELSE 0 END
+							ELSE  
+								SUM( (CASE WHEN (SettledNetExchange > 0) THEN ( ISNULL(SettledNetExchange,0) ) ELSE 0 END) ) 
+							END,
+		Remarks	 = 	(CASE WHEN ISNULL(TMP_ACCT_GRP_CWC.IsNetPairOff,0) = 0 THEN 'New Trade' ELSE 'Net Payment' END),
+		APP.PrincipalShortName,
+		APP.ProductID
+	FROM 
+		 #TMP_ACCTGRP_PRODUCTPRINCIPAL APP
+		LEFT JOIN ( SELECT TMP_MA.* 
+					FROM #TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_MA 
+					INNER JOIN #TMP_ACCTGRP_CASH_WIRE_CODE AS TMP_CW 
+					ON ( TMP_MA.AcctGrpID = TMP_CW.AcctGrpID ) AND 
+					( ISNULL(TMP_MA.PrincipalShortName , '') = ISNULL(TMP_CW.CashWirePrincipalShortName,'') ) AND
+					( ISNULL(TMP_MA.ProductId , 0) = ISNULL(TMP_CW.ProductId,0) ) AND
+						(
+							( ISNULL(TMP_CW.IsNetPairOff,0) = 0 AND ISNULL(TMP_MA.Category,@NEW_CATEGORY) IN ( @RET_CATEGORY, @NEW_CATEGORY )) OR 
+							( ISNULL(TMP_CW.IsNetPairOff,0) = 1 AND ISNULL(TMP_MA.Category,@NEW_CATEGORY) IN ( @RET_CATEGORY, @NEW_CATEGORY, @PAIROFF_CATEGORY ))
+						
+						 ) 
+					WHERE ( ISNULL(TradeType,@BILATERAL_REPO_TRADETYPE)  IN ( @BILATERAL_REPO_TRADETYPE, @FICC_TRADETYPE ) ) ) AS TMP_PAY_AMT
+			ON 
+				( APP.AcctGrpID = TMP_PAY_AMT.AcctGrpID ) AND
+				( ISNULL(APP.PrincipalShortName,'') = ISNULL(TMP_PAY_AMT.PrincipalShortName,'') ) AND
+				( ISNULL(APP.ProductId , 0) = ISNULL(TMP_PAY_AMT.ProductId,0) ) 		
+		LEFT JOIN #TMP_ACCTGRP_CASH_WIRE_CODE AS TMP_ACCT_GRP_CWC
+			ON  
+				( APP.AcctGrpID = TMP_ACCT_GRP_CWC.AcctGrpID ) AND
+				( ISNULL(APP.PrincipalShortName,'') = ISNULL(TMP_ACCT_GRP_CWC.CashWirePrincipalShortName,'')) AND
+				( ISNULL(APP.ProductId , 0) = ISNULL(TMP_ACCT_GRP_CWC.ProductId,0) ) 
+		WHERE	
+			( ISNULL(TMP_ACCT_GRP_CWC.IsDisplayOnDashboard,1) = 1 ) AND
+			(APP.PrincipalShortName IS NOT NULL OR APP.PrincipalShortName <> '') AND
+			(APP.ProductID IS NOT NULL OR APP.ProductID <> 0)			
+		GROUP BY 
+			APP.PrincipalShortName,				 
+			APP.ProductID,	
+			ISNULL(IsNetPairOff,0)
+
+	UNION ALL
+
+	SELECT 
+		SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID,
+		Description, 
+		AcctGrpID = 0,  
+		AcctGrpName = '', 
+		BrkNbr, BrkGrpCode, DepoInd,
+		ShowPaymentApproval = CASE WHEN ( SettledPayableTo > 0 ) THEN 1 
+								   ELSE 0 
+								   END, 
+		ShowMoneyWire = CASE WHEN ( SettledPayableTo > 0 ) THEN 1 
+						     ELSE 0 
+							 END,
+		ProjectedReceivableFrom, ProjectedPayableTo, SettledReceivableFrom, SettledPayableTo, Remarks,
+		PrincipalShortName,
+		ProductId
+	FROM
+		#TMP_CUSTOMER_PAIROFF
+	
+	UNION ALL
+	
+	SELECT 
+		SectionID = @EUROCLEAR_SETTLEMENT_SECTIONID,--@FED_SETTLEMENT_SECTIONID,
+		Description = BrkNbr + @NEW_RET_SUFFIX ,	
+		AcctGrpID = 0,
+		AcctGrpName = '',				
+		BrkNbr = TMP_PAY_AMT.BrkNbr,
+		BrkGrpCode,			
+		DueToAccount = @EURO_DEPOIND,
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange > 0 THEN TMP_PAY_AMT.ProjectedNetExchange ELSE 0 END),
+		ProjectedPayableTo = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange < 0 THEN TMP_PAY_AMT.ProjectedNetExchange ELSE 0 END),
+		SettledReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange > 0 THEN TMP_PAY_AMT.SettledNetExchange ELSE 0 END),
+		SettledPayableTo = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange < 0 THEN TMP_PAY_AMT.SettledNetExchange ELSE 0 END),
+		Remarks='',
+		PrincipalShortName = '',
+		ProductId = 0
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+	WHERE  		
+		( TMP_PAY_AMT.IsCashMovement = 1 ) AND 
+		( TMP_PAY_AMT.TradeType = @BILATERAL_REPO_TRADETYPE ) AND
+		( TMP_PAY_AMT.Category IN (@NEW_CATEGORY, @RET_CATEGORY) ) AND
+		( TMP_PAY_AMT.DepoInd LIKE @EURO_DEPOIND + '%' )
+	GROUP BY 
+		BrkNbr,BrkGrpCode
+	HAVING
+		(SUM(TMP_PAY_AMT.ProjectedNetExchange) <> 0)
+	
+	--UNION ALL
+	
+	--SELECT 
+	--	SectionID = @FICC_SECTIONID,
+	--	Description = @FICC_PREFIX +  (CASE WHEN Category = @NEW_CATEGORY THEN @NEW_RET_SUFFIX ELSE ( ' -  ' + @PAIR_OFF_SUFFIX ) END),	
+	--	AcctGrpID = 0,
+	--	AcctGrpName = '',				
+	--	BrkNbr = '',
+	--	BrkGrpCode = '',			
+	--	DueToAccount = @FICC_DEPOIND,		
+	--	ShowPaymentApproval = 0,
+	--	ShowMoneyWire = 0,
+	--	ProjectedReceivableFrom = CASE WHEN Category = @NEW_CATEGORY THEN SUM(ProjectedReceivableFrom) ELSE 
+	--								( CASE WHEN ( SUM(ProjectedReceivableFrom) + SUM(ProjectedPayableTo)) > 0
+	--							    THEN ( SUM(ProjectedReceivableFrom) + SUM(ProjectedPayableTo)) ELSE 0 END ) END,
+	--	ProjectedPayableTo = CASE WHEN Category = @NEW_CATEGORY THEN SUM(ProjectedPayableTo) ELSE 
+	--							( CASE WHEN ( SUM(ProjectedReceivableFrom) + SUM(ProjectedPayableTo)) < 0
+	--							THEN  ( SUM(ProjectedReceivableFrom) + SUM(ProjectedPayableTo)) ELSE 0 END ) END,
+	--	SettledReceivableFrom = CASE WHEN Category = @NEW_CATEGORY THEN SUM(SettledReceivableFrom) ELSE
+	--							( CASE WHEN ( SUM(SettledReceivableFrom) + SUM(SettledPayableTo)) > 0
+	--							THEN ( SUM(SettledReceivableFrom) + SUM(SettledPayableTo)) ELSE 0 END ) END,								
+	--	SettledPayableTo = CASE WHEN Category = @NEW_CATEGORY THEN SUM(SettledPayableTo) ELSE
+	--							( CASE WHEN ( SUM(SettledReceivableFrom) + SUM(SettledPayableTo)) < 0
+	--							THEN ( SUM(SettledReceivableFrom) + SUM(SettledPayableTo)) ELSE 0 END ) END,		
+	--	Remarks='',
+	--	PrincipalShortName = '',
+	--	ProductId  = 0
+	--FROM
+	--(
+	--	SELECT
+	--		ProjectedReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange > 0 THEN ProjectedNetExchange ELSE 0 END),
+	--		ProjectedPayableTo = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange < 0 THEN ProjectedNetExchange ELSE 0 END),
+	--		SettledReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange > 0 THEN SettledNetExchange ELSE 0 END),
+	--		SettledPayableTo = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange < 0 THEN SettledNetExchange ELSE 0 END),
+	--		Category = (CASE WHEN Category IN (	@NEW_CATEGORY, @RET_CATEGORY) THEN @NEW_CATEGORY ELSE Category END)
+	--	FROM 
+	--		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+	--	WHERE
+	--		( TradeType = @FICC_TRADETYPE ) AND
+	--		( Category IN (@NEW_CATEGORY, @RET_CATEGORY, @PAIROFF_CATEGORY) ) AND
+	--		(( CASE WHEN ISNULL(IsFICCMatched,@IS_FICC_MATCHED_NO) = @IS_FICC_MATCHED_YES THEN @IS_FICC_MATCHED_TRUE 
+	--				ELSE @IS_FICC_MATCHED_FALSE 
+	--				END) = @IS_FICC_MATCHED_TRUE)
+	--	GROUP BY 
+	--		Category, ISNULL(IsFICCMatched,0)
+	--) AS FICC
+	--GROUP BY FICC.Category
+
+	UNION ALL
+
+	SELECT 
+		SectionID = @TRIPARTY_REPO_SECTIONID,
+		Description = PrincipalShortName,	
+		AcctGrpID = 0,
+		AcctGrpName = '',				
+		BrkNbr = '',
+		BrkGrpCode = '',			
+		DueToAccount = '',		
+		ShowPaymentApproval = CASE WHEN SUM(SettledPayableTo) > 0 THEN 1 
+							  ELSE 0 
+							  END, 		
+		ShowMoneyWire = CASE WHEN SUM(SettledPayableTo) > 0 THEN 1 
+							 ELSE 0 
+							 END,
+		ProjectedReceivableFrom = SUM(ProjectedReceivableFrom),
+		ProjectedPayableTo = SUM(ProjectedPayableTo),
+		SettledReceivableFrom = SUM(SettledReceivableFrom),
+		SettledPayableTo = SUM(SettledPayableTo),
+		Remarks = 'FROM WDH TO NYB',
+        PrincipalShortName ,
+		ProductId
+	FROM 
+		#TMP_TRIPARTY_REPO AS TMP_PAY_AMT
+	WHERE  						
+	    (TMP_PAY_AMT.PrincipalShortName IS NOT NULL OR TMP_PAY_AMT.PrincipalShortName <> '') AND
+		(TMP_PAY_AMT.ProductID IS NOT NULL OR TMP_PAY_AMT.ProductID <> 0)		
+	GROUP BY 
+		PrincipalShortName ,
+		ProductId
+					
+	UNION ALL
+
+	SELECT 
+		SectionID = @FAILS_SECTIONID,
+		[Description] = PrincipalShortName + @NEW_RET_SUFFIX ,
+		AcctGrpID = 0,
+		AcctGrpName = '',						
+		BrkNbr = '',
+		BrkGrpCode = '',			
+		DepoInd = '',
+		ShowPaymentApproval = CASE WHEN SUM(TMP_PAY_AMT.FailedNetExchange) < 0 THEN 1 ELSE 0 END,
+		ShowMoneyWire =		  CASE WHEN SUM(TMP_PAY_AMT.FailedNetExchange) < 0 THEN 1 ELSE 0 END,
+		ProjectedReceivableFrom = 0,
+		ProjectedPayableTo = 0,
+		SettledReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.FailedNetExchange < 0 THEN TMP_PAY_AMT.FailedNetExchange ELSE 0 END),
+		SettledPayableTo = SUM(CASE WHEN TMP_PAY_AMT.FailedNetExchange > 0 THEN TMP_PAY_AMT.FailedNetExchange ELSE 0 END),
+		Remarks = 'Fail',
+		PrincipalShortName,
+		ProductId
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+	WHERE  		
+		( TMP_PAY_AMT.IsCashMovement = 1 ) AND
+		( FedStatus = @G1_STATUS_FAILED ) AND 
+		( TMP_PAY_AMT.AcctGrpName IS NOT NULL ) AND
+		(PrincipalShortName IS NOT NULL OR PrincipalShortName <> '') AND
+		(ProductId IS NOT NULL OR ProductId <> 0)
+	GROUP BY 
+		PrincipalShortName,
+		ProductId
+
+	UNION ALL
+
+	SELECT 
+		SectionID = @FAILS_SECTIONID,
+		Description = BrkNbr + @NEW_RET_SUFFIX,	
+		AcctGrpID = 0,
+		AcctGrpName = '',				
+		BrkNbr = TMP_PAY_AMT.BrkNbr,
+		BrkGrpCode = TMP_PAY_AMT.BrkGrpCode,			
+		DueToAccount = '',		
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = 0,
+		ProjectedPayableTo = 0,
+		SettledReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.FailedNetExchange > 0 THEN TMP_PAY_AMT.FailedNetExchange ELSE 0 END),
+		SettledPayableTo = SUM(CASE WHEN TMP_PAY_AMT.FailedNetExchange < 0 THEN TMP_PAY_AMT.FailedNetExchange ELSE 0 END),
+		Remarks='',
+		PrincipalShortName = '',
+		ProductId = 0
+	FROM 
+		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+	WHERE  		
+		( TMP_PAY_AMT.IsCashMovement = 1 ) AND				
+		( FedStatus = @G1_STATUS_FAILED )
+	GROUP BY 
+		BrkNbr,BrkGrpCode								
+		
+	--/*-------------------------------Bony Triparty Sec Lend------------------------------*/	
+	--INSERT INTO #TMP_PAYMENT_SUMMARY
+	--(
+	--	SectionID,
+	--	Description,
+	--	AcctGrpID,
+	--	AcctGrpName,
+	--	BrkNbr,
+	--	BrkGrpCode,
+	--	SecCodes,
+	--	DueToAccount,		
+	--	ShowPaymentApproval,
+	--	ShowMoneyWire,
+	--	ProjectedReceivableFrom,
+	--	ProjectedPayableTo,
+	--	SettledReceivableFrom,
+	--	SettledPayableTo,
+	--	Remarks
+	--)
+	--SELECT 
+	--	SectionID,
+	--	Description = CASE WHEN ( ISNULL(TMP_PAY_AMT.TPUID, '') <> '' ) THEN 
+	--									 TMP_PAY_AMT.TPUID + '( ' + STUFF((SELECT DISTINCT ',' + TMP_BONY_CP.SecCode 
+	--													FROM #TMP_ACTIVITY_TP_BONY_DOM AS TMP_BONY_CP
+	--													WHERE ( TMP_BONY_CP.TPUID = TMP_PAY_AMT.TPUID ) AND  	
+	--														  ( TMP_BONY_CP.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID )
+	--													FOR XML PATH('')),1,1,'') + ' )'	
+	--					  ELSE 	STUFF((SELECT DISTINCT ',' + TMP_BONY_CP.SecCode 
+	--													FROM #TMP_ACTIVITY_TP_BONY_DOM AS TMP_BONY_CP
+	--													WHERE ( TMP_BONY_CP.TPUID = TMP_PAY_AMT.TPUID ) AND  	
+	--														  ( TMP_BONY_CP.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID )
+	--													FOR XML PATH('')),1,1,'')	
+	--					 END,			
+	--	AcctGrpID = 0,
+	--	AcctGrpName = '',				
+	--	BrkNbr = '',
+	--	BrkGrpCode = '',	
+	--	SecCodes = STUFF((SELECT DISTINCT ',' + TMP_BONY_CP.SecCode 
+	--													FROM #TMP_ACTIVITY_TP_BONY_DOM AS TMP_BONY_CP
+	--													WHERE ( TMP_BONY_CP.TPUID = TMP_PAY_AMT.TPUID ) AND  	
+	--														  ( TMP_BONY_CP.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID )
+	--													FOR XML PATH('')),1,1,''),				
+	--	DueToAccount = '',		
+	--	ShowPaymentApproval = 0,
+	--	ShowMoneyWire = 0,
+	--	ProjectedReceivableFrom = SUM(CASE WHEN ProjectedNetExchange > 0 THEN ProjectedNetExchange ELSE 0 END),
+	--	ProjectedPayableTo = SUM(CASE WHEN ProjectedNetExchange < 0 THEN ProjectedNetExchange ELSE 0 END),
+	--	SettledReceivableFrom = SUM(CASE WHEN SettledNetExchange > 0 THEN SettledNetExchange ELSE 0 END),
+	--	SettledPayableTo = SUM(CASE WHEN SettledNetExchange < 0 THEN SettledNetExchange ELSE 0 END),
+	--	Remarks = ''
+	--FROM 
+	--	#TMP_ACTIVITY_TP_BONY_DOM AS TMP_PAY_AMT
+	--GROUP BY 
+	--	SectionID, TPUID
+
+	--UNION ALL
+	
+	--SELECT 	
+	--	SectionID,
+	--	Description,		
+	--	AcctGrpID = 0,
+	--	AcctGrpName = '',				
+	--	BrkNbr = TP_DOM_TPUID.BrkNbr,
+	--	BrkGrpCode = TP_DOM_TPUID.BrkGrpCode,	
+	--	SecCodes = '',			
+	--	DueToAccount = '',	
+	--	ShowPaymentApproval = CASE WHEN ( ( SettledReceivableFrom + SettledPayableTo ) > 0 ) THEN  1
+	--							   ELSE 0 
+	--							   END, 
+	--	ShowMoneyWire		= CASE WHEN ( ( SettledReceivableFrom + SettledPayableTo ) > 0 ) THEN  1
+	--							   ELSE 0 
+	--							   END,
+	--	ProjectedReceivableFrom = CASE WHEN ( ( ProjectedReceivableFrom + ProjectedPayableTo ) < 0 ) THEN 
+	--										( ProjectedReceivableFrom + ProjectedPayableTo )
+	--								   ELSE 0 
+	--								   END,
+		
+	--	ProjectedPayableTo = CASE WHEN ( ( ProjectedReceivableFrom + ProjectedPayableTo ) > 0 ) THEN 
+	--										( ProjectedReceivableFrom + ProjectedPayableTo )
+	--								   ELSE 0 
+	--								   END,
+
+
+	--	SettledReceivableFrom = CASE WHEN ( ( SettledReceivableFrom + SettledPayableTo ) < 0 ) THEN 
+	--										( SettledReceivableFrom + SettledPayableTo )
+	--								   ELSE 0 
+	--								   END,
+
+	--	SettledPayableTo = CASE WHEN ( ( SettledReceivableFrom + SettledPayableTo ) > 0 ) THEN 
+	--										( SettledReceivableFrom + SettledPayableTo )
+	--								   ELSE 0 
+	--								   END,
+	--	Remarks = 'Fund Transfer'		
+	--FROM 
+	--(
+	--	SELECT 
+	--		SectionID,
+	--		Description = CASE WHEN ( ISNULL(TMP_PAY_AMT.TPUID, '') <> '' ) THEN TMP_PAY_AMT.TPUID + '( ' + TMP_PAY_AMT.BrkNbr + ' )'
+	--						   ELSE TMP_PAY_AMT.BrkNbr
+	--						   END,		
+			
+	--		BrkNbr = TMP_PAY_AMT.BrkNbr,
+	--		BrkGrpCode = TMP_PAY_AMT.BrkGrpCode,	
+	--		--ShowPaymentApproval = CASE WHEN ( (SUM(CASE WHEN SettledNetExchange > 0 THEN SettledNetExchange ELSE 0 END)) > 0 ) THEN 1 
+	--		--						   ELSE 0 
+	--		--						   END, 
+	--		--ShowMoneyWire = CASE WHEN ( (SUM(CASE WHEN SettledNetExchange > 0 THEN SettledNetExchange ELSE 0 END)) > 0 ) THEN 1 
+	--		--					 ELSE 0 
+	--		--					 END,
+	--		ProjectedReceivableFrom = SUM(CASE WHEN ProjectedNetExchange < 0 THEN ProjectedNetExchange ELSE 0 END),
+	--		ProjectedPayableTo = SUM(CASE WHEN ProjectedNetExchange > 0 THEN ProjectedNetExchange ELSE 0 END),
+	--		SettledReceivableFrom = SUM(CASE WHEN SettledNetExchange < 0 THEN SettledNetExchange ELSE 0 END),
+	--		SettledPayableTo = SUM(CASE WHEN SettledNetExchange > 0 THEN SettledNetExchange ELSE 0 END) 
+	--	FROM 
+	--		#TMP_ACTIVITY_TP_BONY_DOM AS TMP_PAY_AMT
+	--	GROUP BY 
+	--		SectionID, TPUID, TMP_PAY_AMT.BrkNbr, TMP_PAY_AMT.BrkGrpCode
+
+	--) AS TP_DOM_TPUID
+
+	/*-------------------------------INSERT FOR COUNTER PARTY PAIR-OFFS - GROUP BY CashWireCode------------------------------*/
+	INSERT INTO #TMP_PAYMENT_SUMMARY
+	(
+		SectionID,
+		Description,
+		AcctGrpID,
+		AcctGrpName,
+		BrkNbr,
+		BrkGrpCode,
+		DueToAccount,			
+		ShowPaymentApproval,
+		ShowMoneyWire,
+		ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,
+		Remarks,
+		CashWireCode,
+		BrkGrpID
+	)
+	SELECT 
+		SectionID,
+		Description = LTRIM(RTRIM(STUFF(( SELECT ' , ' + Description
+							  FROM #TMP_CP_PAIROFF CP_PAIROFF
+							  WHERE (ISNULL(TMP_CP_PAIROFF.CashWireCode,'') = ISNULL(CP_PAIROFF.CashWireCode,'')) 
+							  FOR XML PATH('')),2,1,''))),							 
+		AcctGrpID = 0,
+		AcctGrpName = '',				
+		BrkNbr =  '',
+		BrkGrpCode = '',			
+		DueToAccount = '',		
+		ShowPaymentApproval = CASE WHEN( SUM(SettledPayableTo) < 0) THEN  1 
+								   ELSE 0 
+								   END,
+		ShowMoneyWire =		  CASE WHEN(SUM(SettledPayableTo) < 0 )	THEN 1 
+								   ELSE 0 
+								   END,
+		ProjectedReceivableFrom =  CASE WHEN ( SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom)) ) < 0 THEN ( SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom)) ) 
+										ELSE 0 
+										END,
+		ProjectedPayableTo =  CASE WHEN ( SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom)) ) > 0 THEN ( SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom)) ) 
+								   ELSE 0 
+								   END,
+		
+		SettledReceivableFrom =  CASE WHEN ( SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)) ) < 0 THEN ( SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)) ) 
+									  ELSE 0 
+									  END,
+		
+		SettledPayableTo =  CASE WHEN ( SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)) ) > 0 THEN ( SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)) ) 
+							     ELSE 0 
+								 END,	
+		Remarks	= @PAIR_OFF_SUFFIX,
+		CashWireCode = TMP_CP_PAIROFF.CashWireCode,
+		BrkGrpID = TMP_CP_PAIROFF.BrkGrpID
+	FROM 
+		#TMP_CP_PAIROFF AS TMP_CP_PAIROFF
+	GROUP BY 
+		SectionID,CashWireCode,BrkGrpID
+
+	--INSERT INTO #TMP_PAYMENT_SUMMARY
+	--(
+	--	SectionID,
+	--	Description,
+	--	AcctGrpID,
+	--	AcctGrpName,
+	--	BrkNbr,
+	--	BrkGrpCode,
+	--	DueToAccount,	
+	--	SecCodes,	
+	--	ShowPaymentApproval,
+	--	ShowMoneyWire,
+	--	ProjectedReceivableFrom,
+	--	ProjectedPayableTo,
+	--	SettledReceivableFrom,
+	--	SettledPayableTo
+	--)
+	--SELECT 
+	--	SectionID = @DTC_SECTIONID,		
+	--	Description =  BrkNbr + '(' + SecCodes
+	--							+ ' )' +  (CASE WHEN Category = @NEW_OR_RET THEN @NEW_RET_SUFFIX ELSE ( ' -  ' + @PAIR_OFF_SUFFIX ) END) ,
+	--	AcctGrpID = 0,
+	--	AcctGrpName = '',					
+	--	BrkNbr,
+	--	BrkGrpCode,			
+	--	DueToAccount = @DTC_DEPOIND,
+	--	SecCodes,
+	--	ShowPaymentApproval = 0,
+	--	ShowMoneyWire = 0,
+	--	ProjectedReceivableFrom = CASE WHEN Category = @NEW_OR_RET THEN ProjectedReceivableFrom 
+	--								   ELSE( CASE WHEN ( ProjectedReceivableFrom + ProjectedPayableTo) > 0
+	--											  THEN ( ProjectedReceivableFrom + ProjectedPayableTo) 
+	--											  ELSE 0 END ) 
+	--								   END,
+		
+	--	ProjectedPayableTo = CASE WHEN Category = @NEW_OR_RET THEN ProjectedPayableTo 
+	--							  ELSE ( CASE WHEN ( ProjectedReceivableFrom + ProjectedPayableTo) < 0
+	--										  THEN  ( ProjectedReceivableFrom + ProjectedPayableTo) 
+	--										  ELSE 0 
+	--										  END ) 
+	--							  END,
+		
+	--	SettledReceivableFrom = CASE WHEN Category = @NEW_OR_RET THEN SettledReceivableFrom 
+	--								 ELSE ( CASE WHEN ( SettledReceivableFrom + SettledPayableTo) > 0 
+	--											 THEN ( SettledReceivableFrom + SettledPayableTo)
+	--											 ELSE 0 
+	--											 END ) 
+	--							     END,								
+		
+	--	SettledPayableTo = CASE WHEN Category = @NEW_OR_RET THEN SettledPayableTo 
+	--							ELSE ( CASE WHEN ( SettledReceivableFrom + SettledPayableTo) < 0 
+	--										THEN ( SettledReceivableFrom + SettledPayableTo) 
+	--										ELSE 0 
+	--										END ) 
+	--							END										
+	--FROM
+	--(
+	--	SELECT
+	--		ProjectedReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange > 0 THEN ProjectedNetExchange 
+	--										   ELSE 0 
+	--										   END),
+
+	--		ProjectedPayableTo = SUM(CASE WHEN TMP_PAY_AMT.ProjectedNetExchange < 0 THEN TMP_PAY_AMT.ProjectedNetExchange 
+	--									  ELSE 0 
+	--									  END),
+			
+	--		SettledReceivableFrom = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange > 0 THEN TMP_PAY_AMT.SettledNetExchange 
+	--										 ELSE 0 
+	--										 END),
+			
+	--		SettledPayableTo = SUM(CASE WHEN TMP_PAY_AMT.SettledNetExchange < 0 THEN TMP_PAY_AMT.SettledNetExchange 
+	--									ELSE 0 
+	--									END),
+	--		TMP_PAY_AMT.BrkNbr,
+	--		TMP_PAY_AMT.BrkGrpCode,
+	--		SecCodes = STUFF((SELECT DISTINCT ' / '+ TMP_PAY_AMT_SECCODE.SecCode 
+	--						  FROM #TMP_MASTER_ACTIVITY AS TMP_PAY_AMT_SECCODE
+	--						  WHERE TMP_PAY_AMT_SECCODE.BrkNbr=TMP_PAY_AMT.BrkNbr AND  							
+	--								( CASE WHEN TMP_PAY_AMT_SECCODE.Category IN ( @NEW_CATEGORY, @RET_CATEGORY) THEN @NEW_OR_RET 
+	--									   ELSE TMP_PAY_AMT_SECCODE.Category 
+	--									   END ) = ( CASE WHEN TMP_PAY_AMT.Category IN (	@NEW_CATEGORY, @RET_CATEGORY) THEN @NEW_OR_RET 
+	--													ELSE TMP_PAY_AMT.Category 
+	--													END ) 
+	--								AND
+	--								( TMP_PAY_AMT_SECCODE.TradeType = @BILATERAL_REPO_TRADETYPE ) AND
+	--								( TMP_PAY_AMT_SECCODE.DepoInd = @DTC_DEPOIND )
+	--						  FOR XML PATH('')),2,1,''),			
+	--		Category = (CASE WHEN Category IN (	@NEW_CATEGORY, @RET_CATEGORY) THEN @NEW_OR_RET ELSE Category END)				
+	--	FROM 
+	--		#TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT AS TMP_PAY_AMT
+
+	--	WHERE  					
+	--		( TradeType IN (@BILATERAL_REPO_TRADETYPE) ) AND
+	--		( Category IN (@NEW_CATEGORY, @RET_CATEGORY, @PAIROFF_CATEGORY) ) AND
+	--		( DepoInd = @DTC_DEPOIND )		
+	--	GROUP BY 
+	--		BrkNbr,BrkGrpCode,(CASE WHEN Category IN (	@NEW_CATEGORY, @RET_CATEGORY) THEN @NEW_OR_RET ELSE Category END)
+	--) AS DTC	
+			
+
+	/*------ IF no records exists for section FICC in #TMP_PAYMENT_SUMMARY, select default value . 
+			Internal repo will always display line items for no activity on dashboard------------------*/
+	IF NOT EXISTS(SELECT SectionID FROM #TMP_PAYMENT_SUMMARY WHERE SectionID = @EUROCLEAR_SETTLEMENT_SECTIONID)
+	BEGIN
+		INSERT INTO #TMP_PAYMENT_SUMMARY
+		(
+			SectionID,
+			Description,
+			AcctGrpID,
+			AcctGrpName,
+			BrkNbr,
+			BrkGrpCode,
+			DueToAccount,		
+			ShowPaymentApproval,
+			ShowMoneyWire,
+			ProjectedReceivableFrom,
+			ProjectedPayableTo,
+			SettledReceivableFrom,
+			SettledPayableTo
+		)
+		SELECT 
+			SectionID = @INTERNAL_REPO_SECTIONID, 
+			[Description] =  @NO_ACTIVITY + ' (' + @EURO_DEPOIND + ')',								
+			AcctGrpID = 0,
+			AcctGrpName = '',			
+			BrkNbr = '',
+			BrkGrpCode = '',			
+			DueToAccount = @EURO_DEPOIND,			
+			ShowPaymentApproval = 0,
+			ShowMoneyWire = 0,
+			ProjectedReceivableFrom = 0,
+			ProjectedPayableTo = 0,
+			SettledReceivableFrom = 0,
+			SettledPayableTo = 0			
+	END
+	ELSE
+	BEGIN
+		INSERT INTO #TMP_PAYMENT_SUMMARY
+		(
+			SectionID,
+			Description,
+			AcctGrpID,
+			AcctGrpName,
+			BrkNbr,
+			BrkGrpCode,
+			DueToAccount,		
+			ShowPaymentApproval,
+			ShowMoneyWire,
+			ProjectedReceivableFrom,
+			ProjectedPayableTo,
+			SettledReceivableFrom,
+			SettledPayableTo,
+			Remarks
+		)
+		SELECT 
+			SectionID = @INTERNAL_REPO_SECTIONID, 
+			[Description] = (
+							CASE WHEN																 	
+							(
+								CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+									(SUM(ProjectedReceivableFrom) - SUM(ProjectedPayableTo)) ELSE 0 END
+							) = 0					  
+							THEN 
+							@INTERNAL_REPO_DUE_TO_CUSTODY_FED
+							ELSE
+							@INTERNAL_REPO_DUE_TO_LENDING_FED END
+						),
+			AcctGrpID = 0,
+			AcctGrpName = '',			
+			BrkNbr = '',
+			BrkGrpCode = '',			
+			DueToAccount = @EURO_DEPOIND,			
+			ShowPaymentApproval = 0,
+			ShowMoneyWire = 0,
+			ProjectedReceivableFrom = CASE WHEN (SUM(ABS(ProjectedPayableTo)) > SUM(ABS(ProjectedReceivableFrom))) THEN 
+									(SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom))) ELSE 0 END,
+			ProjectedPayableTo = CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+									(SUM(ABS(ProjectedReceivableFrom)) - SUM(ABS(ProjectedPayableTo))) ELSE 0 END,
+			SettledReceivableFrom = CASE WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom))) THEN 
+									(SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom))) ELSE 0 END,
+			SettledPayableTo = 	CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo))) THEN 
+									(SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) ELSE 0 END,
+			Remarks = 'Fund Transfer'
+		FROM 
+			#TMP_PAYMENT_SUMMARY
+		WHERE
+			SectionID = @EUROCLEAR_SETTLEMENT_SECTIONID
+	END
+
+	/*------ IF no records exists for section DTC in #TMP_PAYMENT_SUMMARY, select default value . 
+			Internal repo will always display line items for no activity on dashboard------------------*/
+	--IF NOT EXISTS(SELECT SectionID FROM #TMP_PAYMENT_SUMMARY WHERE SectionID = @DTC_SECTIONID)
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_REPO_SECTIONID, 
+	--		[Description] =  @NO_ACTIVITY + ' (' + @DTC_DEPOIND + ')',								
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = @DTC_DEPOIND,			
+	--		ShowPaymentApproval = 0,
+	--		ShowMoneyWire = 0,
+	--		ProjectedReceivableFrom = 0,
+	--		ProjectedPayableTo = 0,
+	--		SettledReceivableFrom = 0,
+	--		SettledPayableTo = 0			
+	--END
+	--ELSE
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo,
+	--		Remarks
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_REPO_SECTIONID, 
+	--		[Description] = (
+	--						CASE WHEN																 	
+	--						(
+	--							CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+	--								(SUM(ProjectedReceivableFrom) - SUM(ProjectedPayableTo)) ELSE 0 END
+	--						) = 0					  
+	--						THEN 
+	--						@INTERNAL_REPO_DUE_TO_CUSTODY_DTC
+	--						ELSE
+	--						@INTERNAL_REPO_DUE_TO_LENDING_DTC END
+	--					),
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = @DTC_DEPOIND,			
+	--		ShowPaymentApproval = 1,
+	--		ShowMoneyWire = 1,
+	--		ProjectedReceivableFrom = CASE WHEN (SUM(ABS(ProjectedPayableTo)) > SUM(ABS(ProjectedReceivableFrom))) THEN 
+	--								(SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom))) ELSE 0 END,
+	--		ProjectedPayableTo = CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+	--								(SUM(ABS(ProjectedReceivableFrom)) - SUM(ABS(ProjectedPayableTo))) ELSE 0 END,
+	--		SettledReceivableFrom = CASE WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom))) THEN 
+	--								(SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom))) ELSE 0 END,
+	--		SettledPayableTo = 	CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo))) THEN 
+	--								(SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) ELSE 0 END,
+	--		Remarks = 'Fund Transfer'
+	--	FROM 
+	--		#TMP_PAYMENT_SUMMARY
+	--	WHERE
+	--		SectionID = @DTC_SECTIONID
+	--END
+
+	/*------ IF no records exists for section FICC in #TMP_PAYMENT_SUMMARY, select default value . 
+			Internal repo will always display line items for no activity on dashboard------------------*/
+	--IF NOT EXISTS(SELECT SectionID FROM #TMP_PAYMENT_SUMMARY WHERE SectionID = @FICC_SECTIONID)
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_REPO_SECTIONID, 
+	--		[Description] =  @NO_ACTIVITY + ' (' + @FICC_DEPOIND + ')',								
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = @FICC_DEPOIND,			
+	--		ShowPaymentApproval = 0,
+	--		ShowMoneyWire = 0,
+	--		ProjectedReceivableFrom = 0,
+	--		ProjectedPayableTo = 0,
+	--		SettledReceivableFrom = 0,
+	--		SettledPayableTo = 0			
+	--END
+	--ELSE
+	--BEGIN		
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo,
+	--		Remarks
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_REPO_SECTIONID, 
+	--		[Description] = (
+	--						CASE WHEN																 	
+	--						(
+	--							 CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+	--							(SUM(ProjectedReceivableFrom) - SUM(ProjectedPayableTo)) ELSE 0 END
+	--						) = 0					  
+	--						THEN 
+	--						@INTERNAL_REPO_DUE_TO_CUSTODY_FICC
+	--						ELSE
+	--						@INTERNAL_REPO_DUE_TO_LENDING_FICC END
+	--					),
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = @FICC_DEPOIND,			
+	--		ShowPaymentApproval = 1,
+	--		ShowMoneyWire = 1,
+	--		ProjectedReceivableFrom = CASE WHEN (SUM(ABS(ProjectedPayableTo)) > SUM(ABS(ProjectedReceivableFrom))) THEN 
+	--								(SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom))) ELSE 0 END,
+	--		ProjectedPayableTo = CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo))) THEN 
+	--								(SUM(ABS(ProjectedReceivableFrom)) - SUM(ABS(ProjectedPayableTo))) ELSE 0 END,
+	--		SettledReceivableFrom = CASE WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom))) THEN 
+	--								(SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom))) ELSE 0 END,
+	--		SettledPayableTo = 	CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo))) THEN 
+	--								(SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) ELSE 0 END,
+	--		Remarks = 'Fund Transfer'											
+	--	FROM 
+	--		#TMP_PAYMENT_SUMMARY
+	--	WHERE
+	--		SectionID = @FICC_SECTIONID
+	--END	
+
+	
+	/*------ IF no records exists for section FICC in #TMP_PAYMENT_SUMMARY, select default value . 
+			Internal repo will always display line items for no activity on dashboard------------------*/
+	--IF NOT EXISTS( SELECT SectionID FROM #TMP_PAYMENT_SUMMARY 
+	--			   WHERE ( SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID ) AND ( LEN(SecCodes) > 0 ) )
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_TRANSFER_SEC_LEND_SECTIONID, 
+	--		[Description] =  @NO_ACTIVITY + ' (' + @DUE_TO_BONY + ')',								
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = @DUE_TO_BONY,			
+	--		ShowPaymentApproval = 0,
+	--		ShowMoneyWire = 0,
+	--		ProjectedReceivableFrom = 0,
+	--		ProjectedPayableTo = 0,
+	--		SettledReceivableFrom = 0,
+	--		SettledPayableTo = 0			
+	--END
+	--ELSE
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo,
+	--		Remarks
+	--	)
+	--	SELECT 
+	--		SectionID = @INTERNAL_TRANSFER_SEC_LEND_SECTIONID,
+		
+	--		[Description] = CASE WHEN ( CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo)))
+	--										 THEN (SUM(ABS(ProjectedReceivableFrom)) - SUM(ABS(ProjectedPayableTo))) 
+	--										 ELSE 0 
+	--										 END ) > 0	THEN @CP_BONY_DUE_TO_CUSTODY
+	--							 ELSE @CP_BONY_DUE_TO_LENDING
+	--						     END,
+
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',			
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',		
+	--		DueToAccount = @CP_BONY_TRIPARTY,				
+	--		ShowPaymentApproval = CASE WHEN (
+	--										CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo))) THEN (SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) 
+	--											 WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom))) THEN (SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)))
+	--											 ELSE 0 
+	--											 END
+	--										) > 0 THEN 1 
+	--								   ELSE 0 
+	--								   END,
+	--		ShowMoneyWire = CASE WHEN (
+	--										CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo))) THEN (SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) 
+	--											 WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom))) THEN (SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom)))
+	--										     ELSE 0 
+	--										END
+	--								  ) > 0 THEN 1 
+	--							 ELSE 0 
+	--							 END,
+
+	--		ProjectedReceivableFrom = CASE WHEN (SUM(ABS(ProjectedPayableTo)) > SUM(ABS(ProjectedReceivableFrom)))
+	--								THEN (SUM(ABS(ProjectedPayableTo)) - SUM(ABS(ProjectedReceivableFrom))) ELSE 0 END,
+	--		ProjectedPayableTo = CASE WHEN (SUM(ABS(ProjectedReceivableFrom)) > SUM(ABS(ProjectedPayableTo)))
+	--								THEN (SUM(ABS(ProjectedReceivableFrom)) - SUM(ABS(ProjectedPayableTo))) ELSE 0 END,
+	--		SettledReceivableFrom = CASE WHEN (SUM(ABS(SettledPayableTo)) > SUM(ABS(SettledReceivableFrom)))
+	--								THEN (SUM(ABS(SettledPayableTo)) - SUM(ABS(SettledReceivableFrom))) ELSE 0 END,
+	--		SettledPayableTo = CASE WHEN (SUM(ABS(SettledReceivableFrom)) > SUM(ABS(SettledPayableTo)))
+
+	--								THEN (SUM(ABS(SettledReceivableFrom)) - SUM(ABS(SettledPayableTo))) ELSE 0 END,
+	--		Remarks = 'Fund Transfer'									
+	--	FROM
+	--		 #TMP_PAYMENT_SUMMARY
+	--	WHERE
+	--		( SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID ) AND
+	--		( LEN(SecCodes) = 0  )
+	--END
+
+	INSERT INTO #TMP_PAYMENT_SUMMARY
+	(
+		SectionID,
+		Description,
+		AcctGrpID,
+		AcctGrpName,
+		BrkNbr,
+		BrkGrpCode,
+		DueToAccount,		
+		ShowPaymentApproval,
+		ShowMoneyWire,
+		ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,
+		Remarks
+	)				
+	SELECT 
+		SectionID = @TRIPARTY_REPO_SECTIONID,
+		Description = @TRIPARTY_ACESS_EDGE_WDH,							
+		AcctGrpID = 0,
+		AcctGrpName = '',		
+		BrkNbr = '',
+		BrkGrpCode = '',		
+		DueToAccount = '',
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = SUM(ProjectedPayableTo),
+		ProjectedPayableTo = SUM(ProjectedReceivableFrom),
+		SettledReceivableFrom = SUM(SettledPayableTo), 
+		SettledPayableTo = SUM(SettledReceivableFrom),
+		Remarks = ''
+	FROM
+		 #TMP_PAYMENT_SUMMARY
+	WHERE
+		SectionID = @TRIPARTY_REPO_SECTIONID
+	
+	-- FOR RECON		
+	INSERT INTO #TMP_PAYMENT_SUMMARY
+	(
+		SectionID,
+		Description,
+		AcctGrpID,
+		AcctGrpName,
+		BrkNbr,
+		BrkGrpCode,
+		DueToAccount,		
+		ShowPaymentApproval,
+		ShowMoneyWire,
+		ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,
+		Remarks
+	)
+	--SELECT
+	--	SectionID = @RECONCILIATION_SECTIONID,
+	--	[Description] = @RECON_SEC_LENDING ,
+	--	AcctGrpID = 0,
+	--	AcctGrpName = '',			
+	--	BrkNbr = '',
+	--	BrkGrpCode = '',		
+	--	DueToAccount = '',
+	--	ShowPaymentApproval = 0,
+	--	ShowMoneyWire = 0,
+	--	ProjectedReceivableFrom = SUM(ABS(ProjectedReceivableFrom)),
+	--	ProjectedPayableTo = SUM(ABS(ProjectedPayableTo)),
+	--	SettledReceivableFrom = SUM(ABS(SettledReceivableFrom)),
+	--	SettledPayableTo = SUM(ABS(SettledPayableTo)),
+	--	Remarks = ''	
+	--FROM
+	--	 #TMP_PAYMENT_SUMMARY
+	--WHERE
+	--	SectionID = @INTERNAL_TRANSFER_SEC_LEND_SECTIONID
+	--UNION
+	SELECT
+		SectionID = @RECONCILIATION_SECTIONID,
+		[Description] = @RECON_TRIPARTY_REPO,
+		AcctGrpID = 0,
+		AcctGrpName = '',			
+		BrkNbr = '',
+		BrkGrpCode = '',		
+		DueToAccount = '',
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = SUM(ABS(ProjectedReceivableFrom)),
+		ProjectedPayableTo = SUM(ABS(ProjectedPayableTo)),
+		SettledReceivableFrom = SUM(ABS(SettledReceivableFrom)),
+		SettledPayableTo = SUM(ABS(SettledPayableTo)),
+		Remarks = ''
+	FROM
+		 #TMP_PAYMENT_SUMMARY
+	WHERE
+		SectionID = @TRIPARTY_REPO_SECTIONID		
+	UNION
+	SELECT
+		SectionID = @RECONCILIATION_SECTIONID,
+		[Description] = @RECON_LENDING_ACCOUNT,
+		AcctGrpID = 0,
+		AcctGrpName = '',				
+		BrkNbr = '',
+		BrkGrpCode = '',		
+		DueToAccount = '',
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = SUM( CASE WHEN  SectionID = @CUSTOMER_REPO_PAYMENT_SECTIONID THEN ABS(ProjectedReceivableFrom) ELSE 0 END  + 
+							   CASE	WHEN SectionID = @INTERNAL_REPO_SECTIONID THEN ABS(ProjectedPayableTo) ELSE 0 END +
+							   CASE	WHEN SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID THEN ABS(ProjectedReceivableFrom) ELSE 0 END ),
+		ProjectedPayableTo = SUM( CASE WHEN  SectionID = @CUSTOMER_REPO_PAYMENT_SECTIONID THEN ABS(ProjectedPayableTo) ELSE 0 END  + 
+							   CASE	WHEN SectionID = @INTERNAL_REPO_SECTIONID THEN ABS(ProjectedReceivableFrom) ELSE 0 END +
+							   CASE	WHEN SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID THEN ABS(ProjectedPayableTo) ELSE 0 END ),
+		SettledReceivableFrom = SUM( CASE WHEN  SectionID = @CUSTOMER_REPO_PAYMENT_SECTIONID THEN ABS(SettledReceivableFrom) ELSE 0 END  + 
+							   CASE	WHEN SectionID = @INTERNAL_REPO_SECTIONID THEN ABS(SettledPayableTo) ELSE 0 END +
+							   CASE	WHEN SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID THEN ABS(SettledReceivableFrom) ELSE 0 END ),
+		SettledPayableTo = SUM( CASE WHEN  SectionID = @CUSTOMER_REPO_PAYMENT_SECTIONID THEN ABS(SettledPayableTo) ELSE 0 END  + 
+							   CASE	WHEN SectionID = @INTERNAL_REPO_SECTIONID THEN ABS(SettledReceivableFrom) ELSE 0 END +
+							   CASE	WHEN SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID THEN ABS(SettledPayableTo) ELSE 0 END ),
+		
+		Remarks = ''
+	FROM
+		 #TMP_PAYMENT_SUMMARY
+	WHERE
+		SectionID IN( @CUSTOMER_REPO_PAYMENT_SECTIONID, @CUSTOMER_CP_PAIROFF_SECTIONID, @INTERNAL_REPO_SECTIONID)	
+	UNION	
+	SELECT
+		SectionID = @RECONCILIATION_SECTIONID,
+		[Description] = @RECON_FAIL,
+		AcctGrpID = 0,
+		AcctGrpName = '',			
+		BrkNbr = '',
+		BrkGrpCode = '',		
+		DueToAccount = '',
+		ShowPaymentApproval = 0,
+		ShowMoneyWire = 0,
+		ProjectedReceivableFrom = 0,
+		ProjectedPayableTo = 0,
+		SettledReceivableFrom = SUM(ABS(SettledReceivableFrom)),
+		SettledPayableTo = SUM(ABS(SettledPayableTo)),
+		Remarks = ''
+	FROM
+		 #TMP_PAYMENT_SUMMARY
+	WHERE
+		SectionID = @FAILS_SECTIONID
+			
+
+	/*------ IF no records exists for FICC in #TMP_PAYMENT_SUMMARY, select default value . 
+			FICC will always display two line items for New, Return and Pairoff on dashboard------------------*/
+	--IF NOT EXISTS(SELECT SectionID FROM #TMP_PAYMENT_SUMMARY WHERE SectionID = @FICC_SECTIONID AND Description = (@FICC_PREFIX +  @NEW_RET_SUFFIX))
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo
+	--	)
+	--	SELECT 
+	--		SectionID = @FICC_SECTIONID,
+	--		Description = @FICC_PREFIX +  @NEW_RET_SUFFIX,	
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',				
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = '',
+	--		ShowPaymentApproval = 0,
+	--		ShowMoneyWire = 0,
+	--		ProjectedReceivableFrom = 0,
+	--		ProjectedPayableTo = 0,
+	--		SettledReceivableFrom = 0,
+	--		SettledPayableTo = 0
+	--END
+	
+	--IF NOT EXISTS(SELECT SectionID FROM #TMP_PAYMENT_SUMMARY WHERE SectionID = @FICC_SECTIONID AND Description = (@FICC_PREFIX +  ' -  ' + @PAIR_OFF_SUFFIX))
+	--BEGIN
+	--	INSERT INTO #TMP_PAYMENT_SUMMARY
+	--	(
+	--		SectionID,
+	--		Description,
+	--		AcctGrpID,
+	--		AcctGrpName,
+	--		BrkNbr,
+	--		BrkGrpCode,
+	--		DueToAccount,		
+	--		ShowPaymentApproval,
+	--		ShowMoneyWire,
+	--		ProjectedReceivableFrom,
+	--		ProjectedPayableTo,
+	--		SettledReceivableFrom,
+	--		SettledPayableTo
+	--	)
+	--	SELECT 
+	--		SectionID = @FICC_SECTIONID,
+	--		Description = @FICC_PREFIX +  ' -  ' + @PAIR_OFF_SUFFIX,	
+	--		AcctGrpID = 0,
+	--		AcctGrpName = '',				
+	--		BrkNbr = '',
+	--		BrkGrpCode = '',			
+	--		DueToAccount = '',
+	--		ShowPaymentApproval = 0,
+	--		ShowMoneyWire = 0,
+	--		ProjectedReceivableFrom = 0,
+	--		ProjectedPayableTo = 0,
+	--		SettledReceivableFrom = 0,
+	--		SettledPayableTo = 0
+	--END			
+		
+	INSERT INTO #TMP_CASH_MOVEMENT
+	(
+		SectionID,
+		SectionName,
+		[Description],
+		ProductID,
+		PrincipalShortName,
+		DebitAcct,
+		IsNetPairOff,
+		BrkNbr,
+		BrkGrpCode,
+		RecipientName,
+		DueToAccount,
+		SecCodes,
+		ShowPaymentApproval,
+		ShowMoneyWire,		
+		ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,
+		CashWireCode,
+		IsApproved,		
+		ApprovedBy,
+		MoneyWireInputBy,
+		MoneyWireApprovedBy,
+		Remarks,
+		DTCCode,
+		--SPOChargeSenderEmail,
+		--SPOChargeSenderDisplayName,
+		--SPOChargeTOEmailID,
+		--SPOChargeTOEmailDisplayName,
+		--SPOChargeCCEmailID,
+		--SPOChargeCCEmailDisplayName,
+		EmailSubject,
+		EmailBody,
+		IsSent,
+		EmailSentBy,
+		MessageStatus, 
+		IsSignedSettledAmountMatch
+	)
+	SELECT DISTINCT
+		SectionID  = TMP_PAY_SUM.SectionID,
+		SectionName = TMP_DOM_VAL.[Value],
+		SectionDescription = TMP_PAY_SUM.Description,
+		ProductID = IIF((ISNULL( TMP_PAY_SUM.SummaryProductId , 0) <> 0), TMP_PAY_SUM.SummaryProductId, TMP_PAY_SUM.AcctGrpID),
+		PrincipalShortName = IIF((ISNULL( TMP_PAY_SUM.SummaryPrincipalShortName , '') <> ''), TMP_PAY_SUM.SummaryPrincipalShortName, TMP_PAY_SUM.AcctGrpName),
+		DebitAcct = CASE WHEN TMP_PAY_SUM.ShowMoneyWire = 1 THEN
+						CASE WHEN TMP_PAY_SUM.SectionID = @TRIPARTY_REPO_SECTIONID THEN @TRIPARTY_REPO_DEBIT_ACCOUNT
+							 --WHEN TMP_PAY_SUM.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID THEN @LENDING_ACCOUNT 
+							 WHEN TMP_PAY_SUM.Description LIKE (@DUE_TO_CUSTODY + '%') THEN @LENDING_ACCOUNT 
+							 WHEN TMP_PAY_SUM.Description LIKE (@DUE_TO_LENDING + '%') THEN @CUSTODY_ACCOUNT 
+						ELSE @LENDING_ACCOUNT END
+					ELSE '' END,
+		IsNetPairOff = CAST(0 AS BIT),	
+		BrkNbr = TMP_PAY_SUM.BrkNbr,
+		BrkGrpCode = TMP_PAY_SUM.BrkGrpCode,
+		RecipientName = CASE WHEN TMP_PAY_SUM.ShowMoneyWire = 1 THEN
+							CASE WHEN ( TMP_PAY_SUM.Description LIKE (@DUE_TO_LENDING + '%') ) THEN @RECIPIENT_NAME_LENDING
+								 WHEN ( TMP_PAY_SUM.Description LIKE (@DUE_TO_CUSTODY + '%') ) THEN @RECIPIENT_NAME_CUSTODY									 
+								 --WHEN ( TMP_PAY_SUM.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID AND TMP_PAY_SUM.ShowMoneyWire = 1 ) THEN @RECIPIENT_NAME_CUSTODY -- TO DO
+								 WHEN ( TMP_PAY_SUM.SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID AND ISNULL(TMP_PAY_SUM.SummaryPrincipalShortName, '') = '') THEN TMP_BROKER_GRP.BrkGrpName
+							ELSE
+								( CASE WHEN ISNULL(TMP_PAY_SUM.BrkNbr,'') = '' THEN TMP_PAY_SUM.SummaryPrincipalShortName ELSE TMP_BROKER.BrkName END )
+							END
+						ELSE '' END,
+		DueToAccount,
+		SecCodes,
+		ShowPaymentApproval  = CAST(ShowPaymentApproval AS BIT) ,
+		ShowMoneyWire = CAST(ShowMoneyWire AS BIT),		
+		ProjectedReceivableFrom = ProjectedReceivableFrom,
+		ProjectedPayableTo,
+		SettledReceivableFrom,
+		SettledPayableTo,				
+		CashWireCode = CASE WHEN TMP_PAY_SUM.Description LIKE (@DUE_TO_LENDING + '%') THEN @CASH_WIRE_CODE_LENDING
+							WHEN TMP_PAY_SUM.Description LIKE (@DUE_TO_CUSTODY + '%') THEN @CASH_WIRE_CODE_CUSTODY 
+							WHEN TMP_PAY_SUM.Description LIKE (@NO_ACTIVITY + '%') THEN ''								 
+							--WHEN ( TMP_PAY_SUM.SectionID = @DOMESTIC_TRIPARTY_SECLEND_SECTIONID ) AND TMP_PAY_SUM.ShowMoneyWire = 1 THEN TMP_BROKER_CWCODE.CashWireCode
+							WHEN ( TMP_PAY_SUM.SectionID = @CUSTOMER_CP_PAIROFF_SECTIONID AND ISNULL(TMP_PAY_SUM.SummaryPrincipalShortName, '') = '' ) THEN TMP_PAY_SUM.CashWireCode
+					   ELSE 
+							ISNULL(TCMA.CashWireCode,IIF((TMP_PAY_SUM.BrkNbr <> ''), TMP_BROKER_CWCODE.CashWireCode, TMP_ACCTGRP_CWCODE.CashWireCode))
+					   END,
+		IsApproved,
+		ApprovedBy = CashPaymentApprovedBy,
+		MoneyWireInputBy,
+		MoneyWireApprovedBy,
+		TMP_PAY_SUM.Remarks,
+		DTCCode = TSETL.SE_SEC_ACCT,		
+		--SPOChargeSenderEmail = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_SENDER_EMAIL
+		--							ELSE '' 
+		--							END,
+		--SenderDisplayName = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_SENDER_DISPLAY_NAME
+		--						 ELSE '' 
+		--						 END,
+		--SPOChargeTOEmailID = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_TO_EMAIL_ID
+		--						 ELSE '' 
+		--						 END,
+		--SPOChargeTOEmailDisplayName = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_TO_EMAIL_DISPLAY_NAME
+		--								   ELSE '' 
+		--								   END,
+		--SPOChargeCCEmailID = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_CC_EMAIL_ID
+		--						  ELSE '' 
+		--						  END,
+		--SPOChargeCCEmailDisplayName = CASE WHEN TMP_PAY_SUM.SectionID = @DTC_SECTIONID THEN @SPOCHARGE_CC_EMAIL_DISPLAY_NAME
+		--								   ELSE '' 
+		--								   END,
+		EmailSubject = '',
+		EmailBody = '',
+		IsSent = ISNULL(IsSPOEmailSent, CAST(0 AS BIT)),
+		EmailSentBy = ISNULL(EmailSentBy,''),
+		MessageStatus = CASE WHEN ( TMP_PAY_SUM.SectionID = @RECONCILIATION_SECTIONID AND TMP_PAY_SUM.Description <> @RECON_FAIL ) THEN							
+							CASE WHEN (ProjectedReceivableFrom <> SettledReceivableFrom ) OR ( ProjectedPayableTo <> SettledPayableTo)  THEN 'WARNING: Projected not matching to Actual' 
+								 ELSE ''
+							     END
+						ELSE '' 
+						END, 
+						
+		IsSignedSettledAmountMatch = CASE WHEN ( TCMA.ApprovedPayableFrom IS NOT NULL ) AND ( TMP_PAY_SUM.SettledReceivableFrom != 0 ) AND ( CONVERT(DECIMAL(17,2),TMP_PAY_SUM.SettledReceivableFrom) != TCMA.ApprovedPayableFrom ) THEN 0
+										  WHEN ( TCMA.ApprovedPayableTo IS NOT NULL ) AND ( TMP_PAY_SUM.SettledPayableTo != 0 ) AND ( CONVERT(DECIMAL(17,2),TMP_PAY_SUM.SettledPayableTo) != TCMA.ApprovedPayableTo ) THEN 0
+										  ELSE 1 
+										  END
+	FROM	
+		#TMP_PAYMENT_SUMMARY AS TMP_PAY_SUM
+		
+		INNER JOIN #TMP_DOMAIN_LOOKUP_VALUE AS TMP_DOM_VAL
+		ON 
+			( TMP_PAY_SUM.SectionID = TMP_DOM_VAL.ValueDesc )
+		
+		LEFT JOIN dbo.CashMovementApprovals AS TCMA
+		ON 
+			( TCMA.AsOfDate = @AsOfDate ) AND 
+			(	   ( TCMA.ProductID <> 0 AND TMP_PAY_SUM.AcctGrpID = TCMA.ProductID ) 
+				OR ( TMP_PAY_SUM.Description = TCMA.Description )
+				OR ( ISNULL(TCMA.BrkNbr,'') = '' AND  ISNULL(TMP_PAY_SUM.CashWireCode,'') = ISNULL(TCMA.CashWireCode,'') AND LTRIM(RTRIM(TMP_PAY_SUM.Description)) = LTRIM(RTRIM(TCMA.Description)))
+			) AND			
+			( TMP_PAY_SUM.BrkNbr = TCMA.BrkNbr) AND 			
+			( TMP_DOM_VAL.ValueDesc = TCMA.SectionID )
+
+		LEFT JOIN GLOBALONE.dbo.SETTLE_INST AS TSETL
+		ON 
+			( RIGHT(TSETL.SE_ACCT_NO, LEN(TMP_PAY_SUM.BrkNbr)) = TMP_PAY_SUM.BrkNbr ) AND 
+			( ISNULL(TSETL.SE_SEC_ACCT,'') != '' ) AND 
+			( TSETL.ADD_MD = 'DTC' ) AND
+			( TMP_PAY_SUM.SectionID = @DTC_SECTIONID)
+
+		LEFT JOIN #TMP_ACCTGRP_CASH_WIRE_CODE TMP_ACCTGRP_CWCODE
+		ON
+		    ( TMP_ACCTGRP_CWCODE.CashWirePrincipalShortName = TMP_PAY_SUM.SummaryPrincipalShortName ) AND
+			( TMP_ACCTGRP_CWCODE.ProductID = TMP_PAY_SUM.SummaryProductId )
+		
+		LEFT JOIN #TMP_BROKER_CASH_WIRE_CODE AS TMP_BROKER_CWCODE
+		ON
+			( TMP_BROKER_CWCODE.BrkNbr = TMP_PAY_SUM.BrkNbr )
+	
+		LEFT JOIN #TMP_BROKER AS TMP_BROKER
+		ON
+			( ISNULL(TMP_PAY_SUM.BrkNbr,'') = TMP_BROKER.BrkNbr )
+
+		LEFT JOIN #TMP_BROKER_GROUP AS TMP_BROKER_GRP
+		ON
+			( ISNULL(TMP_PAY_SUM.BrkGrpID,'') = ISNULL(TMP_BROKER_GRP.BrkGrpID, '') )				
+
+	SELECT
+		--Case When SectionID = 8 then 6 
+		--	 When SectionID = 11 then 7
+		--	 When SectionID = 12 then 8
+		--	 ELSE SectionID		END AS 
+		SectionID, 
+		SectionName,
+		Description = LTRIM(RTRIM(Description)),
+		ProductID,
+		PrincipalShortName,
+		DebitAcct,
+		IsNetPairOff,
+		BrkNbr,
+		BrkGrpCode,
+		RecipientName,
+		DueToAccount,
+		ShowPaymentApproval,
+		1 AS ShowMoneyWire,
+		SecCodes,		
+		ProjectedReceivableFrom = 	ABS(ISNULL(ProjectedReceivableFrom,0)),
+		ProjectedPayableTo = ABS(ISNULL(ProjectedPayableTo,0)),
+		SettledReceivableFrom = ABS(ISNULL(SettledReceivableFrom,0)) ,
+		SettledPayableTo = ABS(ISNULL(SettledPayableTo,0)),
+		CashWireCode = ISNULL(CashWireCode,''),
+		IsApproved = CAST(ISNULL(IsApproved,0) AS BIT),		
+		ApprovedBy,
+		MoneyWireInputBy,
+		MoneyWireApprovedBy,
+		Remarks = ISNULL(Remarks,''),
+		DTCCode = ISNULL(DTCCode,''),
+		--SPOChargeSenderEmail,
+		--SPOChargeSenderDisplayName,
+		--SPOChargeTOEmailID,
+		--SPOChargeTOEmailDisplayName,
+		--SPOChargeCCEmailID,
+		--SPOChargeCCEmailDisplayName,
+		EmailSubject,
+		EmailBody,
+		IsSent,
+		EmailSentBy,
+		MessageStatus,
+		IsSignedSettledAmountMatch
+	FROM 
+		#TMP_CASH_MOVEMENT
+	--WHERE SectionID not in (6,7,9,10)
+	ORDER BY 
+		SectionID, PrincipalShortName DESC	
+	
+
+	SELECT 
+		--CAST((Case When ValueDesc = 8 then 6 
+		--	 When ValueDesc = 11 then 7
+		--	 When ValueDesc = 12 then 8
+		--	 ELSE ValueDesc
+		--END) AS INT) AS SectionID, 
+		CAST(ValueDesc AS INT) AS SectionID,
+		Case when ValueDesc = 4 then 'Euroclear Settlement (Bilateral Repo)' Else [Value] End AS SectionName
+	FROM
+		#TMP_DOMAIN_LOOKUP_VALUE
+	--WHERE		ValueDesc not in (6,7,9,10)
+
+	SELECT  
+		repoCurr.CCYCode,
+		Case When repoCurr.CCYCode='EUR' then '€' else 'A$' end AS 'CCYSymbol'
+	FROM   
+		dbo.RepoCurrencySetup repoCurr  
+	LEFT JOIN  
+		REFERENCE.dbo.Currency curr  
+	ON  
+		repoCurr.CCYCode = curr.CCYCode  
+	LEFT JOIN   
+		dbo.f_GetDomainLookUpConstIDAndValuePair('DepotSettlementLocations','SettlementLocations',';') CashSettLoc  
+	ON  
+		repoCurr.SettlementLocationID = CashSettLoc.ID
+	WHERE  
+		repoCurr.IsDeleted = 0 AND
+		CashSettLoc.ID = 3
+
+	
+	SELECT
+		'EUR' AS Currency,
+		SUM(
+			CASE 
+				WHEN NULLIF(LTRIM(RTRIM(MoneyWireApprovedBy)), '') IS NULL
+					 AND ShowMoneyWire = 1
+				THEN 1 ELSE 0 
+			END
+		) AS MoneyWiresToBeApprovedCount,
+
+		SUM(
+			CASE 
+				WHEN NULLIF(LTRIM(RTRIM(MoneyWireInputBy)), '') IS NULL
+					 AND ShowMoneyWire = 1
+				THEN 1 ELSE 0 
+			END
+		) AS MoneyWiresToBeInputCount,
+
+		SUM(
+			CASE 
+				WHEN NULLIF(LTRIM(RTRIM(ApprovedBy)), '') IS NULL
+					 AND ShowPaymentApproval = 1
+				THEN 1 ELSE 0 
+			END
+		) AS TransactionsToBeApprovedCount
+	FROM 
+	#TMP_CASH_MOVEMENT
+
+	 DROP TABLE #TMP_BROKER   
+	 DROP TABLE #TMP_BROKER_GROUP    
+	 DROP TABLE #TMP_PAYMENT_SUMMARY  
+	 DROP TABLE #TMP_ACCTGRP_CASH_WIRE_CODE   
+	 DROP TABLE #TMP_BROKER_CASH_WIRE_CODE  
+	 DROP TABLE #TMP_DOMAIN_LOOKUP_VALUE 
+	 DROP TABLE #TMP_LN_FINDER 
+	 DROP TABLE #TMP_CURRENCY_RATES
+	 DROP TABLE #TMP_MASTER_ACTIVITY_PAYABLE_AMOUNT
+	 DROP TABLE #TMP_CUSTOMER_PAIROFF
+	 DROP TABLE #TMP_CP_PAIROFF
+	 DROP TABLE #TMP_TRIPARTY_REPO
+	 DROP TABLE #TMP_ACTIVITY_TP_BONY_DOM
+	 DROP TABLE  #TMP_ACCTGRP_PRODUCTPRINCIPAL
+     DROP TABLE #TMP_SKIPNETPAIROFF
 END
-
-GO
-
-
-SET ANSI_PADDING ON;
-GO
-
-/****** Object:  Indexes [IX_Security]    Script Date: 2/17/2026 8:24:18 AM ******/
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_1]
-ON [dbo].[Security] (
-                     [SecCode] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_2]
-ON [dbo].[Security] (
-                     [CUSIP] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_3]
-ON [dbo].[Security] (
-                     [ISIN] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_4]
-ON [dbo].[Security] (
-                     [SEDOL] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_5]
-ON [dbo].[Security] (
-                     [TickSymb] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_6]
-ON [dbo].[Security] (
-                     [SecID] ASC,
-					 [ISOCountry] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
-CREATE UNIQUE NONCLUSTERED INDEX [IX_Security_7]
-ON [dbo].[Security] (
-                     [NextInterestDate] ASC
-					)
-WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, DROP_EXISTING = OFF,
-      ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 89, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF
-     )
-ON [PRIMARY];
-GO
-
---------------------------------END TABLE SCRIPT FOR Security---------------------------------------------------------
