@@ -1,0 +1,637 @@
+
+CREATE PROC [dbo].[mt_ETIRawData]
+(
+	@RecordTypeID		SMALLINT = 0,
+	@BrokerID			INT = 0,
+	@SecLocID			INT = NULL,
+	@LoanType			CHAR(10) = NULL,
+	@RebateRate			DECIMAL(9, 6) = NULL,
+	@StatusID			SMALLINT = 0,
+	@XmlIds				TEXT,
+	@ModifiedBy			VARCHAR(50) = NULL
+)
+AS
+BEGIN	
+	DECLARE 
+		@hXmlDoc			INT,
+		@ModifiedDate		DATETIME,
+		@RecordIndicator	VARCHAR(3),
+		@TOE				VARCHAR(3), 
+		@BatchDate			DATETIME,
+		@G1UserCode VARCHAR(8)
+		
+
+	SELECT
+		@RecordIndicator	= 'DTL',
+		@TOE				= 'TSL',
+		@StatusID			= dbo.f_GetETIProcessFlowStatus(@RecordTypeID, 'Verified'),
+		@ModifiedDate		= getdate()
+
+	SET @BatchDate = (select CurrentBatchDate from GLOBALONE.dbo.vw_G1_System)
+
+
+	DECLARE @TempIDs TABLE
+	(
+		[ID]	INT,
+		[PriceOverride] DECIMAL(14, 7)
+	)
+
+	SELECT @G1UserCode = dbo.f_GetG1LavaUserMapping (@ModifiedBy)  
+	-- Create an internal representation of the XML document.		
+	EXEC sp_xml_preparedocument @hXmlDoc OUTPUT, @XmlIds
+	
+	INSERT INTO @TempIDs
+	SELECT
+		[ID],
+		NULLIF(PriceOverride, -1)
+	FROM
+		OPENXML (@hXmlDoc, '/ROOT/record', 1)
+		WITH
+		(
+			[ID]		INT,
+			[priceOverride] DECIMAL(14, 7)
+		) 	
+	
+	-- Remove the handle to the XML document.
+	EXEC sp_xml_removedocument @hXmlDoc
+
+	IF (@RecordTypeID = 1)			-- new loan (TSL)
+	BEGIN
+
+	-- 1. updating status as 'verified'
+		UPDATE 
+			dbo.[ETIRawData] 
+		SET
+			[StatusID]		= @StatusID,
+			[PriceOverride] = xml.PriceOverride,
+			[ModifiedBy]	= @ModifiedBy,
+			[ModifiedDate]	= @ModifiedDate
+		FROM
+			dbo.ETIRawData rd
+			INNER JOIN 
+				@TempIDs xml
+			ON 
+				rd.[ID] = xml.[ID]
+		WHERE
+			rd.StatusID < @StatusID
+
+	-- 2. updating status on existing detail records
+		UPDATE 
+			dbo.[ETIDetailRecord] 
+		SET
+			[SecCode]			= rd.SecCode,
+			[LoanType]			= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.LoanType END,
+			[Depository]		= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.Depository END,
+			[SettlementDate]	= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.SettlementDate END,
+			[TermDate]			= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.TermDate END,
+			[RawPrice]			= CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE rd.Price END,
+			[TradePrice]		= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.Price END,
+			[CCYCode]			= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.CCYCode END,
+			--[Principal]			= rd.Principal,
+			[CollCCYCode]		= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE rd.CollCCYCode END,
+			[RebateRate]		= CASE WHEN rd.RecordTypeID <> 1 THEN NULL ELSE CONVERT(DECIMAL(9, 6), rd.RebateRate) END,
+			[SecLocCode]		= rd.SecLocCode,
+			[TransmitFlg]		= rd.[TransmitFlg],
+			[DisclosureType]	= rd.DisclosureType,			
+			[StatusID]		= @StatusID,
+			[ModifiedBy]	= @ModifiedBy,
+			[ModifiedDate]	= @ModifiedDate
+		FROM
+			dbo.[ETIRawData] rd
+		INNER JOIN 
+			@TempIDs xml
+		ON 
+			rd.[ID] = xml.[ID]
+		INNER JOIN 
+			dbo.[ETIDetailRecord] dr 
+		ON
+			dr.RawDataID = rd.[ID]
+		WHERE
+			rd.StatusID < dbo.f_GetETIProcessFlowStatus(@RecordTypeID, 'Upload scheduled')
+
+	-- 3. inserting into detail
+		DECLARE @ETIDetailRecord TABLE 
+		(
+			[ID] [int] IDENTITY(1,1) NOT NULL,
+			[RawDataID] [int] NOT NULL,
+			[ExternalRefNbr] [varchar](12) NULL,
+			[LoanType] [char](1) NULL,
+			[AcctNbr] [varchar](12) NULL,
+			[Depository] [varchar](10) NULL,
+			[SecCode] [varchar](12) NULL,
+			[SettlementDate] [datetime] NULL,
+			[TermDate] [datetime] NULL,
+			[BrkNbr] [varchar](6) NULL,
+			[FaceAmount] [numeric](13, 0) NULL,
+			[RawPrice] [decimal](14, 7) NULL,
+			[TradePrice] [decimal](14, 7) NULL,
+			[CCYCode] [varchar](3) NULL,
+			[Principal] [decimal](17, 2) NULL,
+			[CollCCYCode] [varchar](3) NULL,
+			[RebateRate] [decimal](9, 6) NULL,
+			[SecLocCode] [varchar](2) NULL,
+			[SecID] [int] NULL,
+			[BrkID] [int] NULL,
+			[TxnRefNbr] [int] NULL,
+			[RecordTypeID] [smallint] NOT NULL,
+			[BatchDate] [datetime] NOT NULL,
+			[AsOfDate] [datetime] NULL, 
+			[TransmitFlg] [char](1) NULL,
+			[DisclosureType] [char](1) NULL
+		) 
+
+		INSERT INTO	@ETIDetailRecord
+		(
+			[RawDataID],
+			[LoanType],
+			[AcctNbr],
+			[Depository],
+			[SecCode],
+			[SettlementDate],
+			[TermDate],
+			[BrkNbr],
+			[FaceAmount],
+			[RawPrice],
+			[TradePrice],
+			[CCYCode],
+			[Principal],
+			[CollCCYCode],
+			[RebateRate],
+			[SecLocCode],
+			[SecID],
+			[BrkID],
+			[TxnRefNbr],
+			[RecordTypeID],
+			[BatchDate],
+			[AsOfDate],
+			[TransmitFlg],
+			[DisclosureType]
+		)
+
+		SELECT
+			[RawDataID]			= a.RawDataID,
+			[LoanType]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.LoanType END,
+			[AcctNbr]			= CASE WHEN a.RecordTypeID =  1 THEN NULL ELSE a.AcctNbr END,
+			[Depository]		= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.Depository END,
+			[SecCode]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.SecCode END,
+			[SettlementDate]	= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.SettlementDate END,
+			[TermDate]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.TermDate END,
+			[BrkNbr]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.BrkNbr END,
+			[FaceAmount]		= a.FaceAmount,
+			[RawPrice]			= CASE WHEN a.PriceOverride IS NOT NULL THEN a.PriceOverride ELSE a.Price END,
+			[TradePrice]		= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.TradePrice END,
+			[CCYCode]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.CCYCode END,
+			[Principal]			= a.Principal,
+			[CollCCYCode]		= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.CollCCYCode END,
+			[RebateRate]		= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE CONVERT(DECIMAL(9, 6), a.RebateRate) END,
+			[SecLocCode]		= a.SecLocCode,
+			[SecID]				= a.SecID,
+			[BrkID]				= a.BrkID,
+			[TxnRefNbr]			= a.TxnRefNbr,
+			[RecordTypeID]		= a.RecordTypeID,
+			[BatchDate]			= a.BatchDate,
+			[AsOfDate]			= CASE WHEN a.RecordTypeID <> 1 THEN NULL ELSE a.AsOfDate END,
+			[TransmitFlg]		= a.[TransmitFlg],
+			[DisclosureType]	= a.DisclosureType
+		FROM
+			(	
+			SELECT 
+				RawDataID		= rd.[ID],
+				RecordTypeID	= RecordTypeID,
+				BrkId			= BrkID,
+				SecID			= SecID,
+				AcctNbr			= '',
+				LoanType		= LoanType,
+				Depository		= Depository,
+				SecCode			= SecCode,
+				SettlementDate	= SettlementDate,
+				TermDate		= TermDate,
+				BrkNbr			= BrkNbr,
+				FaceAmount		= FaceAmount,
+				Price			= Price,
+				PriceOverride	= rd.PriceOverride,
+				TradePrice		= Price,
+				CCYCode			= CCYCode,
+				Principal		= (rd.PriceOverride * FaceAmount),
+				CollCCYCode		= CollCCYCode,
+				RebateRate		= RebateRate,
+				SecLocCode		= SecLocCode,
+				TxnRefNbr		= TxnRefNbr,
+				BatchDate		= BatchDate,
+				AsOfDate		= AsOfDate,
+				TransmitFlg		= TransmitFlg,
+				DisclosureType	= DisclosureType
+			FROM 
+				dbo.ETIRawData rd
+			INNER JOIN  
+				@TempIDs x 
+			ON 
+				x.ID = rd.[ID]
+
+			UNION
+
+			SELECT 
+				RawDataID		= l.[RawDataID],
+				RecordTypeID	= l.RecordTypeID,
+				BrkId			= l.BrkID,
+				SecID			= l.SecID,
+				AcctNbr			= l.AcctNbr,
+				LoanType		= l.LoanType,
+				Depository		= l.Depository,
+				SecCode			= l.SecCode,
+				SettlementDate	= l.SettlementDate,
+				TermDate		= rd.TermDate,
+				BrkNbr			= l.BrkNbr,
+				FaceAmount		= l.FaceAmount,
+				Price			= l.Price,
+				PriceOverride	= rd.PriceOverride,
+				TradePrice		= l.Price,
+				CCYCode			= l.CCYCode,
+				Principal		= l.Principal,
+				CollCCYCode		= l.CollCCYCode,
+				RebateRate		= l.RebateRate,
+				SecLocCode		= l.SecLocCode,
+				TxnRefNbr		= l.TxnRefNbr,
+				BatchDate		= rd.BatchDate,
+				AsOfDate		= rd.AsOfDate,
+				TransmitFlg		= rd.TransmitFlg,
+				DisclosureType	= DisclosureType
+			FROM 
+				dbo.ETIRawData rd
+			INNER JOIN  
+				@TempIDs x 
+			ON 
+				x.ID = rd.[ID]
+			INNER JOIN 
+				dbo.ETIAllocation l
+			ON 
+				l.[RawDataID] = rd.[ID]
+			) a
+		WHERE
+			NOT EXISTS
+			(
+				SELECT 
+					ID 
+				FROM
+					dbo.[ETIDetailRecord]
+				WHERE
+					RawDataID = a.[RawDataID]
+			)
+		ORDER BY 
+			a.BrkId, a.SecID, a.AcctNbr
+
+		DECLARE @NextLoanNbr INT
+
+		-- find the last external txnrefnbr generated by W/L
+		SELECT 
+			@NextLoanNbr = IsNull(Max(Convert(int, IsNull(Substring(ExternalRefNbr, 1, 6), 0))), 0)
+		FROM 
+			dbo.ETIDetailRecord
+		WHERE 
+			BatchDate = @BatchDate AND
+			RecordTypeID = 1
+
+		UPDATE 
+              @ETIDetailRecord
+       SET 
+              -- Format: yymmddxxxxxx
+             ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
+
+
+		INSERT INTO dbo.[ETIDetailRecord] 
+		(
+			[RawDataID],
+			[RecordIndicator],
+			[ExternalRefNbr],
+			[TOE],
+			[LoanType],
+			[AcctNbr],
+			[Depository],
+			[SecCode],
+			[SettlementDate],
+			[BrkNbr],
+			[FaceAmount],
+			[RawPrice],
+			[TradePrice],
+			[CCYCode],
+			[Principal],
+			[CollCCYCode],
+			[RebateRate],
+			[RebatePaid],
+			[AcctNbrRealloc],
+			[ExternalRefNbrRealloc],
+			[SettlementCCYCode],
+			[BatchDate],
+			[AsOfDate],
+			[CollateralDate],
+			[GoodFundsDate],
+			[TermDate],
+			[FinderNbr],
+			[PoolNbr],
+			[Comments],
+			[CleanUpFlg],
+			[BrkStandingInstruct1],
+			[BrkStandingInstruct2],
+			[BrkStandingInstruct3],
+			[BrkStandingInstruct4],
+			[SecLocCode],
+			[TransmitFlg],
+			[CollateralNbr],
+			[XRefWlIndicator],
+			[DisclosureType],
+			[UserID],
+			[Filter],
+			[SecID],
+			[BrkID],
+			[TxnRefNbr],
+			[TxnRefNbrNew],
+			[RecordTypeID],
+			[SubRecordID],
+			[IsIncludedInFile],
+			[StatusID],
+			[ModifiedBy],
+			[ModifiedDate]
+		)		
+
+		SELECT
+			[RawDataID]			= [RawDataID],
+			[RecordIndicator]	= 'DTL',
+			[ExternalRefNbr]	= [ExternalRefNbr],
+			[TOE]				= @TOE,
+			[LoanType]			= [LoanType],
+			[AcctNbr]			= [AcctNbr],
+			[Depository]		= [Depository],
+			[SecCode]			= [SecCode],
+			[SettlementDate]	= [SettlementDate],
+			[BrkNbr]			= [BrkNbr],
+			[FaceAmount]		= [FaceAmount],
+			[RawPrice]			= [RawPrice],
+			[TradePrice]		= [TradePrice],
+			[CCYCode]			= [CCYCode],
+			[Principal]			= [Principal],
+			[CollCCYCode]		= [CollCCYCode],
+			[RebateRate]		= [RebateRate],
+			[RebatePaid]		= NULL,
+			[AcctNbrRealloc]	= NULL,
+			[ExternalRefNbrRealloc] = NULL,
+			[SettlementCCYCode] = NULL,
+			[BatchDate]			= [BatchDate],
+			[AsOfDate]			= [AsOfDate],
+			[CollateralDate]	= [SettlementDate],		-- passing settlementdate
+			[GoodFundsDate]		= [SettlementDate],		-- passing settlementdate
+			[TermDate]			= [TermDate],
+			[FinderNbr]			= NULL,
+			[PoolNbr]			= NULL,
+			[Comments]			= NULL,
+			[CleanUpFlg]		= NULL,
+			[BrkStandingInstruct1] = NULL,
+			[BrkStandingInstruct2] = NULL,
+			[BrkStandingInstruct3] = NULL,
+			[BrkStandingInstruct4] = NULL,
+			[SecLocCode]		= [SecLocCode],
+			[TransmitFlg]		= [TransmitFlg],
+			[CollateralNbr]		= NULL,
+			[XRefWlIndicator]	= 'E',
+			[DisclosureType]	= [DisclosureType],
+			[UserID]			= @G1UserCode,
+			[Filter]			= NULL,
+			[SecID]				= [SecID],
+			[BrkID]				= [BrkID],
+			[TxnRefNbr]			= [TxnRefNbr],
+			[TxnRefNbrNew]		= 0,
+			[RecordTypeID]		= [RecordTypeID],
+			[SubRecordID]		= 0,
+			[IsIncludedInFile]	= 0,
+			[StatusID]			= @StatusID,
+			[ModifiedBy]		= @ModifiedBy,
+			[ModifiedDate]		= @ModifiedDate
+		FROM
+			@ETIDetailRecord
+		ORDER BY 
+			[ExternalRefNbr]
+	END
+	ELSE IF (@RecordTypeID = 9)	-- Adjust price (AJP)
+	BEGIN
+	
+		-- 1. updating status as 'verified'
+		UPDATE 
+			dbo.[ETIRawData] 
+		SET
+			[PriceOverride] = xml.PriceOverride,
+			[ModifiedBy]	= @ModifiedBy,
+			[ModifiedDate]	= @ModifiedDate
+		FROM
+			dbo.ETIRawData rd
+			INNER JOIN 
+				@TempIDs xml
+			ON 
+				rd.[ID] = xml.[ID]
+
+		-- 2. updating status as 'verified'
+		UPDATE 
+			dbo.[ETIDetailRecord] 
+		SET
+			[RawDataID]		= rd.[ID],
+			[SecCode]		= rd.SecCode,
+			[RawPrice]		= CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE [Price] END,
+			[StatusID]		= rd.StatusID,
+			[ModifiedBy]	= @ModifiedBy,
+			[ModifiedDate]	= @ModifiedDate,
+			[bgnref]        = l.BGNREF,
+			[CollType]      =  CASE rd.LoanType WHEN 'C' THEN 'C' ELSE 'N' END,
+			[Coll_Grp]      =  CASE rd.LoanType WHEN 'C' THEN NULL ELSE rd.LoanType END
+		FROM
+			dbo.[ETIRawData] rd
+		INNER JOIN
+			[ETIDetailRecord] dr 
+		ON
+			rd.[ID] = dr.RawDataID
+		INNER JOIN 
+			GLOBALONE.dbo.Loan l 
+		ON 
+			dr.[TxnRefNbr] = l.[TxnRefNbr] AND
+			(l.txntype = CASE when ISNULL(rd.iscollateral,0) = 0 THEN 'L' ELSE 'B' END)  ----Added Txntype check to get BgnRef from Loan Table To 'ETIDetailRecord' Table
+		LEFT JOIN
+			(
+			SELECT DISTINCT TxnRefNbr
+			FROM GLOBALONE.dbo.[LoanPosition]
+			WHERE TOE = 'PSL'
+		)PendingLoan 
+		ON  l.TxnRefNbr = PendingLoan.TxnRefNbr
+		WHERE
+			l.IsStreetSide = 1
+--			AND l.PSLStatus = 0			
+			AND ISNULL(PendingLoan.TxnRefNbr,0) = 0 -- Show Loans,Who is not having Pending Return 
+			AND l.IsFuture = 0
+			AND l.Principal <> 0
+			AND rd.[ID] IN (
+				SELECT
+					[ID]
+				FROM
+					@TempIDs
+			)
+
+
+		-- 3. inserting into detail
+		INSERT INTO dbo.[ETIDetailRecord] 
+		(
+			[RawDataID],
+			[RecordIndicator],
+			[ExternalRefNbr],
+			[TOE],
+			[LoanType],
+			[AcctNbr],
+			[Depository],
+			[SecCode],
+			[SettlementDate],
+			[BrkNbr],
+			[FaceAmount],
+			[RawPrice],
+			[TradePrice],
+			[CCYCode],
+			[Principal],
+			[CollCCYCode],
+			[RebateRate],
+			[RebatePaid],
+			[AcctNbrRealloc],
+			[ExternalRefNbrRealloc],
+			[SettlementCCYCode],
+			[BatchDate],
+			[AsOfDate],
+			[CollateralDate],
+			[GoodFundsDate],
+			[TermDate],
+			[FinderNbr],
+			[PoolNbr],
+			[Comments],
+			[CleanUpFlg],
+			[BrkStandingInstruct1],
+			[BrkStandingInstruct2],
+			[BrkStandingInstruct3],
+			[BrkStandingInstruct4],
+			[SecLocCode],
+			[TransmitFlg],
+			[CollateralNbr],
+			[XRefWlIndicator],
+			[DisclosureType],
+			[UserID],
+			[Filter],
+			[SecID],
+			[BrkID],
+			[TxnRefNbr],
+			[TxnRefNbrNew],
+			[RecordTypeID],
+			[SubRecordID],
+			[IsIncludedInFile],
+			[StatusID],
+			[ModifiedBy],
+			[ModifiedDate],
+			[BgnRef],
+			[CollType],
+			[Coll_Grp],
+			GCIRecordType,
+			GCISettleInd
+		)	
+
+		SELECT
+			rd.[ID],
+			[RecordIndicator] = 'DTL',
+			--[ExternalRefNbr] = REPLICATE('0', 6 - DATALENGTH(CONVERT(varchar, l.TxnRefNbr))) + CONVERT(varchar, l.TxnRefNbr),
+			ExternalRefNbr =  dbo.f_GetExternalRefNbr(rd.ID),	
+			[TOE] = rt.[TOE],
+			[LoanType] = rd.[LoanType],
+			[AcctNbr] = NULL,
+			[Depository] = NULL,
+			[SecCode] = rd.[SecCode],
+			[SettlementDate] = rd.[SettlementDate],
+			[BrkNbr] =  rd.[BrkNbr],
+			[FaceAmount] = l.[FaceAmount],
+			[RawPrice] = CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE rd.[Price] END,
+			[TradePrice] = l.[TradePrice],
+			[CCYCode] = rd.[CCYCode],
+			Principal = (rd.PriceOverride * l.FaceAmount),
+			[CollCCYCode] = NULL,
+			[RebateRate] = NULL,
+			[RebatePaid] = NULL,
+			[AcctNbrRealloc] = NULL,
+			[ExternalRefNbrRealloc] = NULL,
+			[SettlementCCYCode] = NULL,
+			[BatchDate]	= rd.[BatchDate],
+			[AsOfDate] = rd.[AsOfDate],
+			[CollateralDate] = NULL,
+			[GoodFundsDate] = NULL,
+			[TermDate] = NULL,
+			[FinderNbr] = NULL,
+			[PoolNbr] = NULL,
+			[Comments] = NULL,
+			[CleanUpFlg] = NULL,
+			[BrkStandingInstruct1] = NULL,
+			[BrkStandingInstruct2] = NULL,
+			[BrkStandingInstruct3] = NULL,
+			[BrkStandingInstruct4] = NULL,
+			[SecLocCode] = rd.[SecLocCode],
+			[TransmitFlg] = rd.[TransmitFlg],
+			[CollateralNbr] = NULL,
+			[XRefWlIndicator] = 'W',
+			[DisclosureType],
+			@G1UserCode,
+			[Filter] = NULL,
+			[SecID] = rd.[SecID],
+			[BrkID],
+			[TxnRefNbr] = l.[TxnRefNbr],
+			[TxnRefNbrNew] = 0,
+			[RecordTypeID] = 9,
+			[SubRecordID] = 0,
+			[IsIncludedInFile] = 0,
+			rd.StatusID,
+			@ModifiedBy,
+			@ModifiedDate,
+			l.[BgnRef],
+			dbo.f_GetCollType(rd.[LoanType]), -- CollType
+			dbo.f_GetCollGroup(rd.[LoanType]), -- CollGroup
+			GCIParam.GCIRecordType,
+			GCIParam.GCISettleInd
+		FROM 
+			dbo.[ETIRawData] rd
+		INNER JOIN 
+			@TempIDs t 
+		ON 
+			rd.[ID] = t.[ID]
+		INNER JOIN 
+			GLOBALONE.dbo.Loan l 
+		ON 
+			l.TxnRefNbr = rd.TxnRefNbr AND
+			(l.txntype = CASE when ISNULL(rd.iscollateral,0) = 0 THEN 'L' ELSE 'B' END)  ----Added Txntype check to get BgnRef from Loan Table To 'ETIDetailRecord' Table
+		INNER JOIN 
+			dbo.G1ActivityCodeMapping rt 
+		ON 
+			rd.RecordTypeID = rt.RecordTypeID AND
+			ISNULL(rt.IsActive,0) = 1
+		INNER JOIN
+			dbo.f_GetGCIParameter(@RecordTypeID,NULL,NULL) GCIParam
+		ON
+			GCIParam.RecordTypeID = rd.RecordTypeID
+		LEFT JOIN
+			(
+				SELECT DISTINCT TxnRefNbr
+				FROM GLOBALONE.dbo.[LoanPosition] 
+				WHERE TOE = 'PSL'
+			)PendingLoan 
+			ON PendingLoan.TxnRefNbr =  l.TxnRefNbr 
+		WHERE
+			rd.RecordTypeID = @RecordTypeID
+			AND l.IsStreetSide = CONVERT(BIT, 1)
+--			AND l.PSLStatus = 0			
+			AND ISNULL(PendingLoan.TxnRefNbr,0) = 0 -- Show Loans,Who is not having Pending Return 
+			AND l.IsFuture = 0
+			AND l.Principal <> 0
+			AND NOT EXISTS(
+				SELECT 
+					ID 
+				FROM
+					dbo.[ETIDetailRecord]
+				WHERE
+					RawDataID = rd.[ID]
+			)
+	END
+END
