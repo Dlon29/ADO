@@ -1,37 +1,3 @@
-USE [LAVA]
-GO
-/****** Object:  StoredProcedure [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]    Script Date: 04/06/2026 11:28:24 ******/
-IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]') AND type in (N'P', N'PC'))
-DROP PROCEDURE [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]
-GO
-/****** Object:  StoredProcedure [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]    ******/
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-/**  
-**  PROCEDURE		:  dbo.p_SaveData_ETI_CloseRebookLoansandCollaterals
-**                
-**  Author			:  	Dillon Colaco
-**  Date			:   04/06/2026
-**	Input Parameter :
-		@pRawDataID			-	XML which contains the return Loan data (single or multiple)		
-	
-	Ouput Parameter	:
-
-**  Description		:	This SP will be called to save closed and rebooked loans & collaterals data
-
-**  Usage		:		
-		exec p_SaveData_ETI_CloseRebookLoansandCollaterals 
-			@SQL_IDENTIFIER=N'LAVA',
-			@SQL_CONDITION1=N'<?xml version="1.0" encoding="utf-8"?><CloseLoan><FieldName RowId="1" TxnRefNbr="1500" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " SecType="" BrokerId="264" BrkNbr="EAS274" BrkCrGroupId="" BrkGroupId="" RecordTypeID="" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" TOE="" IsCollateral="" BGNREF="0001500" Comments=""></FieldName><FieldName RowId="2" TxnRefNbr="1510" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001510" Comments="" /><FieldName RowId="3" TxnRefNbr="1522" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001522" Comments="" /><FieldName RowId="4" TxnRefNbr="1525" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001525" Comments="" /><FieldName RowId="5" TxnRefNbr="1529" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001529" Comments="" /><FieldName RowId="6" TxnRefNbr="1533" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001533" Comments="" /><FieldName RowId="7" TxnRefNbr="1534" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001534" Comments="" /><FieldName RowId="8" TxnRefNbr="1548" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001548" Comments="" /><FieldName RowId="9" TxnRefNbr="1552" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001552" Comments="" /><FieldName RowId="10" TxnRefNbr="1558" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 459200101 " BrokerId="264" BrkNbr="EAS274" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001558" Comments="" /><FieldName RowId="11" TxnRefNbr="1538" AsOfDate="2/12/2016" SettlementDate="06/08/2016" SecCode=" 2092599 " BrokerId="293" BrkNbr="ES8105" BatchDate="2/12/2016" TransmitFlg="Y" ModifiedBy="NPatel" BGNREF="0001538" Comments="" /></CloseLoan>'
-
-**
-**  History Log
-**		04/06/2026		Dillon Colaco		Initial creation
-**/
-
-
 CREATE PROCEDURE [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]  
 (
 	@SQL_IDENTIFIER		VARCHAR(10),
@@ -3759,4 +3725,3 @@ BEGIN
 	IF @ERROR_NO <> 0 
 		RAISERROR ( 'Error raised in p_SaveData_ETI_CloseRebookLoansandCollaterals', 16, 1 )
 END
-GO
