@@ -49,6 +49,8 @@ namespace Lava.ETI
         #endregion
 
         string _BusinessDate = string.Empty;
+        string _IsLoan = "0";
+        string _IsCollateral = "1";
 
         private enum grdMapping
         {
@@ -79,7 +81,8 @@ namespace Lava.ETI
             GPTransmit,
             LoanSettlementDate,
             IsPrePay,
-            TPUID
+            TPUID,
+            IsCollateral
         }
 
         #endregion
@@ -541,9 +544,10 @@ namespace Lava.ETI
                 //create sub node
                 XmlNode node = doc.CreateNode(XmlNodeType.Element, "FieldName", null);
                 CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
+                string isCollateral = dgi.Cells[(int)grdMapping.IsCollateral].Text.Trim();
 
 
-                if (chkInclude.Checked)
+                if (chkInclude.Checked && isCollateral == _IsLoan)
                 {
                     HyperLink lnkTxnRefNbr = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkTxnRefNbr");
                     HyperLink lnkSecurityCode = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkSecurityCode");
@@ -652,6 +656,12 @@ namespace Lava.ETI
                                 att.Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
                                 node.Attributes.Append(att);
                             }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsCollateral")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("IsCollateral");
+                                att.Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
+                                node.Attributes.Append(att);
+                            }
                         }
 
                         iXmlRowCount++;
@@ -674,6 +684,7 @@ namespace Lava.ETI
                         doc.DocumentElement.ChildNodes[0].Attributes["LoanSettlementDate"].Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
                         doc.DocumentElement.ChildNodes[0].Attributes["IsPrePay"].Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
                         doc.DocumentElement.ChildNodes[0].Attributes["TPUID"].Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["IsCollateral"].Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
                         blnFirstRowProcessed = true;
                     }
                     intRowCount++;
@@ -733,9 +744,10 @@ namespace Lava.ETI
                 //create sub node
                 XmlNode node = doc.CreateNode(XmlNodeType.Element, "FieldName", null);
                 CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
+                string isCollateral = dgi.Cells[(int)grdMapping.IsCollateral].Text.Trim();
 
 
-                if (chkInclude.Checked)
+                if (chkInclude.Checked && isCollateral == _IsCollateral)
                 {
                     HyperLink lnkTxnRefNbr = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkTxnRefNbr");
                     HyperLink lnkSecurityCode = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkSecurityCode");
@@ -844,6 +856,12 @@ namespace Lava.ETI
                                 att.Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
                                 node.Attributes.Append(att);
                             }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsCollateral")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("IsCollateral");
+                                att.Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
+                                node.Attributes.Append(att);
+                            }
                         }
 
                         iXmlRowCount++;
@@ -866,6 +884,7 @@ namespace Lava.ETI
                         doc.DocumentElement.ChildNodes[0].Attributes["LoanSettlementDate"].Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
                         doc.DocumentElement.ChildNodes[0].Attributes["IsPrePay"].Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
                         doc.DocumentElement.ChildNodes[0].Attributes["TPUID"].Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["IsCollateral"].Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
                         blnFirstRowProcessed = true;
                     }
                     intRowCount++;
