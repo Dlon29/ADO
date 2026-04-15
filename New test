@@ -1,16 +1,3 @@
-/**************************************************************************************************************************************************************************************************************
-File Name: CloseRebookLoansandCollaterals.aspx.cs
-Creation Date [MM/DD/YYYY]: 
-Author: OFSS
-Description: Close and Rebook Loans and Collaterals
-
-Revision History:
-***************************************************************************************************************************************************************************************************************
-Sr. No     Date            ModifiedBy              Tag Name                                         Description
-***************************************************************************************************************************************************************************************************************
- * 1    03/23/2026        Dillon Colaco           PRJ0071037                                      Initial Creation.      
-***************************************************************************************************************************************************************************************************************/
-
 using Common.Logging;
 using System;
 using System.Collections.Generic;
@@ -522,10 +509,10 @@ namespace Lava.ETI
         }
 
         /// <summary>
-        /// This method will create xml
+        /// This method will create loan xml
         /// </summary>
         /// <returns></returns>
-        private string AddNodeToXMLFile()
+        private string AddLoanNodeToXMLFile()
         {
             //create new instance of XmlDocument
             XmlDocument doc = new XmlDocument();
@@ -680,6 +667,198 @@ namespace Lava.ETI
                         doc.DocumentElement.ChildNodes[0].Attributes["SettlementDate"].Value = txtSettlementDate.Text;
                         doc.DocumentElement.ChildNodes[0].Attributes["BatchDate"].Value = _BussDate;
                         doc.DocumentElement.ChildNodes[0].Attributes["TransmitFlg"].Value = ddl.SelectedValue; 
+                        doc.DocumentElement.ChildNodes[0].Attributes["ModifiedBy"].Value = this.clsUI.NTUserName;
+                        doc.DocumentElement.ChildNodes[0].Attributes["BGNREF"].Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["Comments"].Value = txtRemarks.Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["GPTransmit"].Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["LoanSettlementDate"].Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["IsPrePay"].Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["TPUID"].Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
+                        blnFirstRowProcessed = true;
+                    }
+                    intRowCount++;
+                }
+            }
+
+
+            string xml = string.Empty;
+
+            if (intRowCount == 0 || _ErrorString.Length > 0)
+            {
+
+                if (ValidationFail == 0)
+                    _ErrorString.Append("\t" + Common.GetMessage("CloseRebookLoan", "ErrorNoRowSelected") + " <br>\n");
+
+                _show_error_row = "";
+            }
+            else
+            {
+                xml = doc.InnerXml.ToString();
+                log.Debug("XML in " + MethodName + ">> " + xml.ToString());
+            }
+
+            return xml;
+        }
+
+        /// <summary>
+        /// This method will create collateral xml
+        /// </summary>
+        /// <returns></returns>
+        private string AddCollateralNodeToXMLFile()
+        {
+            //create new instance of XmlDocument
+            XmlDocument doc = new XmlDocument();
+            bool blnFirstRowProcessed = false;
+            string FilePath = string.Empty;
+
+            FilePath = "/LAVA/XmlTemplates/CloseCollateral.xml";
+
+            //load from file
+            XmlTextReader reader = new XmlTextReader(Server.MapPath(FilePath));
+            doc.Load(reader);
+
+            DataGridItem dgi = null;
+            int iXmlRowCount = 1;
+            int intRowCount = 0;
+            int ValidationFail = 0;
+            _ErrorString = new StringBuilder();
+
+            XmlNode mainNode = doc.SelectSingleNode("CloseCollateral");
+
+            // this will loop thru all records of a data table
+            for (int iRowCount = 0; iRowCount < grdCloseReBookLoanRecords.Items.Count; iRowCount++)
+            {
+                dgi = this.grdCloseReBookLoanRecords.Items[iRowCount];
+
+                //create sub node
+                XmlNode node = doc.CreateNode(XmlNodeType.Element, "FieldName", null);
+                CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
+
+
+                if (chkInclude.Checked)
+                {
+                    HyperLink lnkTxnRefNbr = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkTxnRefNbr");
+                    HyperLink lnkSecurityCode = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkSecurityCode");
+                    TextBox txtSettlementDate = (TextBox)dgi.Cells[(int)grdMapping.SettleDate].FindControl("txtSettlementDate");
+                    TextBox txtRemarks = (TextBox)dgi.Cells[(int)grdMapping.Remarks].FindControl("txtRemarks");
+                    DropDownList ddl = (DropDownList)dgi.Cells[(int)grdMapping.TransmitFlag].FindControl("cboBookTransmit");
+
+                    if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes["RowId"].Value != (iRowCount + 1).ToString() && blnFirstRowProcessed == true)
+                    {
+                        for (int i = 0; i < doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes.Count; i++)
+                        {
+                            //create attributes
+                            if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "RowId")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("RowId");
+                                att.Value = (iXmlRowCount + 1).ToString();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TxnRefNbr")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("TxnRefNbr");
+                                att.Value = lnkTxnRefNbr.Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrkNbr")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("BrkNbr");
+                                att.Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrokerId")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("BrokerId");
+                                att.Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "AsOfDate")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("AsOfDate");
+                                att.Value = _BusinessDate;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SecCode")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("SecCode");
+                                att.Value = lnkSecurityCode.Text;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SettlementDate")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("SettlementDate");
+                                att.Value = txtSettlementDate.Text;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BatchDate")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("BatchDate");
+                                att.Value = _BusinessDate;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TransmitFlg")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("TransmitFlg");
+                                att.Value = ddl.SelectedValue;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "ModifiedBy")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("ModifiedBy");
+                                att.Value = this.clsUI.NTUserName;
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BGNREF")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("BGNREF");
+                                att.Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "Comments")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("Comments");
+                                att.Value = txtRemarks.Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "GPTransmit")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("GPTransmit");
+                                att.Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "LoanSettlementDate")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("LoanSettlementDate");
+                                att.Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsPrePay")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("IsPrePay");
+                                att.Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
+                                node.Attributes.Append(att);
+                            }
+                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TPUID")
+                            {
+                                XmlAttribute att = doc.CreateAttribute("TPUID");
+                                att.Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
+                                node.Attributes.Append(att);
+                            }
+                        }
+
+                        iXmlRowCount++;
+                        mainNode.AppendChild(node);
+                    }
+                    else if (blnFirstRowProcessed == false)
+                    {
+                        doc.DocumentElement.ChildNodes[0].Attributes["TxnRefNbr"].Value = lnkTxnRefNbr.Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["BrkNbr"].Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["BrokerId"].Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
+                        doc.DocumentElement.ChildNodes[0].Attributes["AsOfDate"].Value = _BusinessDate;
+                        doc.DocumentElement.ChildNodes[0].Attributes["SecCode"].Value = lnkSecurityCode.Text;
+                        doc.DocumentElement.ChildNodes[0].Attributes["SettlementDate"].Value = txtSettlementDate.Text;
+                        doc.DocumentElement.ChildNodes[0].Attributes["BatchDate"].Value = _BussDate;
+                        doc.DocumentElement.ChildNodes[0].Attributes["TransmitFlg"].Value = ddl.SelectedValue;
                         doc.DocumentElement.ChildNodes[0].Attributes["ModifiedBy"].Value = this.clsUI.NTUserName;
                         doc.DocumentElement.ChildNodes[0].Attributes["BGNREF"].Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
                         doc.DocumentElement.ChildNodes[0].Attributes["Comments"].Value = txtRemarks.Text.Trim();
@@ -1052,12 +1231,13 @@ namespace Lava.ETI
                 if (ValidateInputs())
                 {
 
-                    string xml = AddNodeToXMLFile();
+                    string loanXml = AddLoanNodeToXMLFile();
+                    string collateralXml = AddCollateralNodeToXMLFile();
 
                     DataReader clsReader = new DataReader();
                     DataSet ds = new DataSet();
                     bool blnStatus = false;
-                    string[] SqlCondition = new string[1] { "" };
+                    string[] SqlCondition = new string[2] { "" };
                     string Identifier = "";
 
                     if (clsDB.Open() == false)
@@ -1067,9 +1247,10 @@ namespace Lava.ETI
                     }
 
                     clsReader.Connection = clsDB.Connection;
-                    clsReader.StoredProcedure = SqlObjectsStaticClass.p_SaveData_ETICancelRebookLoan;
+                    clsReader.StoredProcedure = SqlObjectsStaticClass.p_SaveData_ETI_CloseRebookLoansandCollaterals;
 
-                    SqlCondition[0] = xml;                    
+                    SqlCondition[0] = loanXml;
+                    SqlCondition[1] = collateralXml;
                     Identifier = "LAVA";
 
                     clsReader.SqlIdentifier = Identifier;
