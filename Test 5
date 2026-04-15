@@ -1,0 +1,753 @@
+<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="CloseRebookLoansandCollaterals.aspx.cs" Inherits="Lava.ETI.CloseRebookLoansandCollaterals" %>
+
+<%
+    if (IsUI)
+    {
+        WriteIncFiles(_section, _page);
+        Response.Write(BuildHeader(_section, _page).ToString());
+%>
+<form id="CloseRebookLoansandCollaterals" method="post" runat="server">
+    <!-- paging information as hidden values -->
+    <input type="hidden" name="hdnPageNo" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(Convert.ToString(_PageNo),true) %>'>
+    <input type="hidden" name="hdnTotPage" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(Convert.ToString(_TotPage),true) %>'>
+    <input type="hidden" name="hdnPageChange" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_PageChange,true) %>'>
+
+
+    <asp:scriptmanager id="ScriptManager1" enablecdn="true" runat="server" enablepagemethods="true"></asp:scriptmanager>
+    <table width="995" align="left" border="0" cellpadding="0" cellspacing="0" class="WideScreenTable">
+        <%
+            Response.Write(WriteTabHeader(_page).ToString());
+            if (base._AccessTypeCode == "N")
+            {
+                Response.Redirect(string.Format("~/Error/PageDenied.aspx?{0}&{1}&{2}", "AuthorizationFail", _page, _section));
+            } 
+	
+        %>
+        <tr>
+            <td colspan="2">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr class="ScreenHeader">
+                        <td align="center">
+                            <font class="ScreenHeader">
+                            <%=_pageTitle%></font>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td height="5" nowrap></td>
+        </tr>
+        <!-- Error TR -->
+        <tr id="error_row" style="display: '<%=_show_error_row%>'">
+            <td colspan="2">
+                <table id="tblError" width="100%" cellpadding="0" cellspacing="0">
+                    <tr class="ErrorRow">
+                        <td width="30">
+                            <img border="0" name="img_msg" height="20" width="20" src="../images/PageInfo.gif">
+                        </td>
+                        <td>
+                            <font class="ErrorMsgHeader">Error Messages</font>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="10" colspan="2"></td>
+                    </tr>
+                    <tr>
+                        <td width="30"></td>
+                        <td>
+                            <font class="ErrorMsg">
+                            <%=_ErrorString%></font>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="10" colspan="2"></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <!-- Error TR -->
+        <tr id="info_row" style="display: '<%=_show_info_row%>'">
+            <td colspan="2">
+                <table id="Table1" width="100%" cellpadding="0" cellspacing="0">
+                    <tr class="ErrorRow">
+                        <td width="30">
+                            <img border="0" name="img_msg" src="../images/QuickInfo.gif" style="vertical-align: middle">
+                        </td>
+                        <td>
+                            <font class="InfoMsgHeader">Messages</font>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="10" colspan="2"></td>
+                    </tr>
+                    <tr>
+                        <td width="30"></td>
+                        <td>
+                            <font class="InfoMsg">
+                            <%=_ErrorString%></font>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="10" colspan="2"></td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <!--Section Header for advanced search-->
+        <tr class="SectionLineHeader" id="select_criteria2_header">
+            <td colspan="2">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td width="30">
+                            <a href="#" onclick="HideShow2(select_criteria2, img_select_criteria2)">
+                                <img border="0" name="img_select_criteria2" src="../images/arrow-right.gif">
+                            </a>
+                        </td>
+                        <td>
+                            <a href="#" onclick="HideShow2(select_criteria2, img_select_criteria2)"><font class="SectionRow">
+                            Selection Criteria</font></a>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <!--section ends here-->
+        <!--Section for advanced search-->
+        <tr id="select_criteria2" style="display: '<%=_show_select_criteria2%>'">
+            <td width="10"></td>
+            <td>
+                <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                    <tr>
+                        <td width="130" height="10"></td>
+                    </tr>
+                    <tr>
+                        <td width="160">
+                            <font class="ReportSection">Loan /Collateral Number:</font>
+                        </td>
+                        <td id="SearchDate" align="left">
+                            <asp:textbox width="100" id="txtTxnRefNbr" tabindex="1" runat="server" maxlength="12"
+                                enableviewstate="True" onkeypress="javascript: return CheckLoanNumberValue();"></asp:textbox>
+                        </td>
+                        <td width="130">
+                            <font class="ReportSection">Business Line:</font>
+                        </td>
+                        <td id="Td4" align="left" colspan="3">
+                            <asp:dropdownlist id="ddlSecType" tabindex="2" width="150" runat="server"
+                                enableviewstate="True" autopostback="false">   
+                                  <asp:ListItem Value="0">All</asp:ListItem>                                                                   
+							            <asp:ListItem Text="Equity" Value="EQ" />
+							            <asp:ListItem Text="Fixed Income" Value="FI" />
+							        </asp:dropdownlist>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5" colspan="3"></td>
+                    </tr>
+                    <tr>
+                        <td width="130">
+                            <font class="ReportSection">Security Code:</font>
+                        </td>
+                        <td id="Td6" align="left">
+                            <asp:textbox width="100" id="txtSecCode" tabindex="4" runat="server" tooltip="Enter a Cusip, Sedol, Isin, Ticker or Sec ID (with ID:)" maxlength="12" enableviewstate="True" onkeypress="javascript: return TextBox_KeyPress('btnSearch');"></asp:textbox>
+                        </td>
+                        <td width="130">
+                            <font class="ReportSection">Equilend:</font>
+                        </td>
+                        <td id="Td1" align="left" colspan="3">
+                            <asp:dropdownlist id="cboEquilend" tabindex="2" width="150" runat="server"
+                                enableviewstate="True" autopostback="false">   
+                                  <asp:ListItem Value="0">All</asp:ListItem>                                                                   
+							            
+							        </asp:dropdownlist>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5"></td>
+                    </tr>
+                    <tr>
+                        <td width="120">
+                            <font class="ReportSection">Broker Cr. Group:</font>
+                        </td>
+                        <td id="Td7" align="left">
+                            <asp:dropdownlist id="ddlBrokerCrGroup" width="300" tabindex="3" runat="server" enableviewstate="True"
+                                autopostback="True" onselectedindexchanged="IndexChanged">                            
+                            </asp:dropdownlist>
+                        </td>
+                        <td width="130">
+                            <font class="ReportSection">Location:</font>
+                        </td>
+                        <td id="Td2" align="left" colspan="3">
+                            <asp:dropdownlist id="ddlFinder" runat="server" enableviewstate="True" width="150">							  
+						    </asp:dropdownlist>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5"></td>
+                    </tr>
+                    <tr>
+                        <td width="120">
+                            <font class="ReportSection">Broker Group:</font>
+                        </td>
+                        <td id="Td3" align="left">
+                            <asp:dropdownlist id="ddlBrokerGroup" width="300" tabindex="3" runat="server" enableviewstate="True"
+                                autopostback="True" onselectedindexchanged="IndexChanged">                            
+                            </asp:dropdownlist>
+                        </td>
+                        <td width="130">
+                            <font class="ReportSection">Product Category:</font>
+                        </td>
+                        <td id="Td8" align="left" colspan="3">
+                            <asp:dropdownlist id="ddlProductCategory" tabindex="2" width="150" runat="server" enableviewstate="True" autopostback="false">
+									<asp:ListItem Text="All" Value="0" />
+									<asp:ListItem Text="<%$ Resources:Resource, ProductCategory_STT_Label%>" Value="<%$ Resources:Resource, ProductCategory_STT_Value %>"/>
+									<asp:ListItem Text="<%$ Resources:Resource, ProductCategory_STO_Label%>" Value="<%$ Resources:Resource, ProductCategory_STO_Value %>"/>
+									<asp:ListItem Text="<%$ Resources:Resource, ProductCategory_GCO_Label%>" Value="<%$ Resources:Resource, ProductCategory_GCO_Value %>"/>	
+                                    <asp:ListItem Text="<%$ Resources:Resource, ProductCategory_GCT_Label%>" Value="<%$ Resources:Resource, ProductCategory_GCT_Value %>"/>	
+								</asp:dropdownlist>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5"></td>
+                    </tr>
+                    <tr>
+
+                        <td width="120">
+                            <font class="ReportSection">Broker:</font>
+                        </td>
+                        <td id="Td5" align="left">
+                            <asp:dropdownlist id="ddlBroker" width="300" tabindex="3" runat="server" enableviewstate="True"
+                                autopostback="True" onselectedindexchanged="IndexChanged">                            
+                            </asp:dropdownlist>
+                        </td>
+                        <td>
+                            <font class="ReportSection" size="3">Transmit Flag:</font>
+                        </td>
+                        <td>
+                            <asp:dropdownlist id="cboSrchTransmitFlag" width="50" runat="server" enableviewstate="True" autopostback="false">
+                                <asp:ListItem Text="All" Value="" />
+                                <asp:ListItem Text="Yes" Value="Y" />
+                                <asp:ListItem Text="No" Value="N" />
+                            </asp:dropdownlist>
+                        </td>
+                        <td id="Td9" runat="server">
+                            <font class="ReportSection">Display Term Loans :</font>
+                        </td>
+                        <td id="Td10" runat="server">
+                            <asp:checkbox width="80px" id="chkTermLoan2" runat="server" autopostback="true"></asp:checkbox>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5" colspan="3"></td>
+                    </tr>
+                    <tr>
+                        <td width="120">
+                            <font class="ReportSection">Basket Identifier:</font>
+                        </td>
+                        <td id="Td11" align="left">
+                            <asp:dropdownlist id="ddlBasketIdentifier" width="300" tabindex="3" runat="server" enableviewstate="True" autopostback="false">                            
+                            </asp:dropdownlist>
+                        </td>
+                        <td>
+                            <font class="ReportSection" size="3"><asp:label runat="server" id="lblSTTLoans" Text="<%$ Resources:Resource, DisplaySTTLoans%>" /></font>
+                        </td>
+                        <td>
+                            <asp:checkbox width="80px" id="chkDivArbLoan2" runat="server"></asp:checkbox>
+                        </td>
+                        <td>
+                            <font class="ReportSection" size="3">Display Scrip Loans:</font>
+                        </td>
+                        <td>
+                            <asp:checkbox width="80px" id="chkScripLoan2" runat="server"></asp:checkbox>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td height="5" colspan="3"></td>
+                    </tr>
+                    <tr>
+                        <td align="left" colspan="6">
+                            <asp:button width="80" id="btnSearch" runat="server" text="Search" tabindex="8"
+                                commandname="Search" oncommand="Button_Click"></asp:button>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td height="10" nowrap></td>
+        </tr>
+
+        <tr>
+            <td></td>
+            <td>
+                <table class="GridNavigation" cellspacing="0" cellpadding="1" border="0">
+                    <tr>
+                        <td>
+
+                            <table width="100" cellpadding="0" cellspacing="0" border="0">
+                                <tr>
+                                    <td align="left" width="10%">
+                                        <table width="10px">
+                                            <tr>
+                                                <td>
+                                                    <asp:checkbox id="chkApplyChanges" runat="server" tooltip="Click to apply new changes to all loans" onclick="fnApplyNewChangesToAll('grdCloseReBookLoanRecords','txtSettlementDate','cboBookTransmit')" />
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td>
+                                        <font color="teal" size="3"><nobr>New Settlement Date:</font>
+                                    </td>
+                                    <td width="30%">
+                                        <table>
+                                            <tr>
+                                                <td>
+                                                    <nobr><asp:textbox width="75px" id="txtNewSettlementDateToApply" runat="server" maxlength="10" tooltip="Enter New Settlement Date to apply" style="text-align: left;"></asp:textbox>
+                                                    <a href="javascript:OpenCalendar('txtNewSettlementDateToApply', false);">
+                                                        <img src="../images/calendar.gif" align="absMiddle" border="0"></a></nobr>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                    <td width="30px"></td>
+                                    <td>
+                                        <font color="teal" size="3"><nobr>New Transmit Flag:</font>
+                                    </td>
+                                    <td width="30%">
+                                        <table>
+                                            <tr>
+                                                <td>
+                                                    <asp:dropdownlist id="cboTransmitFlag" width="50" runat="server" enableviewstate="True" autopostback="false" tooltip="Select new Transmit Flag">                                                
+                                                <asp:ListItem Text="No" Value="N" />
+                                                <asp:ListItem Text="Yes" Value="Y" />
+                                                </asp:dropdownlist>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>
+                <table class="GridNavigation" cellspacing="0" cellpadding="1" border="0">
+                    <tr>
+                        <td>
+                            <asp:button width="120" id="btnBookLoan" runat="server" text="Close & Rebook" OnClientClick= "return ProcessRecords('grdCloseReBookLoanRecords');"  onclick="btnBookLoan_Click"  Enabled="false"/>
+                        </td>
+
+
+                        <td align="right" valign="middle" width="7%">
+                            <asp:imagebutton id="imgFirst1" runat="server" tooltip="First Page" imageurl="../Images/FirstPage.gif" commandname="First" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                            <asp:imagebutton id="imgPrev1" runat="server" tooltip="Previous Page" imageurl="../Images/PrevPage.gif" commandname="Previous" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+                        <td align="center" valign="middle" width="10%" nowrap>
+                            <font face="arial" size="2pt" color="teal"><b><%= PageNofM %></b></font>
+                        </td>
+                        <td align="left" valign="middle" width="7%">
+                            <asp:imagebutton id="imgNext1" runat="server" tooltip="Next Page" imageurl="../Images/NextPage.gif" commandname="Next" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                            <asp:imagebutton id="imgLast1" runat="server" tooltip="Last Page" imageurl="../Images/LastPage.gif" commandname="Last" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+
+                        <td align="right" valign="middle" width="7%">
+                            <asp:textbox width="40px" height="20px" tooltip="Enter Page #" id="txtGoTo1" runat="server" enabledviewstate="False" tabindex="14" onkeypress="javascript: return TextBox_KeyPress('imgGoTo1');"></asp:textbox>
+                            <asp:imagebutton id="imgGoTo1" runat="server" tooltip="Go To Page" imageurl="../Images/GoToPage.gif" commandname="GoTo1" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+
+        <tr>
+            <td></td>
+            <td>
+
+                <asp:datagrid id="grdCloseReBookLoanRecords" runat="server" cssclass="WideDataGrid" cellspacing="0" cellpadding="1" allowsorting="false" autogeneratecolumns="False">
+				    <SelectedItemStyle CssClass = "SelectedItemStyle"></SelectedItemStyle>
+				    <AlternatingItemStyle CssClass = "AlternatingItemStyle"></AlternatingItemStyle>
+				    <ItemStyle CssClass = "ItemStyle"></ItemStyle>
+				    <EditItemStyle BackColor="#FFFFC0" Height="1px" ></EditItemStyle>
+				    <HeaderStyle CssClass = "HeaderStyle"></HeaderStyle>
+				    <FooterStyle ForeColor="Black" BackColor="#C6C3C6" Height="1px"></FooterStyle>           
+                <Columns>                    
+					 <asp:TemplateColumn HeaderText="">
+						<HeaderTemplate >
+							<asp:CheckBox id="chkSelectAll1" runat="server" ToolTip="Select/Unselect All" onClick="CheckNUncheckAll(this, 'grdCloseReBookLoanRecords', 'chkInclude', false)"></asp:CheckBox> 
+						</HeaderTemplate>
+						<HeaderStyle Width="2%" HorizontalAlign="Center"></HeaderStyle>
+						<ItemTemplate>
+							<asp:CheckBox Runat="server" ID="chkInclude" ToolTip="Select/Unselect" Value ='<%# DataBinder.Eval(Container.DataItem, "TxnRefNbr") %>' ></asp:CheckBox>
+						</ItemTemplate>
+						<ItemStyle Width="2%" HorizontalAlign="Center"></ItemStyle>
+					</asp:TemplateColumn>					
+                    <asp:BoundColumn DataField="SecID" visible="false"></asp:BoundColumn>									
+					<asp:BoundColumn DataField="BrkNbr" HeaderText="Broker Num" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>	
+                    <asp:BoundColumn DataField="BrkID" visible="false"></asp:BoundColumn>	
+                      <asp:BoundColumn DataField="BrkGrpCode" HeaderText="Broker<br>Group<br>Code" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+					 <asp:TemplateColumn HeaderText="Loan<br>Nbr">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle HorizontalAlign="Center" width = "3%"></ItemStyle>
+						<ItemTemplate>
+							<asp:HyperLink ID="lnkTxnRefNbr" Runat="server" Text='<%# " " + DataBinder.Eval(Container.DataItem, "TxnRefNbr") + " "%>'>
+							</asp:HyperLink>
+						</ItemTemplate>
+					</asp:TemplateColumn>				                   
+                     <asp:BoundColumn DataField="BucketSecurityType" HeaderText="Buss Line" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                    <asp:TemplateColumn HeaderText="Sec<br>Code">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle HorizontalAlign="Center" width = "8%"></ItemStyle>
+						<ItemTemplate>
+							<asp:HyperLink ID="lnkSecurityCode" Runat="server" Text='<%# " " + DataBinder.Eval(Container.DataItem, "SecCode") + " "%>'>
+							</asp:HyperLink>
+						</ItemTemplate>
+					</asp:TemplateColumn>	
+                       <asp:BoundColumn DataField="FaceAmount" HeaderText="Units" visible="true" DataFormatString="{0:#,##0}">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="TradePrice" HeaderText="Price" visible="true" DataFormatString="{0:#,##0.000}">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="Principal" HeaderText="Principal" visible="true" DataFormatString="{0:#,##0.00}">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                      <asp:BoundColumn DataField="CollCCYCode" HeaderText="Coll CCY Code" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="LoanType" HeaderText="Loan Type" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="FinderNbr" HeaderText="Location" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="ProductCategory" HeaderText="Product Category" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                       <asp:BoundColumn DataField="IsEqlLoan" HeaderText="Eql Loan" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>                     
+                    <asp:BoundColumn DataField="TermDate" HeaderText="Term Date" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>		
+                      <asp:BoundColumn DataField="STTEndDate" HeaderText="<%$ Resources:Resource, STTEndDate_Label%>" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>					      
+                      <asp:BoundColumn DataField="ScripEndDate" HeaderText="Scrip End Date" visible="true">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>             
+                    <asp:TemplateColumn visible="true" HeaderText="Settlement<br>Date">  
+						<HeaderStyle Width="4%" HorizontalAlign="Center"></HeaderStyle>
+						<ItemTemplate>
+								<asp:TextBox width="65" id="txtSettlementDate" tabIndex="7" CssClass="EditableItemStyle" runat="server" ToolTip = "Settlement Date" EnableViewState="True" 
+                                    Enabled="true" Text='<%# Lava.GlobalVariable.SystemDate %>'></asp:TextBox><A href="javaScript:OpenCalendar('txtSettlementDate', false)" id="lnkSettlementDate" runat="server"><IMG src="../images/calendar.gif" align="absMiddle" border="0" tabIndex="2"></A>
+						</ItemTemplate>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:TemplateColumn>
+                     <asp:TemplateColumn visible="true" HeaderText="Transmit">  
+					    <HeaderStyle Width="4%" HorizontalAlign="Center"></HeaderStyle>
+					    <ItemTemplate>
+							    <asp:dropdownlist id="cboBookTransmit" width="50" runat="server" enableviewstate="True" autopostback="false" tooltip="Select new Transmit Flag">
+                                                <asp:ListItem Text="No" Value="N" />
+                                                <asp:ListItem Text="Yes" Value="Y" />                                                
+                                                </asp:dropdownlist>
+					    </ItemTemplate>
+					    <ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+				    </asp:TemplateColumn>  
+                    <asp:TemplateColumn visible="true" HeaderText="Remarks">  
+						<HeaderStyle Width="4%" HorizontalAlign="Center"></HeaderStyle>
+						<ItemTemplate>
+                            <asp:TextBox ID="txtRemarks" runat="server" EnableViewState="True"   CssClass="EditableItemStyle" MaxLength="20" tabIndex="7" ToolTip="Enter the Remarks"  width="150" wrap="true"></asp:TextBox>
+						</ItemTemplate>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:TemplateColumn>
+                     <asp:BoundColumn DataField="BGNREF" HeaderText="BGNREF" visible="false">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                     <asp:BoundColumn DataField="AsOfDate" HeaderText="AsOfDate" visible="false">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="1%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                    <asp:BoundColumn DataField="GPTransmit" visible="false"></asp:BoundColumn>   
+                    <asp:BoundColumn DataField="SettleDate" visible="false"></asp:BoundColumn>   
+                    <asp:BoundColumn DataField="IsPrePay" HeaderText="IsPrePay" visible="false">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+                    <asp:BoundColumn DataField="TPUID" HeaderText="TPUID" visible="false">
+						<HeaderStyle HorizontalAlign="Center"></HeaderStyle>
+						<ItemStyle Width="4%" HorizontalAlign="Center"></ItemStyle>
+					</asp:BoundColumn>
+				</Columns>
+              </asp:datagrid>
+
+                <asp:panel id="pnlMsg" runat="server" width="100%" bordercolor="black" borderstyle="Inset"
+                    borderwidth="1"> 
+					<table width="100%">
+						<tr>
+							<td align="center">
+								<< No records found for the criteria >>
+							</td>
+						</tr>
+					</table>
+				</asp:panel>
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td>
+                <table class="GridNavigation" cellspacing="0" cellpadding="1" border="0">
+                    <tr>
+                        <td>
+                            <asp:button width="120" id="btnBookLoanFooter" runat="server" text="Close & Rebook" OnClientClick= "return ProcessRecords('grdCloseReBookLoanRecords');"  onclick="btnBookLoan_Click"  Enabled="false"/>
+                        </td>
+                        <td align="right" valign="middle" width="7%">
+                            <asp:imagebutton id="imgFirst2" runat="server" tooltip="First Page" imageurl="../Images/FirstPage.gif" commandname="First" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                            <asp:imagebutton id="imgPrev2" runat="server" tooltip="Previous Page" imageurl="../Images/PrevPage.gif" commandname="Previous" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+                        <td align="center" valign="middle" width="10%" nowrap>
+                            <font face="arial" size="2pt" color="teal"><b><%= PageNofM %></b></font>
+                        </td>
+                        <td align="left" valign="middle" width="7%">
+                            <asp:imagebutton id="imgNext2" runat="server" tooltip="Next Page" imageurl="../Images/NextPage.gif" commandname="Next" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                            <asp:imagebutton id="imgLast2" runat="server" tooltip="Last Page" imageurl="../Images/LastPage.gif" commandname="Last" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+                        <td align="right" valign="middle" width="7%">
+                            <asp:textbox width="40px" id="txtGoTo2" tooltip="Enter Page #" runat="server" enabledviewstate="False" tabindex="17" onkeypress="javascript: return TextBox_KeyPress('imgGoTo2');"></asp:textbox>
+                            <asp:imagebutton id="imgGoTo2" runat="server" tooltip="Go To Page" imageurl="../Images/GoToPage.gif" commandname="GoTo2" oncommand="PageNavigation_Click"> </asp:imagebutton>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+    <asp:hiddenfield id="hdnCnclDataForBooking" runat="server"></asp:hiddenfield>
+</form>
+<!--Close table here -->
+<% 
+        Response.Write(BuildFooter(_section, _page).ToString());
+%>
+
+<script language="javascript">
+
+    function Init_Form() {
+        return;
+    }
+
+    function fnApplyNewChangesToAll(datagridId, txtBoxId, cbTransmitFlagid) {
+
+        var grdControl;
+        var divArray;
+        var inpControls;
+        var inpControlTOE;
+        var inpControlsFlag;
+
+        var objControl;
+        var objControlDD;
+        var objControlddFlag;
+
+        var arrCount1 = 0;
+        var arrCount2 = 0;        
+
+        var chkApplyChanges = document.getElementById("chkApplyChanges");
+        var txtNewSettlementDateToApply = document.getElementById("txtNewSettlementDateToApply");
+        var cboTransmitFlag = document.getElementById("cboTransmitFlag").options[document.getElementById("cboTransmitFlag").selectedIndex].value;
+
+        var defaultTOE = 'PSL';
+        var defaultFlag = 'Y';
+
+        // find the grid.
+        grdControl = document.getElementById(datagridId);
+        if (grdControl == null) {
+            alert('Error in finding table id: ' + datagridId);
+            return;
+        }
+        else if (chkApplyChanges.checked && document.getElementById("txtNewSettlementDateToApply").value == "") {
+            alert('Please enter New Settlement Date');
+            chkApplyChanges.checked = false;
+            return;
+        }
+
+        var date = grdControl.getElementsByTagName("input")[2].value;
+
+        //get all the span tags
+
+        var inpControls = grdControl.getElementsByTagName("input");
+        arrCount2 = inpControls.length;
+
+
+        if (!chkApplyChanges.checked)
+            txtNewSettlementDateToApply.value = "";
+
+
+        //loop through all the span tag
+        for (j = 0; j < arrCount2; j++) {
+            objControl = inpControls[j];
+            //objControl = ;
+
+            //proceed if the child is valid one
+            if (objControl != null) {
+                // check the id has both datagrid id and checkbox id (parameter passed)
+                if (objControl.id.indexOf(txtBoxId) != -1) {
+                    if (chkApplyChanges.checked)
+                        objControl.value = txtNewSettlementDateToApply.value;
+                    else
+                        objControl.value = date;
+                }
+            }
+
+        }
+        var inpControlsTOE = grdControl.getElementsByTagName("select");
+        arrCount2 = inpControlsTOE.length;
+
+        for (j = 0; j < arrCount2; j++) {
+            objControlDD = inpControlsTOE[j];
+
+
+            if (objControlDD != null) {
+                if (objControlDD.id.indexOf(cbTransmitFlagid) != -1) {
+
+                    if (chkApplyChanges.checked)
+                        objControlDD.value = cboTransmitFlag;
+                    else
+                        objControlDD.value = defaultFlag;
+                }
+            }
+        }
+
+        return false;
+    }
+
+
+
+    function ProcessRecords(gridId) {
+        // check any check box is selected.
+        if (!IsAnySelected(gridId, 'chkInclude', false)) {
+            alert('Select one or more record for this operation.');
+            return false;
+        }
+        else
+        {
+            if (confirm("Are you sure you want to Close and ReBook?"))
+                return true;
+            else
+                return false;
+        }
+
+        return false;
+    }
+
+
+
+    function IsAnySelected(datagridId, checkboxId, countDisabled) {
+        /*
+        Author: Edwin Stephenraj
+        
+        Description: 
+            returns true if any checkbox are selected else false 
+                
+        Parameters:
+            datagridId:		id of the datagrid
+            checkboxId:		Id column of the checkbox in the grid
+        */
+
+        var grdControl;
+        var divArray;
+        var inpControls;
+        var objControl;
+        var arrCount1 = 0;
+        var arrCount2 = 0;
+
+        if (countDisabled == null)
+            countDisabled = false;
+
+        // find the grid.
+        grdControl = document.getElementById(datagridId);
+        if (grdControl == null) {
+            alert('Error in finding table id');
+            return false;
+        }
+
+        //get all the span tags
+        var inpControls = grdControl.getElementsByTagName("input");
+        arrCount2 = inpControls.length;
+
+        //loop through all the span tag 	
+        for (j = 0; j < arrCount2; j++) {
+            objControl = inpControls[j];
+
+            //proceed if the child is valid one
+            if (objControl != null) {
+                // check the id has both datagrid id and checkbox id (parameter passed)
+                if (objControl.id.indexOf(checkboxId) != -1) {
+                    // select or unselect only if control is enabled.
+                    if (!objControl.disabled || countDisabled)
+                        if (objControl.checked)
+                            return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    function CheckLoanNumberValue()
+    {
+        if (event.keyCode == 13)
+        {
+            return TextBox_KeyPress('btnSearch');
+        }
+        else
+        {
+            return fnIsNumberKey(event, false);
+        }
+    }
+
+    function fnIsNumberKey(evt, isDecimal) {
+
+        var charCode = (evt.which) ? evt.which : event.keyCode
+
+        if (isDecimal) {
+            if (charCode > 31 && (charCode < 48 || charCode > 57) && charCode != 46) 
+                return false;
+            else if (charCode == 46 && evt.srcElement.value.split('.').length > 1) {
+                return false;
+            }
+        }
+        else {
+            if (charCode > 31 && (charCode < 48 || charCode > 57)) 
+                return false;
+        }
+
+        return true;
+    }
+
+</script>
+
+
+
+<% } %> 
