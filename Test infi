@@ -907,3 +907,116 @@ BEGIN
 		RAISERROR(@Errors,16,1)
 	END
 END
+
+
+
+
+
+CREATE PROCEDURE [dbo].[p_BaNCS_SaveDataCABooking]
+(	
+	@CAPayoutMapID BIGINT = NULL,
+	@CACategoryType INT = NULL,
+	@ModifiedBy VARCHAR(50) = NULL,
+	@CAPSLReturnLoanXML VARCHAR(MAX) = NULL,
+	@CARSLReturnLoanXML VARCHAR(MAX) = NULL,	
+	@CAAdjustAvailabilityXML VARCHAR(MAX) = NULL,
+	@CANewLoanXML VARCHAR(MAX) = NULL
+)
+AS
+BEGIN
+/*	
+RETURN*/
+
+	DECLARE @NewVersionNbr INT
+	DECLARE @SaveAction BIT
+	DECLARE @ReadyStatus INT,@WaitStatus INT
+	DECLARE @BatchID INT = 1
+
+	SET @SaveAction = 0
+	SET @ReadyStatus = 40 -- 1234
+	SET @WaitStatus = 0
+	
+	BEGIN TRY
+
+		BEGIN TRANSACTION TranCAWLBooking
+	
+		IF (@CACategoryType = 2 OR @CACategoryType = 3)  -- PSL-RSL / RSL
+		BEGIN
+
+
+			EXEC LAVA.dbo.p_BaNCS_ETIUploadReturn_CA @CAPayoutMapID, @ReadyStatus, @CAPSLReturnLoanXML,@BatchID -- PSL
+			EXEC LAVA.dbo.p_BaNCS_ETIUploadReturn_CA @CAPayoutMapID,@WaitStatus,@CARSLReturnLoanXML,@BatchID -- RSL
+
+			SET @SaveAction = 1
+		END
+
+		IF(@CACategoryType = 1 OR @CACategoryType = 2)-- ASE-TSL
+		BEGIN
+			IF (NULLIF(@CAAdjustAvailabilityXML,'') IS NOT NULL)--ASE
+			BEGIN
+
+				IF (@CACategoryType = 1)
+				BEGIN
+					EXEC LAVA.dbo.p_BaNCS_ETIUploadAdjustAvailability_CA @CAPayoutMapID,@ReadyStatus,@CAAdjustAvailabilityXML,@BatchID
+				END
+				ELSE
+				BEGIN
+					IF (NULLIF(@CARSLReturnLoanXML,'') IS NOT NULL)
+					BEGIN						
+						EXEC LAVA.dbo.p_BaNCS_ETIUploadAdjustAvailability_CA @CAPayoutMapID,@WaitStatus,@CAAdjustAvailabilityXML,@BatchID
+					END
+					ELSE
+					BEGIN					  
+						EXEC LAVA.dbo.p_BaNCS_ETIUploadAdjustAvailability_CA @CAPayoutMapID,@ReadyStatus,@CAAdjustAvailabilityXML,@BatchID
+					END	
+				END
+			END
+			IF (NULLIF(@CANewLoanXML,'') IS NOT NULL)--TSL
+			BEGIN
+				EXEC LAVA.dbo.p_BaNCS_ETIUploadNewLoan_CA @CAPayoutMapID,@WaitStatus,@CANewLoanXML,@BatchID
+			END
+
+			SET @SaveAction = 1
+
+		END 
+
+		-- update SL Status for Sent to G1---------------------------------------------------------
+		 IF (@SaveAction = CONVERT(BIT,'1'))
+		 BEGIN 
+			
+			EXEC LAVA.dbo.p_BaNCS_UpdateCAStatus  
+					@Action='SENTTOG1', 
+					@CAPayoutMapID = @CAPayoutMapID,
+					@ModifiedBy = @ModifiedBy
+
+			--Send Success email.------------------------------------------------------------------
+			
+			EXEC LAVA.dbo.p_BaNCS_CAUserNotification 
+						@CAPayoutMapID = @CAPayoutMapID ,
+						@User = @ModifiedBy
+			
+			
+		 END	
+		
+		COMMIT TRANSACTION TranCAWLBooking
+
+	END TRY
+	BEGIN CATCH
+
+		IF @@TRANCOUNT > 0
+			ROLLBACK TRANSACTION TranCAWLBooking
+
+		DECLARE @ErrorMessage NVARCHAR(4000);
+		DECLARE @ErrorSeverity INT;
+		DECLARE @ErrorState INT;
+
+		SELECT @ErrorMessage = 'Error raised in p_BaNCS_SaveDataCABooking procedure when sending and booking CA to GlobalOne(G1)' + ERROR_MESSAGE()
+		SELECT @ErrorState = 16
+		SELECT @ErrorSeverity = 1
+
+		RAISERROR (@ErrorMessage, @ErrorState,@ErrorSeverity)
+		RETURN 1
+
+	END CATCH
+
+END
