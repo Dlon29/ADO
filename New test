@@ -1,1355 +1,3205 @@
-using Common.Logging;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Data.SqlClient;
-using System.Linq;
-using System.Text;
-using System.Web;
-using System.Web.UI;
-using System.Web.UI.WebControls;
-using System.Xml;
-using System.Collections;
-using System.Web.UI.HtmlControls;
-using System.Runtime.InteropServices;
-
-namespace Lava.ETI
-{
-
-    public partial class CloseRebookLoansandCollaterals : Lava.PageTemplate
-    {
-        #region Class Variables and Constants
-        //Page definition controls
-        protected string _section = "GCI";
-        protected string _page = "Close & Rebook Loans and Collaterals (Settled Only)";
-        protected string _pageTitle = "Close & Rebook Loans and Collaterals (Settled Only)";
-        protected string _ModuleName = "CloseRebookLoansandCollaterals";
-        protected StringBuilder _ErrorString;
-        protected string _show_error_row = "NONE";
-        protected string _show_info_row = "NONE";
-        protected string _show_select_criteria2 = "";
-        protected bool IsUI = true;
-        private ILog log = LogManager.GetLogger(typeof(CloseRebookLoansandCollaterals));
-        private string _BussDate = GlobalVariable.SystemDate;
-        protected string argsPopUpMenu;
-
-        protected int _PageNo = 0;
-        protected int _TotPage;
-        protected string PageNofM = "0 of 0";
-        protected string _PageChange = "False";
-        private int _PAGESIZE = GlobalVariable.DefaultPageSize;
-        protected string _UserAccess = "";
-        private string parentScreen;
-        private string _TxnRefNbrList;
-
-        #region Error Logging variable declaration
-        private string ModuleName = "Close Rebook Loans and Collaterals";
-        private string MethodName = "";
-        private string ErrorMessageToLog = Common.GetMessage("Common", "ErrorMessageToLog");
-        #endregion
-
-        string _BusinessDate = string.Empty;
-        string _IsLoan = "0";
-        string _IsCollateral = "1";
-
-        private enum grdMapping
-        {
-            chkInclude,
-            SecID,
-            BrkNbr,
-            BrkID,
-            BrkGrpCode,
-            lnkTxnRefNbr,
-            BucketSecurityType,
-            SecCode,
-            FaceAmount,
-            TradePrice,
-            Principal,
-            CollCCYCode,
-            LoanType,
-            FinderNbr,
-            ProductCategory,
-            IsEqlLoan,
-            TermDate,
-            STTEndDate,
-            ScripEndDate,
-            SettleDate,
-            TransmitFlag,
-            Remarks,            
-            BGNREF,
-            AsOfDate,
-            GPTransmit,
-            LoanSettlementDate,
-            IsPrePay,
-            TPUID,
-            IsCollateral
-        }
-
-        #endregion
-
-        #region Web Form Designer generated code
-        override protected void OnInit(EventArgs e)
-        {
-            //
-            // CODEGEN: This call is required by the ASP.NET Web Form Designer.
-            //
-            InitializeComponent();
-            base.OnInit(e);
-            if (User.Identity.IsAuthenticated) ViewStateUserKey = User.Identity.Name;
-        }
-
-        /// <summary>
-        /// Required method for Designer support - do not modify
-        /// the contents of this method with the code editor.
-        /// </summary>
-        private void InitializeComponent()
-        {
-            this.grdCloseReBookLoanRecords.ItemDataBound += new System.Web.UI.WebControls.DataGridItemEventHandler(this.grdCloseReBookLoanRecords_ItemDataBound);
-        }
-        #endregion
-
-        #region Methods
-
-        /// <summary>
-        /// This method will bind dropdown values
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <returns></returns>
-        private bool FillDropDownList(string sender)
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            SqlDataReader clsDR = null;
-            string[] SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-            MethodName = "FillDropDownList()";
-
-            try
-            {
-                if (clsDB.Open() == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                    return false;
-                }                
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.StoredProcedure = SqlObjectsStaticClass.p_GetData_Maintenance;
-               
-                if (sender != "ddlBrokerCrGroup" && sender != "ddlBrokerGroup" && sender != "ddlBroker")
-                {
-                    // fill up the combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_CREDIT_GROUP.ToString();
-
-                    // always fetch for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-                    SqlCondition[2] = "";
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    ddlBrokerCrGroup.DataSource = clsDR;
-                    ddlBrokerCrGroup.DataTextField = "BrkCrGrpName";
-                    ddlBrokerCrGroup.DataValueField = "BrkCrGrpId";
-                    ddlBrokerCrGroup.DataBind();
-                    ddlBrokerCrGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-
-                    if (ddlBrokerCrGroup.Items.Count == 0)
-                        ddlBrokerCrGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    clsDR.Close();
-
-                }
-
-                if (sender != "ddlBrokerGroup" && sender != "ddlBroker")
-                {
-                    // fill up the reason code combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_GROUP.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-
-                    if (sender == "ddlBrokerCrGroup")
-                    {
-                        SqlCondition[3] = this.ddlBrokerCrGroup.SelectedValue;
-                        SqlCondition[4] = "";
-
-
-                        if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-                        if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                            return false;
-
-                        ddlBrokerGroup.DataSource = clsDR;
-                        ddlBrokerGroup.DataTextField = "BrkGrpNameCode";
-                        ddlBrokerGroup.DataValueField = "BrkGrpId";
-                        ddlBrokerGroup.DataBind();
-                        ddlBrokerGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                        clsDR.Close();
-                    }
-                    else if (sender == null)
-                    {
-                        if (ddlBrokerGroup.Items.Count == 0)
-                            ddlBrokerGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    }
-                }
-
-                if (sender != "ddlBroker")
-                {
-                    // fill up the reason code combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_FROM_LOAN_TYPE.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-                    SqlCondition[2] = "";
-                    SqlCondition[6] = this.ddlSecType.SelectedValue;
-                    SqlCondition[7] = "0";
-
-                    if (sender == "ddlBrokerGroup")
-                    {
-                        SqlCondition[3] = this.ddlBrokerCrGroup.SelectedValue;
-                        SqlCondition[4] = "1";
-                        SqlCondition[5] = this.ddlBrokerGroup.SelectedValue;                        
-
-                        if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                        if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                            return false;
-
-                        ddlBroker.DataSource = clsDR;
-                        ddlBroker.DataTextField = "BrkNameCode";
-                        ddlBroker.DataValueField = "BrkNbr";// "BrokerAttributes";
-                        ddlBroker.DataBind();
-                        ddlBroker.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                        clsDR.Close();
-                    }
-                    else if (sender == null)
-                    {
-                        SqlCondition[3] = "0";
-                        SqlCondition[4] = "1";
-                        SqlCondition[5] = "0";
-
-                        if (ddlBroker.Items.Count == 0)
-                            ddlBroker.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    }
-                }
-
-                clsReader.SqlIdentifier = SqlIdentifier.CBO_FINDERNBR.ToString();
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                ddlFinder.DataSource = clsDR;
-                ddlFinder.DataTextField = "FInderNbrDescription";
-                ddlFinder.DataValueField = "FinderNbr";
-                ddlFinder.DataBind();
-                ddlFinder.Items.Insert(0, new ListItem("All", "0"));
-                clsDR.Close();
-
-
-                // Get Basket Identifier for Broker selection.
-                clsReader.SqlIdentifier = SqlIdentifier.GET_BASKET_IDENTIFIER.ToString();
-
-                SqlCondition[0] = _BussDate;
-
-
-                SqlCondition[1] = ddlBroker.SelectedValue; 
-
-                SqlCondition[2] = this.ddlSecType.SelectedValue;
-                SqlCondition[3] = "";
-
-                if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                ddlBasketIdentifier.DataSource = clsDR;
-                ddlBasketIdentifier.DataTextField = "BasketIdentifier";
-                ddlBasketIdentifier.DataValueField = "BasketNbr";
-                ddlBasketIdentifier.DataBind();
-                ddlBasketIdentifier.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectEmpty));
-                clsDR.Close();
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return false;
-            }
-            finally
-            {
-                if (clsDR != null && !clsDR.IsClosed)
-                    clsDR.Close();
-
-                clsReader.Dispose();
-                clsDB.Dispose();
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// This method will search data based on search criteria
-        /// </summary>
-        private void Search()
-        {
-            MethodName = "Search()";
-
-            try
-            {
-                _PageNo = 1;
-                txtGoTo1.Text = txtGoTo2.Text = string.Empty;
-
-                if (GetRecords() == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorReadingData"));
-                    Response.Write(Common.GetMessage("Common", "ErrorReadingData"));
-                }
-            }
-            catch (Exception Exc)
-            {
-                _show_error_row = "";
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// Get record details
-        /// </summary>
-        /// <returns></returns>
-        private bool GetRecords()
-        {
-            DataSet objDS = new DataSet();
-            PagedDataSource objPagedDS = new PagedDataSource();
-
-
-            STBUSA.Utility.IGlobalVariable gv = new GlobalVariable();
-            STBUSA.Data.DataBase clsDB = null;
-            STBUSA.Data.DataCommand clsCmd = null;
-            MethodName = "GetRecords()";
-
-            try
-            {
-                clsDB = new STBUSA.Data.DataBase(ref gv);
-                clsCmd = new STBUSA.Data.DataCommand(ref clsDB);
-
-                if (clsDB.Open() == false)
-                    return false;
-
-                DataReader clsReader = new DataReader();
-                clsReader.Connection = clsDB.Connection;
-
-                string[] SqlCondition = new string[13] { "", "", "", "", "", "", "", "", "", "", "", "", "" };
-
-                SqlCondition[0] = parentScreen == "SecLendDashboard" ? _TxnRefNbrList : txtTxnRefNbr.Text;
-                SqlCondition[1] = parentScreen == "SecLendDashboard" ? "0" : ddlBrokerCrGroup.SelectedValue;
-                SqlCondition[2] = parentScreen == "SecLendDashboard" ? "0" : ddlBrokerGroup.SelectedValue;
-                SqlCondition[3] = parentScreen == "SecLendDashboard" ? "0" : ddlBroker.SelectedValue;
-                SqlCondition[4] = txtSecCode.Text;
-                SqlCondition[5] = ddlBasketIdentifier.SelectedValue;
-                SqlCondition[6] = ddlSecType.SelectedValue;
-                SqlCondition[7] = ddlFinder.SelectedValue;
-                SqlCondition[8] = ddlProductCategory.SelectedValue;
-                SqlCondition[9] = parentScreen == "SecLendDashboard" ? "1" : (chkTermLoan2.Checked ? "1" : "0");
-                SqlCondition[10] = parentScreen == "SecLendDashboard" ? "1" : (chkDivArbLoan2.Checked ? "1" : "0");
-                SqlCondition[11] = parentScreen == "SecLendDashboard" ? "1" : (chkScripLoan2.Checked ? "1" : "0");
-                SqlCondition[12] = cboSrchTransmitFlag.SelectedValue;
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_GetData_ETI_CloseRebookLoansandCollaterals, SqlCondition) == false)
-                {
-                    return false;
-                }
-
-                objPagedDS.DataSource = objDS.Tables[0].DefaultView;
-                objPagedDS.AllowPaging = true;
-
-                if (objPagedDS.DataSourceCount < _PAGESIZE)
-                    objPagedDS.PageSize = objPagedDS.DataSourceCount;
-                else
-                    objPagedDS.PageSize = _PAGESIZE;
-
-                // delete the last page record contains only one record
-                // will load pageN - 1
-                if (_PageNo > objPagedDS.PageCount)
-                    _PageNo = objPagedDS.PageCount;
-
-                if (_PageNo <= 0)
-                    _PageNo = 1;
-
-                objPagedDS.CurrentPageIndex = _PageNo - 1;
-                _TotPage = objPagedDS.PageCount;
-
-                if (objPagedDS.Count == 0)
-                {
-                    _PageNo = 0;
-                    _TotPage = 0;
-                }
-
-                PageNofM = _PageNo.ToString() + " of " + _TotPage.ToString();
-
-                if (objPagedDS.Count > 0)
-                {
-
-                    grdCloseReBookLoanRecords.DataSource = objPagedDS;
-                    grdCloseReBookLoanRecords.DataBind();
-                    pnlMsg.Visible = false;
-
-                    if (_AccessTypeCode == "F")
-                    {
-                        btnBookLoanFooter.Enabled = true;
-                        btnBookLoan.Enabled = true;
-                    }
-                    else
-                    {
-                        btnBookLoanFooter.Enabled = false;
-                        btnBookLoan.Enabled = false;
-                    }
-                }
-                else
-                {
-                    pnlMsg.Visible = true;
-                    grdCloseReBookLoanRecords.DataSource = null;
-                    grdCloseReBookLoanRecords.DataBind();
-                    btnBookLoanFooter.Enabled = false;
-                    btnBookLoan.Enabled = false;
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(Exc.Message);
-                _show_error_row = "";
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return false;
-            }
-            finally
-            {
-                objPagedDS = null;
-                objDS.Dispose();
-
-                if (clsCmd != null)
-                    clsCmd.Dispose();
-
-                if (clsDB != null)
-                    clsDB.Dispose();
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// This method will validate input
-        /// </summary>
-        /// <returns></returns>
-        private bool ValidateInputs()
-        {
-            bool blnValidReq = false;
-            bool InvalidSettlementDate = false;
-            DataGridItem dgi = null;
-            //Validation on Settlement Date
-            MethodName = "ValidateInputs()";
-
-            try
-            {
-                for (int iRowCount = 0; iRowCount < grdCloseReBookLoanRecords.Items.Count; iRowCount++)
-                {
-                    dgi = this.grdCloseReBookLoanRecords.Items[iRowCount];
-
-                    TextBox txtSettlementDate = (TextBox)dgi.Cells[(int)grdMapping.SettleDate].FindControl("txtSettlementDate");
-                    CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
-
-                    if (chkInclude.Checked)
-                    {
-                        if (txtSettlementDate.Text.Trim() == string.Empty && InvalidSettlementDate == false)
-                        {
-                            _ErrorString.Append("<a href = \"javascript: document.forms[0].txtSetelmentDate.focus();\">\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("Common", "IncorrectSettlementDate") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            InvalidSettlementDate = true;
-                        }
-                        else if (InvalidSettlementDate == false && txtSettlementDate.Text.Trim().Length > 0 && Convert.ToDateTime(txtSettlementDate.Text.Trim()) < Convert.ToDateTime(_BussDate))
-                        {
-                            _ErrorString.Append("<a href = \"javascript: document.forms[0].txtSetelmentDate.focus();\">\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("Common", "SettlementDateLessThanBusDate") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            InvalidSettlementDate = true;
-                        }
-
-                        else if (InvalidSettlementDate == false && txtSettlementDate.Text != string.Empty)
-                        {
-                            if (Common.CheckHoliday(txtSettlementDate.Text))
-                            {
-                                _ErrorString.Append("\t" + Common.GetMessage("Common", "InvalidSettlementDate") + "\n");
-                                _ErrorString.Append("</a> <br>\n");
-                                InvalidSettlementDate = true;
-                            }
-
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                _ErrorString.Append("<a href = \"javascript: document.forms[0].txtSettleFromDate.focus();\">\n");
-                _ErrorString.Append("\t" + Common.GetMessage("Common", "IncorrectSettlementDate") + "\n");
-                _ErrorString.Append("</a> <br>\n");
-            }
-
-
-            if (_ErrorString.Length > 0)
-            {                
-                _show_error_row = "";               
-                throw new Exception(_ErrorString.ToString());
-            }
-            else
-            {                
-                blnValidReq = true;
-            }
-
-            return blnValidReq;
-        }
-
-        /// <summary>
-        /// This method will create loan xml
-        /// </summary>
-        /// <returns></returns>
-        private string AddLoanNodeToXMLFile()
-        {
-            //create new instance of XmlDocument
-            XmlDocument doc = new XmlDocument();
-            bool blnFirstRowProcessed = false;
-            string FilePath = string.Empty;
-
-            FilePath = "/LAVA/XmlTemplates/CloseLoan.xml";
-
-            //load from file
-            XmlTextReader reader = new XmlTextReader(Server.MapPath(FilePath));
-            doc.Load(reader);
-
-            DataGridItem dgi = null;
-            int iXmlRowCount = 1;
-            int intRowCount = 0;
-            int ValidationFail = 0;
-            _ErrorString = new StringBuilder();
-
-            XmlNode mainNode = doc.SelectSingleNode("CloseLoan");
-
-            // this will loop thru all records of a data table
-            for (int iRowCount = 0; iRowCount < grdCloseReBookLoanRecords.Items.Count; iRowCount++)
-            {
-                dgi = this.grdCloseReBookLoanRecords.Items[iRowCount];
-
-                //create sub node
-                XmlNode node = doc.CreateNode(XmlNodeType.Element, "FieldName", null);
-                CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
-                string isCollateral = dgi.Cells[(int)grdMapping.IsCollateral].Text.Trim();
-
-
-                if (chkInclude.Checked && isCollateral == _IsLoan)
-                {
-                    HyperLink lnkTxnRefNbr = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkTxnRefNbr");
-                    HyperLink lnkSecurityCode = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkSecurityCode");
-                    TextBox txtSettlementDate = (TextBox)dgi.Cells[(int)grdMapping.SettleDate].FindControl("txtSettlementDate");
-                    TextBox txtRemarks = (TextBox)dgi.Cells[(int)grdMapping.Remarks].FindControl("txtRemarks");
-                    DropDownList ddl = (DropDownList)dgi.Cells[(int)grdMapping.TransmitFlag].FindControl("cboBookTransmit");
-
-                    if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes["RowId"].Value != (iRowCount + 1).ToString() && blnFirstRowProcessed == true)
-                    {
-                        for (int i = 0; i < doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes.Count; i++)
-                        {
-                            //create attributes
-                            if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "RowId")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("RowId");
-                                att.Value = (iXmlRowCount + 1).ToString();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TxnRefNbr")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TxnRefNbr");
-                                att.Value = lnkTxnRefNbr.Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrkNbr")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BrkNbr");
-                                att.Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrokerId")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BrokerId");
-                                att.Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "AsOfDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("AsOfDate");
-                                att.Value = _BusinessDate;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SecCode")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("SecCode");
-                                att.Value = lnkSecurityCode.Text;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SettlementDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("SettlementDate");
-                                att.Value = txtSettlementDate.Text;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BatchDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BatchDate");
-                                att.Value = _BusinessDate;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TransmitFlg")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TransmitFlg");
-                                att.Value = ddl.SelectedValue;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "ModifiedBy")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("ModifiedBy");
-                                att.Value = this.clsUI.NTUserName;
-                                node.Attributes.Append(att);
-                            }                            
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BGNREF")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BGNREF");
-                                att.Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "Comments")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("Comments");
-                                att.Value = txtRemarks.Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "GPTransmit")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("GPTransmit");
-                                att.Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "LoanSettlementDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("LoanSettlementDate");
-                                att.Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsPrePay")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("IsPrePay");
-                                att.Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TPUID")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TPUID");
-                                att.Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsCollateral")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("IsCollateral");
-                                att.Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                        }
-
-                        iXmlRowCount++;
-                        mainNode.AppendChild(node);
-                    }
-                    else if (blnFirstRowProcessed == false)
-                    {
-                        doc.DocumentElement.ChildNodes[0].Attributes["TxnRefNbr"].Value = lnkTxnRefNbr.Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["BrkNbr"].Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["BrokerId"].Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["AsOfDate"].Value = _BusinessDate;
-                        doc.DocumentElement.ChildNodes[0].Attributes["SecCode"].Value = lnkSecurityCode.Text;
-                        doc.DocumentElement.ChildNodes[0].Attributes["SettlementDate"].Value = txtSettlementDate.Text;
-                        doc.DocumentElement.ChildNodes[0].Attributes["BatchDate"].Value = _BussDate;
-                        doc.DocumentElement.ChildNodes[0].Attributes["TransmitFlg"].Value = ddl.SelectedValue; 
-                        doc.DocumentElement.ChildNodes[0].Attributes["ModifiedBy"].Value = this.clsUI.NTUserName;
-                        doc.DocumentElement.ChildNodes[0].Attributes["BGNREF"].Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["Comments"].Value = txtRemarks.Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["GPTransmit"].Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["LoanSettlementDate"].Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["IsPrePay"].Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["TPUID"].Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["IsCollateral"].Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
-                        blnFirstRowProcessed = true;
-                    }
-                    intRowCount++;
-                }
-            }
-
-
-            string xml = string.Empty;
-
-            if (intRowCount == 0 || _ErrorString.Length > 0)
-            {
-
-                if (ValidationFail == 0)
-                    _ErrorString.Append("\t" + Common.GetMessage("CloseRebookLoan", "ErrorNoRowSelected") + " <br>\n");
-
-                _show_error_row = "";
-            }
-            else
-            {
-                xml = doc.InnerXml.ToString();
-                log.Debug("XML in " + MethodName + ">> " + xml.ToString());
-            }
-
-            return xml;
-        }
-
-        /// <summary>
-        /// This method will create collateral xml
-        /// </summary>
-        /// <returns></returns>
-        private string AddCollateralNodeToXMLFile()
-        {
-            //create new instance of XmlDocument
-            XmlDocument doc = new XmlDocument();
-            bool blnFirstRowProcessed = false;
-            string FilePath = string.Empty;
-
-            FilePath = "/LAVA/XmlTemplates/CloseCollateral.xml";
-
-            //load from file
-            XmlTextReader reader = new XmlTextReader(Server.MapPath(FilePath));
-            doc.Load(reader);
-
-            DataGridItem dgi = null;
-            int iXmlRowCount = 1;
-            int intRowCount = 0;
-            int ValidationFail = 0;
-            _ErrorString = new StringBuilder();
-
-            XmlNode mainNode = doc.SelectSingleNode("CloseCollateral");
-
-            // this will loop thru all records of a data table
-            for (int iRowCount = 0; iRowCount < grdCloseReBookLoanRecords.Items.Count; iRowCount++)
-            {
-                dgi = this.grdCloseReBookLoanRecords.Items[iRowCount];
-
-                //create sub node
-                XmlNode node = doc.CreateNode(XmlNodeType.Element, "FieldName", null);
-                CheckBox chkInclude = (CheckBox)dgi.Cells[(int)grdMapping.chkInclude].FindControl("chkInclude");
-                string isCollateral = dgi.Cells[(int)grdMapping.IsCollateral].Text.Trim();
-
-
-                if (chkInclude.Checked && isCollateral == _IsCollateral)
-                {
-                    HyperLink lnkTxnRefNbr = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkTxnRefNbr");
-                    HyperLink lnkSecurityCode = (HyperLink)dgi.Cells[(int)grdMapping.lnkTxnRefNbr].FindControl("lnkSecurityCode");
-                    TextBox txtSettlementDate = (TextBox)dgi.Cells[(int)grdMapping.SettleDate].FindControl("txtSettlementDate");
-                    TextBox txtRemarks = (TextBox)dgi.Cells[(int)grdMapping.Remarks].FindControl("txtRemarks");
-                    DropDownList ddl = (DropDownList)dgi.Cells[(int)grdMapping.TransmitFlag].FindControl("cboBookTransmit");
-
-                    if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes["RowId"].Value != (iRowCount + 1).ToString() && blnFirstRowProcessed == true)
-                    {
-                        for (int i = 0; i < doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes.Count; i++)
-                        {
-                            //create attributes
-                            if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "RowId")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("RowId");
-                                att.Value = (iXmlRowCount + 1).ToString();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TxnRefNbr")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TxnRefNbr");
-                                att.Value = lnkTxnRefNbr.Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrkNbr")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BrkNbr");
-                                att.Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BrokerId")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BrokerId");
-                                att.Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "AsOfDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("AsOfDate");
-                                att.Value = _BusinessDate;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SecCode")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("SecCode");
-                                att.Value = lnkSecurityCode.Text;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "SettlementDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("SettlementDate");
-                                att.Value = txtSettlementDate.Text;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BatchDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BatchDate");
-                                att.Value = _BusinessDate;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TransmitFlg")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TransmitFlg");
-                                att.Value = ddl.SelectedValue;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "ModifiedBy")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("ModifiedBy");
-                                att.Value = this.clsUI.NTUserName;
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "BGNREF")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("BGNREF");
-                                att.Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "Comments")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("Comments");
-                                att.Value = txtRemarks.Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "GPTransmit")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("GPTransmit");
-                                att.Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "LoanSettlementDate")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("LoanSettlementDate");
-                                att.Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsPrePay")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("IsPrePay");
-                                att.Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "TPUID")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("TPUID");
-                                att.Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                            else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsCollateral")
-                            {
-                                XmlAttribute att = doc.CreateAttribute("IsCollateral");
-                                att.Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
-                                node.Attributes.Append(att);
-                            }
-                        }
-
-                        iXmlRowCount++;
-                        mainNode.AppendChild(node);
-                    }
-                    else if (blnFirstRowProcessed == false)
-                    {
-                        doc.DocumentElement.ChildNodes[0].Attributes["TxnRefNbr"].Value = lnkTxnRefNbr.Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["BrkNbr"].Value = dgi.Cells[(int)grdMapping.BrkNbr].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["BrokerId"].Value = dgi.Cells[(int)grdMapping.BrkID].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["AsOfDate"].Value = _BusinessDate;
-                        doc.DocumentElement.ChildNodes[0].Attributes["SecCode"].Value = lnkSecurityCode.Text;
-                        doc.DocumentElement.ChildNodes[0].Attributes["SettlementDate"].Value = txtSettlementDate.Text;
-                        doc.DocumentElement.ChildNodes[0].Attributes["BatchDate"].Value = _BussDate;
-                        doc.DocumentElement.ChildNodes[0].Attributes["TransmitFlg"].Value = ddl.SelectedValue;
-                        doc.DocumentElement.ChildNodes[0].Attributes["ModifiedBy"].Value = this.clsUI.NTUserName;
-                        doc.DocumentElement.ChildNodes[0].Attributes["BGNREF"].Value = dgi.Cells[(int)grdMapping.BGNREF].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["Comments"].Value = txtRemarks.Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["GPTransmit"].Value = dgi.Cells[(int)grdMapping.GPTransmit].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["LoanSettlementDate"].Value = dgi.Cells[(int)grdMapping.LoanSettlementDate].Text.Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["IsPrePay"].Value = dgi.Cells[(int)grdMapping.IsPrePay].Text.Replace("&nbsp;", "").Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["TPUID"].Value = dgi.Cells[(int)grdMapping.TPUID].Text.Replace("&nbsp;", "").Trim();
-                        doc.DocumentElement.ChildNodes[0].Attributes["IsCollateral"].Value = dgi.Cells[(int)grdMapping.IsCollateral].Text.Replace("&nbsp;", "").Trim();
-                        blnFirstRowProcessed = true;
-                    }
-                    intRowCount++;
-                }
-            }
-
-
-            string xml = string.Empty;
-
-            if (intRowCount == 0 || _ErrorString.Length > 0)
-            {
-
-                if (ValidationFail == 0)
-                    _ErrorString.Append("\t" + Common.GetMessage("CloseRebookLoan", "ErrorNoRowSelected") + " <br>\n");
-
-                _show_error_row = "";
-            }
-            else
-            {
-                xml = doc.InnerXml.ToString();
-                log.Debug("XML in " + MethodName + ">> " + xml.ToString());
-            }
-
-            return xml;
-        }
-
-        /// <summary>
-        /// Common event for Dropdownlist index change
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void IndexChanged(Object sender, EventArgs e)
-        {
-            MethodName = "IndexChanged()";
-
-            try
-            {
-                if (FillDropDownList(((DropDownList)sender).ID) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorGetComboBox"));
-                    Response.Write(Common.GetMessage("Common", "ErrorGetComboBox"));
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// This method will set variable from session values
-        /// </summary>
-        private void RetainSessionValues()
-        {
-            MethodName = "RetainSessionValues()";
-
-            try
-            {
-                // take pageing information from hidden controls
-                if (Request["hdnPageNo"] != null)
-                {
-                    _PageNo = Int32.Parse(Request["hdnPageNo"].ToString());
-                }
-
-                if (Request["hdnTotPage"] != null)
-                {
-                    _TotPage = Int32.Parse(Request["hdnTotPage"].ToString());
-                }
-            }
-            catch (Exception Exc)
-            {
-                _PageNo = 0;
-                _TotPage = 0;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-            PageNofM = _PageNo.ToString() + " of " + _TotPage.ToString();
-        }
-
-        /// <summary>
-        /// This method will show confimration message
-        /// </summary>
-        /// <returns></returns>
-        private bool ConfirmBatch()
-        {
-            string jsScript = null;
-            jsScript += "alert('" + Common.GetMessage("Common", "SuccessBatchSubmit") + "');";
-            if (parentScreen == "SecLendDashboard")
-            {
-                jsScript += "window.close();";
-            }
-            Common.WriteJavascript(jsScript);
-
-            return true;
-        }
-
-        #endregion
-
-        #region Events
-        /// <summary>
-        /// Grid item data bound event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void grdCloseReBookLoanRecords_ItemDataBound(object sender, System.Web.UI.WebControls.DataGridItemEventArgs e)
-        {
-            StringBuilder QueryString = new StringBuilder();
-            StringBuilder QueryString2 = new StringBuilder();
-            StringBuilder fncCaller = new StringBuilder("PopUpRightMenu");
-
-            StringBuilder QueryString3 = new StringBuilder();
-            StringBuilder QueryString4 = new StringBuilder();
-
-            string SecType = "";
-            string SecID = "";
-            string ActionID = "";
-            string BucketSecurityType = string.Empty;
-
-            if (e.Item.ItemType == ListItemType.Item ||
-                e.Item.ItemType == ListItemType.AlternatingItem ||
-                e.Item.ItemType == ListItemType.SelectedItem)
-            {
-
-
-                #region Security Code Link
-
-                HyperLink lnkSecurity = new HyperLink();
-                lnkSecurity = (HyperLink)e.Item.Cells[(int)grdMapping.SecCode].FindControl("lnkSecurityCode");
-
-
-                SecID = e.Item.Cells[(int)grdMapping.SecID].Text;
-                BucketSecurityType = e.Item.Cells[(int)grdMapping.BucketSecurityType].Text;
-
-                if (SecType.Equals(Common.enumSecType.EQ.ToString()))
-                    ActionID = Common.enumActionID.GET_EQ_DETAILS.ToString();
-                else if (SecType.Equals(Common.enumSecType.FI.ToString()))
-                    ActionID = Common.enumActionID.GET_FI_DETAILS.ToString();
-                else
-                    ActionID = Common.enumActionID.GET_OTHER_DETAILS.ToString();
-
-                //pass the sec code and other required parameters here
-                //pass only those values for which we need a menu item
-
-                QueryString.Append("?AsOfDate=");
-                QueryString.Append(_BussDate);
-
-                QueryString.Append("&SecID=");
-                QueryString.Append(SecID);
-
-                QueryString.Append("&SecCode=");                
-                QueryString.Append(lnkSecurity.Text.Trim());
-
-                QueryString.Append("&SecType=");
-                QueryString.Append(BucketSecurityType);
-
-                QueryString.Append("&ActionID=");
-                QueryString.Append(ActionID);
-
-                QueryString.Append("&ExclusiveSelection=");
-                QueryString.Append("NE");
-
-                QueryString.Append("&ProjectedDate=");
-                QueryString.Append("");
-
-                QueryString.Append("&HasProjection=");
-                QueryString.Append("0");
-
-                QueryString.Append("&RequestOrigin=");
-                QueryString.Append("Recon");
-
-                QueryString.Append("&WinMode=PopUp");
-
-                argsPopUpMenu = QueryString.ToString();
-
-                QueryString2.Append("Javascript: PopUpWindow('" + Common.POSITIONDETAILPAGEURL + "");
-                QueryString2.Append(argsPopUpMenu);
-                QueryString2.Append("', '', '" + Common.POSITIONDETAILPOPUPWINPOSITION + "')");
-
-                fncCaller.Append("('show',this.id,'");
-                fncCaller.Append(argsPopUpMenu);
-                fncCaller.Append("')");
-                
-                lnkSecurity.NavigateUrl = QueryString2.ToString();
-
-                #endregion
-
-
-                #region Loan Nbr link
-
-
-                HyperLink lnkTxnRefNbr = new HyperLink();
-                lnkTxnRefNbr = (HyperLink)e.Item.Cells[(int)grdMapping.SecCode].FindControl("lnkTxnRefNbr");
-
-                if (lnkTxnRefNbr.Text.Trim() != "0")
-                {
-                    QueryString3.Append("?TxnRefNbr=");
-                    QueryString3.Append(e.Item.Cells[(int)grdMapping.BGNREF].Text.Trim());                    
-                    QueryString3.Append(string.Format("&IsHistoricalLoan={0}", (Convert.ToDateTime(e.Item.Cells[(int)grdMapping.AsOfDate].Text) < Convert.ToDateTime(_BussDate)) ? "true" : "false"));
-                    QueryString3.Append("&ActionType=");
-                    QueryString3.Append("SLD");
-
-                    argsPopUpMenu = QueryString3.ToString();
-
-                    QueryString4.Append("Javascript: PopUpWindow('" + Common.LOANACTIONPAGEURL + "");
-                    QueryString4.Append(argsPopUpMenu);
-                    QueryString4.Append("', '',  '" + Common.LOANACTIONPOPUPWINPOSITION + "')");
-
-                    fncCaller.Append("('show',this.id,'");
-                    fncCaller.Append(argsPopUpMenu);
-                    fncCaller.Append("')");
-                    
-                    lnkTxnRefNbr.NavigateUrl = QueryString4.ToString();
-                }
-
-                #endregion
-
-
-                TextBox txtSettlementDate = (TextBox)e.Item.Cells[(int)grdMapping.SettleDate].FindControl("txtSettlementDate");
-                HtmlAnchor lnkCal = (HtmlAnchor)e.Item.Cells[(int)grdMapping.SettleDate].FindControl("lnkSettlementDate");
-
-                if (lnkCal != null)
-                {
-                    lnkCal.HRef = "javascript:OpenCalendar('" + txtSettlementDate.ClientID + "', false)";
-                }
-            }
-
-
-        }
-
-        /// <summary>
-        /// Page navigation click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void PageNavigation_Click(object sender, System.Web.UI.WebControls.CommandEventArgs e)
-        {
-            // get the parameters from hidden controls. 
-            _PageChange = "True";
-
-            switch (e.CommandName.ToUpper())
-            {
-                case "FIRST":						//first
-                    _PageNo = 1;
-                    txtGoTo1.Text = txtGoTo2.Text = string.Empty;
-                    break;
-
-                case "PREVIOUS":					//prev
-                    _PageNo--;
-                    txtGoTo1.Text = txtGoTo2.Text = string.Empty;
-                    if (_PageNo < 1)
-                        _PageNo = 1;
-                    break;
-
-                case "NEXT":						//next
-                    _PageNo++;
-                    txtGoTo1.Text = txtGoTo2.Text = string.Empty;
-                    if (_PageNo > _TotPage)
-                        _PageNo = _TotPage;
-                    break;
-
-                case "LAST":
-                    txtGoTo1.Text = txtGoTo2.Text = string.Empty;//last
-                    _PageNo = _TotPage;
-                    break;
-
-                case "GOTO1":
-                    _PageNo = Int32.Parse(this.txtGoTo1.Text);
-                    break;
-
-                case "GOTO2":
-                    _PageNo = Int32.Parse(this.txtGoTo2.Text);
-                    break;
-            }
-
-            // refresh the page based on the navigation
-            GetRecords();
-        }
-
-        /// <summary>
-        /// Page Load Event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void Page_Load(object sender, EventArgs e)
-        {
-            MethodName = "Page_Load()";
-
-            try
-            {
-                RetainSessionValues();
-
-                _AccessTypeCode = getUserAppAccessTypeCode("GCI", clsUI.NTUserName);
-                _AccessTypeCode = _AccessTypeCode == "F" ? getUserAppAccessTypeCode(_ModuleName, clsUI.NTUserName) : _AccessTypeCode;
-
-                if (_AccessTypeCode == "R")
-                {
-                    _UserAccess = "ReadOnly";
-                }
-                else if (_AccessTypeCode == "N")
-                {
-                    //Logging Activity Code For Authorization, base on ModuleName
-                    LogUserAuthorization(_ModuleName, _AccessTypeCode);
-
-                    Response.Redirect(string.Format(Common.ACCESSDENIEDPAGE, Common.AUTHORIZATIONFAIL, _page));
-                }
-
-                _BusinessDate = GlobalVariable.SystemDate;
-                _show_select_criteria2 = "";
-                _ErrorString = new StringBuilder();
-
-                #region "Set Query String sent from SecLending Dashboard"
-                parentScreen = Request.QueryString["ParentScreen"];
-
-                if (parentScreen == "SecLendDashboard" && (!Page.IsPostBack))
-                {
-                    if (Session[Common.CON_TXNREFNBRLIST] != null)
-                    {
-                        _TxnRefNbrList = (string)Session[Common.CON_TXNREFNBRLIST];
-                    }
-
-                    btnSearch.Enabled = false;
-                    _show_select_criteria2 = "none";
-                    Search();
-                }
-                #endregion
-
-                if (!IsPostBack)
-                {
-                    //Logging Activity Code For Authorization, base on ModuleName
-                    LogUserAuthorization(_ModuleName, _AccessTypeCode);
-
-                    // set the javascript for the goto image buttons
-                    imgGoTo1.Attributes.Add("onClick", "return GoTo_Click('txtGoTo1')");
-                    imgGoTo2.Attributes.Add("onClick", "return GoTo_Click('txtGoTo2')");
-
-                    //Used to fill dropdownlist on screen
-                    FillDropDownList(null);
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// Book laon redirection
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnBookLoan_Click(object sender, EventArgs e)
-        {
-            Hashtable htMain = new Hashtable();
-            Database clsDB = new Database();
-            DataCommand clsCmd = new DataCommand();
-            MethodName = "btnBookLoan_Click()";
-
-            try
-            {
-                if (ValidateInputs())
-                {
-
-                    string loanXml = AddLoanNodeToXMLFile();
-                    string collateralXml = AddCollateralNodeToXMLFile();
-
-                    DataReader clsReader = new DataReader();
-                    DataSet ds = new DataSet();
-                    bool blnStatus = false;
-                    string[] SqlCondition = new string[2] { "" };
-                    string Identifier = "";
-
-                    if (clsDB.Open() == false)
-                    {
-                        log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                        throw new Exception(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                    }
-
-                    clsReader.Connection = clsDB.Connection;
-                    clsReader.StoredProcedure = SqlObjectsStaticClass.p_SaveData_ETI_CloseRebookLoansandCollaterals;
-
-                    SqlCondition[0] = loanXml;
-                    SqlCondition[1] = collateralXml;
-                    Identifier = "LAVA";
-
-                    clsReader.SqlIdentifier = Identifier;
-
-                    if (clsReader.GetData(ref ds, SqlCondition) == false)
-                    {
-                        blnStatus = false;
-                        log.Debug(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                        throw new Exception(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                    }
-                    else
-                    {
-                        blnStatus = true;
-                    }
-
-                    if (blnStatus)
-                    {
-                        ConfirmBatch();                        
-                    }
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(Exc.Message);
-                _show_error_row = "";
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-
-            }
-        }
-
-        /// <summary>
-        /// Button click event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void Button_Click(object sender, System.Web.UI.WebControls.CommandEventArgs e)
-        {
-            MethodName = "Button_Click()";
-
-            try
-            {
-                switch (e.CommandName.ToUpper())
-                {
-                    case "SEARCH":
-                        Search();
-                        break;
-                }
-            }
-            catch (Exception Exc)
-            {
-                _show_error_row = "";
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// Dropdown selected index change event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void ddlBrokerCrGroup_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            MethodName = "ddlBrokerCrGroup_SelectedIndexChanged()";
-
-            try
-            {
-                FillDropDownList(null);
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        #endregion
-    }
-}
+CREATE PROCEDURE [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]  
+(
+	@SQL_IDENTIFIER		VARCHAR(10),
+	@SQL_CONDITION1		VARCHAR(MAX)
+)  
+AS  
+BEGIN  
+   
+	SET NOCOUNT ON;   
+
+	DECLARE @ERROR_NO INT
+
+	DECLARE @SourceID INT,@ModifiedDate DATETIME, @Ret SMALLINT, @BrkCrGrpID INT,@BrkGrpID INT, @BrkID INT, @SecId INT,
+			@LastPriceDate DATETIME,@BatchID	INT,@RecordIndicator VARCHAR(3),@TOE VARCHAR(3),@hXmlDoc INT,
+			@hdoc INT, @StatusId INT,@Count INT, @TotalCount INT, @HistlogCount INT, @TotalHistlogCount INT,
+			@TxnRefNbr INT,@AsOfDate DATETIME,@SettlementDate DATETIME,@SecCode	VARCHAR(12),@SecType CHAR(2),
+			@BrkNbr VARCHAR(50),@RecordTypeID INT,@FileName VARCHAR(50),@BatchDate DATETIME,@TransmitFlg VARCHAR(1),
+			@ModifiedBy	VARCHAR(50),@LoanType VARCHAR(1),@Depository VARCHAR(10), @EqlEquilendID BIGINT,@IsCollateral INT, 
+			@BGNREF VARCHAR(12), @FinderLdnLoc VARCHAR(3),@FinderNYLoc VARCHAR(3),@BatchNbr INT,@GPTransmit VARCHAR(1), @RawDataID INT,
+			@SendToPirumPSL BIT, @SendToPirumRSL BIT, @LoanSettlementDate DATETIME, @IsPrePay BIT, @TPUID VARCHAR(20), @G1UserCode VARCHAR(8),
+			@RETURN_XML VARCHAR(MAX), @RETURN_XML_EQUI VARCHAR(MAX)
+
+	DECLARE @TempXMLTable TABLE 
+	(
+		RowID					INT IDENTITY(1,1),
+		EqlEquilendID			BIGINT,
+		TxnRefNbr				INT,
+		AsOfDate				DATETIME,
+		SettlementDate			DATETIME,
+		SecCode					VARCHAR(12),
+		SecType					CHAR(2) ,	
+		BrkCrGrpID				INT,
+		BrkGrpID				INT,
+		BrkID					INT,	
+		BrkNbr					VARCHAR(12),
+		RecordTypeID			INT,
+		BatchDate				DATETIME,
+		TransmitFlg				VARCHAR(1),
+		ModifiedBy				VARCHAR(50),
+		TOE						VARCHAR(3),
+		SourceID				INT,
+		IsProcessed				BIT,
+		IsCollateral			BIT,
+		BGNREF					VARCHAR(12),
+		Comments				VARCHAR(20),
+		GPTransmit				VARCHAR(1),
+		LoanSettlementDate		DATETIME,
+		IsPrePay				BIT,
+		TPUID					VARCHAR(20),	
+		IsEqlLoan				BIT
+	)	
+
+	DECLARE @ETIDetailRecord TABLE 
+	(
+		[ID] [int] IDENTITY(1,1) NOT NULL,
+		[RawDataID] [int] NOT NULL,
+		[EqlEquilendID] BIGINT NULL,
+		[ExternalRefNbr] [varchar](12) NULL,
+		[LoanType] [char](1) NULL,
+		[AcctNbr] [varchar](12) NULL,
+		[Depository] [varchar](10) NULL,
+		[SecCode] [varchar](12) NULL,
+		[SettlementDate] [datetime] NULL,
+		[TermDate] [datetime] NULL,
+		[BrkNbr] [varchar](6) NULL,
+		[FaceAmount] [numeric](13, 0) NULL,
+		[RawPrice] [decimal](14, 7) NULL,
+		[TradePrice] [decimal](14, 7) NULL,
+		[CCYCode] [varchar](3) NULL,
+		[Principal] [decimal](17, 2) NULL,
+		[CollCCYCode] [varchar](3) NULL,
+		[RebateRate] [decimal](9, 6) NULL,
+		[SecLocCode] [varchar](2) NULL,
+		[SecID] [int] NULL,
+		[BrkID] [int] NULL,
+		[TxnRefNbr] [int] NULL,
+		[RecordTypeID] [smallint] NOT NULL,
+		[BatchDate] [datetime] NOT NULL,
+		[AsOfDate] [datetime] NULL, 
+		[TransmitFlg] [char](1) NULL,
+		[DisclosureType] [char](1) NULL,
+		[TOE] [VARCHAR](3) NULL,
+		[GCIRecordType] VARCHAR(1),
+		[GCIStatus]  VARCHAR(1),
+		[GCITransactionType] VARCHAR(1),
+		[GCIPostingType] VARCHAR(3),
+		[GCILenderModuleTrade]  VARCHAR(1),
+		[GCIAutoAuthorised] VARCHAR(1),
+		[GPTransmit] VARCHAR(1),
+		[IsPrePay]		[BIT] NULL,
+		[TPUID]			[VARCHAR](20) NULL
+	)
+	
+	CREATE TABLE #BrkTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		BrkId INT,
+		BrkNbr VARCHAR(6)
+	)
+
+	DECLARE @HistLogTbl TABLE 
+	(
+		RowId INT IDENTITY(1,1),
+		SourceId INT, 
+		BrkCrGrpId INT,
+		BrkId INT,
+		RecordTypeID INT
+	)
+
+	DECLARE @TempLoansandCollaterals TABLE
+	(
+		BrkNbr varchar(6) NULL,
+		AcctType varchar(12) NULL,
+		AcctNbr varchar(12) NULL,
+		CouponRate decimal(20, 10) NULL,
+		SecDueDate datetime NULL,
+		SecType varchar(7) NULL,
+		SecCode varchar(12) NULL,
+		SpecialStatus varchar(30) NULL,
+		CCYCode varchar(3) NULL,
+		FaceAmount numeric(13, 0) NULL,
+		CollCCYCode varchar(3) NULL,
+		TradePrice decimal(17, 7) NULL,
+		Principal decimal(17, 2) NULL,
+		RepoRate decimal(9, 6) NULL,
+		InvRate decimal(20, 7) NULL,
+		Spread decimal(20, 7) NULL,
+		FinderNbr varchar(6) NULL,
+		RepoFromDate datetime NULL,
+		RepoDueDate datetime NULL,
+		LastActivityDate datetime NULL,
+		MarkPrice decimal(20, 7) NULL,
+		TxnRefNbr int NULL,
+		TxnSuffix varchar(3) NULL,
+		TxnType char(1) NULL,
+		LoanType char(1) NULL,
+		LoanStatus char(1) NULL,
+		AllocFlag char(1) NULL,
+		SecLocCode char(2) NULL,
+		Remarks varchar(50) NULL,
+		SecDesc varchar(40) NULL,
+		LoanDate datetime NULL,
+		CollNbr int NULL,
+		BrkCommission decimal(20, 8) NULL,
+		BankFee decimal(20, 7) NULL,
+		BrkName varchar(50) NULL,
+		AsOfDate datetime NULL,
+		ForeignExchange decimal(20, 6) NULL,
+		ClearAgentNbr varchar(10) NULL,
+		RebPremAmtAcc decimal(13, 2) NULL,
+		DeliveryAmount decimal(17, 2) NULL,
+		CapitalPercentage decimal(10, 2) NULL,
+		SEDOL varchar(7) NULL,
+		CUSIP varchar(12) NULL,
+		COMMON varchar(9) NULL,
+		VALOREN varchar(12) NULL,
+		ISIN varchar(12) NULL,
+		Quick varchar(4) NULL,
+		DepoBic varchar(30) NULL,
+		DepoDel varchar(30) NULL,
+		DepoName varchar(50) NULL,
+		BrkBic varchar(30) NULL,
+		BrkAcct varchar(30) NULL,
+		BrkBankName varchar(30) NULL,
+		UserID varchar(50) NULL,
+		AccruedIntrest decimal(19, 7) NULL,
+		LocalPrice decimal(15, 7) NULL,
+		MktPrice decimal(20, 7) NULL,
+		AdjMktValue decimal(20, 7) NULL,
+		MktValue decimal(14, 2) NULL,
+		MktAmount decimal(20, 2) NULL,
+		MTMPercentage decimal(10, 2) NULL,
+		AcctSN varchar(10) NULL,
+		TranDate datetime NULL,
+		G1AsOfDate datetime NULL,
+		TermDate datetime NULL,
+		ProcDate datetime NULL,
+		SecID int NULL,
+		EqlEquiLendID bigint NULL,
+		TriPartyGrpID int NULL,
+		CollSchedID int NULL,
+		IsStreetSide bit NULL,
+		IsFuture smallint NULL,
+		IsConfirmed tinyint NULL,
+		isLavaLoan tinyint NULL,
+		CreatedDate datetime NULL,
+		SettleDate datetime NULL,
+		STTEndDate datetime NULL,
+		STTLevel decimal(5, 2) NULL,
+		STTDivRate decimal(13, 6) NULL,
+		PSLStatus smallint NULL,
+		ProductCategory varchar(3) NULL,
+		CAPayoutMapID int NULL,
+		TxnRefNbrCA int NULL,
+		ProductCategoryLoanType varchar(20) NULL,
+		ProductCategoryLoanDuration varchar(20) NULL,
+		ScripEndDate datetime NULL,
+		LIBORRate decimal(20, 10) NULL,
+		ResetDate datetime NULL,
+		GotoRepoRate decimal(20, 7) NULL,
+		GotoTermDate datetime NULL,
+		GotoRemarks varchar(20) NULL,
+		GotoProductCategory varchar(3) NULL,
+		GotoProductCategoryLoanType varchar(20) NULL,
+		GotoProductCategoryLoanDuration varchar(20) NULL,
+		GotoSTTLevel decimal(5, 2) NULL,
+		GotoSTTDivRate decimal(13, 6) NULL,
+		GotoSTTEndDate datetime NULL,
+		GotoScripEndDate datetime NULL,
+		BasketNbr int NULL,
+		LoanCategory varchar(2) NULL,
+		RepoSecurityTypeID int NULL,
+		DesiredSTTLevel decimal(5, 2) NULL,
+		IsProjectedDividend bit NULL,
+		ProjectedDividendAmount decimal(13, 6) NULL,
+		Transmit varchar(1) NULL,
+		TxnRefNbrTRF int NULL,
+		isTermRepo smallint NULL,
+		BGNREF varchar(12) NULL,
+		LINKREF varchar(12) NULL,
+		SMODE	VARCHAR(6),
+		NetDividendPercentage	DECIMAL(6,2),
+		OverseasTaxPercentage	DECIMAL(6,2),
+		DomesticTaxPercentage	DECIMAL(6,2),
+		GPTransmit				VARCHAR(1),
+		IsPrePay				BIT,
+		TPUID					VARCHAR(20)
+	)
+
+	CREATE TABLE #AllocationTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		BGNREF VARCHAR(12),
+		SourceID INT,
+		RecordTypeID INT,
+		BatchDate DATETIME,
+		SecID	INT,
+		AcctId	INT,
+		AcctNbr VARCHAR(12),
+		BrkNbr  VARCHAR(12),
+		FaceAmountFromAlloc BIGINT,
+		FaceAmountActual BIGINT,
+		AccountAllocationChanged BIT DEFAULT 0,
+		AvailRestOverriden BIT DEFAULT 0,
+		ModifiedBy VARCHAR(50),
+		ModifiedDate DATETIME
+	)
+
+	DECLARE @ETIDetailRecordNewLoan TABLE 
+	(
+		ID				INT IDENTITY(1,1),
+		RawDataID		INT,
+		ExternalRefNbr	VARCHAR(12),
+		LoanType		CHAR(1),
+		AcctNbr			VARCHAR(12),
+		WLDepository	VARCHAR(10),
+		SecCode			VARCHAR(12),
+		SettlementDate	DATETIME,
+		TermDate		DATETIME,
+		BrkNbr			VARCHAR(6),
+		FaceAmount		NUMERIC(13, 0),
+		RawPrice		DECIMAL(14, 7),   --  // Neelima-- change in code to make Price as 7 Decimal From Deciaml(13,6)
+		TradePrice		DECIMAL(14, 7),   --  // Neelima-- change in code to make Price as 7 Decimal From Deciaml(13,6)
+		CCYCode			VARCHAR(3),
+		Principal		DECIMAL(17, 2),
+		CollCCYCode		VARCHAR(3),
+		RebateRate		DECIMAL(9, 6),
+		SecLocCode		VARCHAR(2),
+		SecID			INT,
+		BrkID			INT,
+		RecordTypeID	SMALLINT,		
+		BatchDate		DATETIME,
+		AsOfDate		DATETIME, 
+		CollateralDate	DATETIME,
+		GoodFundsDate	DATETIME,
+		FinderNbr		VARCHAR(6),
+		PoolNbr			VARCHAR(6),
+		Comments		VARCHAR(20),
+		SettlementInstr	VARCHAR(30),
+		SettlementCCY	VARCHAR(3),
+		CleanUpFlg		VARCHAR(1),
+		TransmitFlg		VARCHAR(1),
+		DisclosureType	VARCHAR(1),
+		TriPartyGrpID	INT, 
+		CollSchedID		INT,
+		ProductCategory	VARCHAR(3),
+		LowDivRate		BIT,
+		STTLevel	VARCHAR(30),
+		STTEndDate	DATETIME,
+		STTDivRate	VARCHAR(30),
+		BulkNbr		INT,
+		ScripEndDate   DATETIME,
+		ProductCategoryLoanType		VARCHAR(20),	--LoanType
+		ProductCategoryLoanDuration	VARCHAR(20),
+		LoanCategory varchar(2) NULL,
+		BasketNbr INT NULL,
+		LIBORRate decimal(20, 10) NULL,
+		ResetDate datetime NULL,
+		GotoRepoRate decimal(20, 7) NULL,
+		GotoTermDate datetime NULL,		
+		GotoRemarks varchar(20) NULL,
+		GotoSTTLevel decimal(5, 2) NULL,
+		GotoSTTDivRate decimal(13, 6) NULL,
+		GotoSTTEndDate datetime NULL,		
+		GotoScripEndDate datetime NULL,
+		GotoProductCategory varchar(3) NULL,
+		GotoProductCategoryLoanType varchar(20) NULL,
+		GotoProductCategoryLoanDuration varchar(20) NULL,
+		DesiredSTTLevel		DECIMAL(5,2) NULL,		
+		IsProjectedDividend		BIT,	
+		ProjectedDividendAmount	DECIMAL(15,8) NULL,
+		BgnRef	VARCHAR(12),
+		[GCIRecordType] VARCHAR(1),
+		[GCIStatus]  VARCHAR(1),
+		[GCITransactionType] VARCHAR(1),
+		[GCIPostingType] VARCHAR(3),
+		[GCILenderModuleTrade]  VARCHAR(1),
+		[GCIAutoAuthorised] VARCHAR(1),
+		[NetDividendPercentage]	DECIMAL(6,2),
+		GPTransmit				VARCHAR(1),	
+		SFTRCancelledLoanRefNbr VARCHAR(7),
+		ExecutionTimestamp		DATETIME,
+		IsPrePay				BIT,
+		TPUID					VARCHAR(20)		
+	)
+
+	EXEC SP_XML_PREPAREDOCUMENT @hdoc OUTPUT, @SQL_CONDITION1
+
+	/* Insert selected TxnRefNbr for Return loan, into temp table for processing*/
+	INSERT INTO @TempXMLTable
+	(
+		EqlEquilendID,
+		TxnRefNbr,
+		AsOfDate,
+		SettlementDate,
+		SecCode,
+		SecType,
+		BrkCrGrpID,
+		BrkGrpID,
+		BrkID,
+		BrkNbr,
+		RecordTypeID,
+		BatchDate,
+		TransmitFlg,
+		ModifiedBy,
+		TOE,
+		SourceID,
+		IsProcessed,
+		IsCollateral,
+		BGNREF,
+		Comments,
+		GPTransmit,
+		LoanSettlementDate,
+		IsPrePay,
+		TPUID,
+		IsEqlLoan
+	)
+	SELECT 
+		EqlEquilendID,
+		TxnRefNbr,
+		AsOfDate,
+		SettlementDate,
+		SecCode,
+		SecType,
+		BrkCrGroupId,
+		BrkGroupId,
+		BrokerId,
+		BrkNbr,
+		RecordTypeID,
+		BatchDate,
+		TransmitFlg,
+		ModifiedBy,
+		TOE,
+		SourceID,
+		0, --IsProcessed
+		ISNULL(IsCollateral,0),
+		BGNREF,
+		Comments,
+		GPTransmit,
+		LoanSettlementDate,
+		IsPrePay,
+		TPUID,
+		IsEqlLoan
+	FROM 
+		OPENXML(@hdoc, '/CloseLoan/FieldName', 1)
+		WITH
+		(
+			EqlEquilendID			BIGINT,
+			TxnRefNbr				INT,
+			AsOfDate				DATETIME,
+			SettlementDate			DATETIME,
+			SecCode					VARCHAR(12),
+			SecType					CHAR(2) ,	
+			BrkCrGroupId			INT,
+			BrkGroupId				INT,
+			BrokerId				INT,	
+			BrkNbr					VARCHAR(50),
+			RecordTypeID			INT,
+			BatchDate				DATETIME,
+			TransmitFlg				VARCHAR(1),
+			ModifiedBy				VARCHAR(50),
+			TOE						VARCHAR(3),
+			SourceID				INT,
+			IsCollateral			BIT,
+			BGNREF					VARCHAR(12),
+			Comments				VARCHAR(20),
+			GPTransmit				VARCHAR(1),
+			LoanSettlementDate		DATETIME,
+			IsPrePay				BIT,
+			TPUID					VARCHAR(20),
+			IsEqlLoan				BIT
+		)
+	
+	WITH OrderedData AS 
+	(
+		SELECT *,
+			   ROW_NUMBER() OVER (ORDER BY IsCollateral ASC, RowID ASC) AS NewRowID
+		FROM @TempXMLTable
+	)
+	UPDATE OrderedData
+	SET RowID = NewRowID
+
+	EXEC SP_XML_REMOVEDOCUMENT @hdoc		
+		
+	INSERT INTO @TempLoansandCollaterals
+	(
+		BrkNbr
+		,AcctType
+		,AcctNbr
+		,CouponRate
+		,SecDueDate
+		,SecType
+		,SecCode
+		,SpecialStatus
+		,CCYCode
+		,FaceAmount
+		,CollCCYCode
+		,TradePrice
+		,Principal
+		,RepoRate
+		,InvRate
+		,Spread
+		,FinderNbr
+		,RepoFromDate
+		,RepoDueDate
+		,LastActivityDate
+		,MarkPrice
+		,TxnRefNbr
+		,TxnSuffix
+		,TxnType
+		,LoanType
+		,LoanStatus
+		,AllocFlag
+		,SecLocCode
+		,Remarks
+		,SecDesc
+		,LoanDate
+		,CollNbr
+		,BrkCommission
+		,BankFee
+		,BrkName
+		,AsOfDate
+		,ForeignExchange
+		,ClearAgentNbr
+		,RebPremAmtAcc
+		,DeliveryAmount
+		,CapitalPercentage
+		,SEDOL
+		,CUSIP
+		,COMMON
+		,VALOREN
+		,ISIN
+		,Quick
+		,DepoBic
+		,DepoDel
+		,DepoName
+		,BrkBic
+		,BrkAcct
+		,BrkBankName
+		,UserID
+		,AccruedIntrest
+		,LocalPrice
+		,MktPrice
+		,AdjMktValue
+		,MktValue
+		,MktAmount
+		,MTMPercentage
+		,AcctSN
+		,TranDate
+		,G1AsOfDate
+		,TermDate
+		,ProcDate
+		,SecID
+		,EqlEquiLendID
+		,TriPartyGrpID
+		,CollSchedID
+		,IsStreetSide
+		,IsFuture
+		,IsConfirmed
+		,isLavaLoan
+		,CreatedDate
+		,SettleDate
+		,STTEndDate
+		,STTLevel
+		,STTDivRate
+		,PSLStatus
+		,ProductCategory
+		,CAPayoutMapID
+		,TxnRefNbrCA
+		,ProductCategoryLoanType
+		,ProductCategoryLoanDuration
+		,ScripEndDate
+		,LIBORRate
+		,ResetDate
+		,GotoRepoRate
+		,GotoTermDate
+		,GotoRemarks
+		,GotoProductCategory
+		,GotoProductCategoryLoanType
+		,GotoProductCategoryLoanDuration
+		,GotoSTTLevel
+		,GotoSTTDivRate
+		,GotoSTTEndDate
+		,GotoScripEndDate
+		,BasketNbr
+		,LoanCategory
+		,RepoSecurityTypeID
+		,DesiredSTTLevel
+		,IsProjectedDividend
+		,ProjectedDividendAmount
+		,Transmit
+		,TxnRefNbrTRF
+		,isTermRepo
+		,BGNREF
+		,LINKREF
+		,SMODE
+		,NetDividendPercentage
+		,OverseasTaxPercentage
+		,DomesticTaxPercentage
+		,GPTransmit
+		,IsPrePay
+		,TPUID
+	)
+	SELECT 
+		Loan.BrkNbr
+		,Loan.AcctType
+		,Loan.AcctNbr
+		,Loan.CouponRate
+		,Loan.SecDueDate
+		,Loan.SecType
+		,Loan.SecCode
+		,Loan.SpecialStatus
+		,Loan.CCYCode
+		,Loan.FaceAmount
+		,Loan.CollCCYCode
+		,Loan.TradePrice
+		,Loan.Principal
+		,Loan.RepoRate
+		,Loan.InvRate
+		,Loan.Spread
+		,Loan.FinderNbr
+		,Loan.RepoFromDate
+		,Loan.RepoDueDate
+		,Loan.LastActivityDate
+		,Loan.MarkPrice
+		,Loan.TxnRefNbr
+		,Loan.TxnSuffix
+		,Loan.TxnType
+		,Loan.LoanType
+		,Loan.LoanStatus
+		,Loan.AllocFlag
+		,Loan.SecLocCode
+		,Loan.Remarks -- need to check
+		,Loan.SecDesc
+		,Loan.LoanDate
+		,Loan.CollNbr
+		,Loan.BrkCommission
+		,Loan.BankFee
+		,Loan.BrkName
+		,Loan.AsOfDate
+		,Loan.ForeignExchange
+		,Loan.ClearAgentNbr
+		,Loan.RebPremAmtAcc
+		,Loan.DeliveryAmount
+		,Loan.CapitalPercentage
+		,Loan.SEDOL
+		,Loan.CUSIP
+		,Loan.COMMON
+		,Loan.VALOREN
+		,Loan.ISIN
+		,Loan.Quick
+		,Loan.DepoBic
+		,Loan.DepoDel
+		,Loan.DepoName
+		,Loan.BrkBic
+		,Loan.BrkAcct
+		,Loan.BrkBankName
+		,Temp.ModifiedBy
+		,Loan.AccruedIntrest
+		,Loan.LocalPrice
+		,Loan.MktPrice
+		,Loan.AdjMktValue
+		,Loan.MktValue
+		,Loan.MktAmount
+		,Loan.MTMPercentage
+		,Loan.AcctSN
+		,Loan.TranDate
+		,Loan.DMLAsOfDate
+		,Loan.TermDate
+		,Loan.ProcDate
+		,Loan.SecID
+		,Loan.EqlEquiLendID
+		,Loan.TriPartyGrpID
+		,Loan.CollSchedID
+		,Loan.IsStreetSide
+		,Loan.IsFuture
+		,Loan.IsConfirmed
+		,Loan.isLavaLoan
+		,Loan.CreatedDate
+		,Temp.SettlementDate
+		,Loan.STTEndDate
+		,Loan.STTLevel
+		,Loan.STTDivRate
+		,Loan.PSLStatus
+		,Loan.ProductCategory
+		,Loan.CAPayoutMapID
+		,Loan.TxnRefNbrCA
+		,Loan.ProductCategoryLoanType
+		,Loan.ProductCategoryLoanDuration
+		,Loan.ScripEndDate
+		,Loan.LIBORRate
+		,Loan.ResetDate
+		,Loan.GotoRepoRate
+		,Loan.GotoTermDate
+		,Loan.GotoRemarks
+		,Loan.GotoProductCategory
+		,Loan.GotoProductCategoryLoanType
+		,Loan.GotoProductCategoryLoanDuration
+		,Loan.GotoSTTLevel
+		,Loan.GotoSTTDivRate
+		,Loan.GotoSTTEndDate
+		,Loan.GotoScripEndDate
+		,Loan.BasketNbr
+		,Loan.LoanCategory
+		,Loan.RepoSecurityTypeID
+		,Loan.DesiredSTTLevel
+		,Loan.IsProjectedDividend
+		,Loan.ProjectedDividendAmount
+		,Temp.TransmitFlg
+		,Loan.TxnRefNbrTRF
+		,Loan.isTermRepo
+		,Loan.BGNREF
+		,Loan.LINKREF
+		,Loan.SMODE
+		,Loan.DIV_AGE
+		,Loan.DIV_OSEAS
+		,Loan.DIV_DOM
+		,Loan.GPTransmit
+		,Loan.IsPrePay
+		,Loan.TPUID
+	FROM 
+		GLOBALONE.dbo.LOAN Loan
+	INNER JOIN
+		@TempXMLTable Temp
+	ON
+		Temp.BGNREF = Loan.BGNREF
+	
+	--PSL	
+
+	----Create XML For RETURN
+	--	IF EXISTS( SELECT 1 FROM @ReturnTable)
+	--	BEGIN
+	--		BEGIN TRY 
+	--				SET @RETURN_XML = 
+	--				(  
+	--					SELECT ( 
+	--							SELECT *
+	--							FROM
+	--								@ReturnTable as FieldName
+	--							FOR	XML AUTO, 
+	--							TYPE
+	--							)
+	--					FOR XML PATH(''),
+	--					ROOT('ReturnLoan')		
+	--				)
+	IF (NULLIF(@RETURN_XML,'') IS NOT NULL)
+	BEGIN
+		exec p_ETIUploadReturn @SQL_IDENTIFIER=N'LAVA',@SQL_CONDITION1 = @RETURN_XML
+	END
+	
+	IF (NULLIF(@RETURN_XML_EQUI,'') IS NOT NULL)
+	BEGIN
+		exec p_ETIUploadReturn @SQL_IDENTIFIER=N'EquiLend',@SQL_CONDITION1 = @RETURN_XML_EQUI
+	END
+
+	--RSL	
+	SET @BatchNbr = 0
+	SET @RecordTypeID = 3
+	SET @TOE = 'RSL'	
+
+	SET @Count = 1 
+	SELECT @TotalCount = COUNT(*) FROM @TempXMLTable
+
+	/*Loop thru all the TxnRefNbr selected for Close and Rebook loan*/
+	WHILE (@Count <= @TotalCount)
+	BEGIN
+
+		SET @TxnRefNbr = NULL
+		SET @AsOfDate = NULL
+		SET @SettlementDate = NULL 
+		SET @SecCode = NULL
+		SET @SecType = NULL
+		SET @BrkNbr = NULL
+		--SET @RecordTypeID = NULL
+		SET @BatchDate = NULL
+		SET @TransmitFlg = NULL
+		SET @ModifiedBy = NULL
+		SET @BrkCrGrpID = NULL
+		SET @BrkGrpID = NULL
+		SET @BrkID = NULL
+		--SET @TOE = NULL
+		SET @SourceID = NULL
+		SET @EqlEquilendID = NULL
+		SET @IsCollateral = 0
+		SET @GPTransmit = NULL
+
+		/* Get the values in variables */
+		SELECT 
+				@EqlEquilendID = EqlEquilendID,
+				@TxnRefNbr = TxnRefNbr,
+				@AsOfDate = AsOfDate,
+				@SettlementDate = SettlementDate,
+				@SecCode = SecCode,
+				@SecType = SecType,
+				@BrkCrGrpID = BrkCrGrpID,
+				@BrkGrpID = BrkGrpID,
+				@BrkID = BrkID,
+				@BrkNbr = BrkNbr,
+				--@RecordTypeID = RecordTypeID,
+				@BatchDate = BatchDate,
+				@TransmitFlg = TransmitFlg,
+				@ModifiedBy = ModifiedBy,
+				--@TOE = TOE,
+				@SourceID = SourceID,
+				@IsCollateral = ISNULL(IsCollateral,0),
+				@BGNREF	= BGNREF,
+				@GPTransmit = GPTransmit,
+				@LoanSettlementDate = LoanSettlementDate,
+				@IsPrePay = IsPrePay,
+				@TPUID = TPUID
+		FROM 
+				@TempXMLTable 
+		WHERE 
+				RowID = @Count
+
+		/* By default, SnedToPirum should be 1 for all RSL entries */
+		SET @SendToPirumRSL = 1
+
+		/* Check whether Settlement Date changes or Tansmit Flag changes or both */
+		IF (@TransmitFlg <> @GPTransmit)
+		BEGIN
+			SET @SendToPirumRSL = 0      ---------If Transmit changes, SentToPirum should be 0
+		END
+			
+		IF (@SettlementDate <> @LoanSettlementDate)
+		BEGIN
+			SET @SendToPirumRSL = 1		---------If Settlement Date changes, SentToPirum should be 1
+		END
+
+		SELECT @G1UserCode = dbo.f_GetG1LavaUserMapping (@ModifiedBy)
+		/* Set default values to be inserted*/
+		SELECT	
+				@ModifiedDate		= GETDATE(),
+				@RecordIndicator	= 'DTL',
+--				@TOE				= 'PSL',
+				@ModifiedBy			= ISNULL(@ModifiedBy, SUSER_SNAME())		
+		 
+		
+		/* Get the status id for Return Loan upload schedule*/
+		SET @StatusId = 0--dbo.f_GetETIProcessFlowStatus (@RecordTypeID, 'Verified')
+			
+		/* Get SecId based on SecCode */
+		SELECT 	
+				@SecId = SecId
+		FROM 	
+				dbo.f_GetSecurityDetail (@SecCode, NULL)
+
+--		SET @BrkGrpID = NULL
+
+		TRUNCATE TABLE #BrkTbl
+		
+		/* Get BrkId based on BrkNbr*/
+		IF @BrkNbr IS NOT NULL
+		BEGIN
+			INSERT INTO #BrkTbl 
+			(
+				BrkId,
+				BrkNbr
+			)
+			SELECT 
+				BrkID,
+				BrkNbr
+			FROM 
+				dbo.[Broker] 
+			WHERE 
+				BrkNbr = @BrkNbr AND 
+				@BatchDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd AND 
+				IsDeleted = 0
+		END
+
+		/* If no record found in Broker table for selected loan, then do not proceed further*/
+		IF ((SELECT COUNT(*) FROM #BrkTbl) = 0)
+		BEGIN
+			RAISERROR('Invalid broker.', 16, 1)
+			RETURN 1
+		END
+				
+		/***** 1st step : Insert into dbo.ETITranUploadHistLog table ***/	
+		SET @Ret = 1
+
+		SET @FileName = 'From LAVA'
+			
+		/* Get the BrkId if it is present in temp Broker and TempXmlTable*/
+		SET @BrkID = NULL
+		IF (@BrkCrGrpId IS NULL OR @BrkCrGrpId = 0)
+		BEGIN
+			SELECT TOP 1
+				@BrkID = b.BrkID 
+			FROM
+				#BrkTbl b 
+			INNER JOIN 
+				@TempXMLTable temp 
+			ON 
+				temp.BrkNbr = b.BrkNbr AND 
+				temp.BrkNbr = @BrkNbr
+		END
+		ELSE
+		BEGIN
+			SET @BrkID = 0
+		END
+
+		/* If selected BrkId is not in temp HistLogTbl(more then one record could be present in the @TempXMLTable table for Return loan) 
+		then insert record into ETITranUploadHistLog table for selected Broker--one entry for each broker*/
+		IF 
+		(
+			(SELECT COUNT(*) FROM @HistLogTbl) = 0
+			/*(	(SELECT COUNT(*) FROM @HistLogTbl) = 0 )OR 
+				@BrkCrGrpId IS NULL OR 
+				@BrkCrGrpId = 0 OR 
+				((SELECT COUNT(*) FROM @HistLogTbl WHERE BrkCrGrpId = @BrkCrGrpId AND RecordTypeID = @RecordTypeID) = 0)*/
+		)
+		BEGIN				
+			INSERT INTO ETITranUploadHistLog
+			(
+				[TemplateID],
+				[BrkCrGrpID],
+				[BrkGrpID],
+				[BrkID],
+				[RecordTypeID],
+				[FileName],
+				[AsOfDate],
+				[IsSuccess],
+				[ModifiedBy],
+				[ModifiedDate]
+			)
+			SELECT 
+				DISTINCT 0,
+				@BrkCrGrpID,
+				@BrkGrpID,
+				@BrkID,--b.BrkId,
+				@RecordTypeID,
+				@FileName,
+				@BatchDate,
+				@Ret,
+				@ModifiedBy,
+				@ModifiedDate
+
+			SET @SourceID = @@IDENTITY
+			SET @ERROR_NO = @@ERROR	
+
+			/* Insert SourceId for selected brkoer in temp HistLogTbl for further processing*/
+			INSERT INTO @HistLogTbl 
+			(
+				SourceId,
+				BrkCrGrpId,
+				BrkId,
+				RecordTypeID
+			)
+			SELECT DISTINCT
+				@SourceID,
+				@BrkCrGrpId,
+				@BrkID,--a.BrkId,
+				@RecordTypeID
+		END
+		
+	
+		
+		/***** 2nd step : Insert into dbo.ETIRawData table ****/
+
+		SET @HistlogCount = 1
+		SELECT @TotalHistlogCount = COUNT(*) FROM @HistLogTbl
+
+		/* Loop thru all the record which are in @HistLogTbl*/
+		WHILE (@HistlogCount <= @TotalHistlogCount)
+		BEGIN
+			/* Insert data into ETIRawData table
+			 insert only those loan which are valid. It is possible that for some loan, there is no loan information available in temp acc and loan tablesl*/
+			SET @SourceId = NULL
+
+			SELECT 
+				@SourceId = SourceId 
+			FROM 
+				@HistLogTbl 
+			WHERE 
+				RowId = @HistlogCount AND
+				RecordTypeID = @RecordTypeID
+
+			IF (@SourceId IS NOT NULL)
+			BEGIN 
+				INSERT INTO dbo.ETIRawData 
+				(
+					[SourceID],
+					[EqlEquilendID],
+					[SecID],
+					[BrkID],
+					[TxnRefNbr],
+					[RecordTypeID],
+					[SecLocID],
+					[SecLocCode],
+					[SecCode],
+					[FaceAmount],	
+					[Price],
+					[PriceOverride],
+					[Principal],
+					[CCYCode],
+					[CollCcyCode],
+					[SettlementDate],
+					[TermDate],
+					[BrkNbr],
+					[Depository],
+					[LoanType],
+					[DisclosureType],
+					[RebateRate],
+					[BatchDate],
+					[AsOfDate],
+					[IsValid],
+					[ErorBitMap],
+					[StatusID],
+					[TransmitFlg],
+					[IsCollateral],
+					[ModifiedBy],
+					[ModifiedDate]
+				)
+				SELECT 
+					DISTINCT @SourceId,
+					@EqlEquilendID,
+					@SecId,
+					BrkId,
+					@TxnRefNbr,
+					@RecordTypeID,	
+					NULL,
+					NULL,
+					@SecCode,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					@SettlementDate,
+					NULL,
+					@BrkNbr,
+					NULL,
+					NULL,
+					NULL,
+					NULL,
+					@BatchDate,
+					NULL,--@AsOfDate,
+					1,
+					NULL,
+					@StatusId,
+					@TransmitFlg,
+					@IsCollateral,
+					@ModifiedBy,
+					@ModifiedDate	
+				FROM 
+					#BrkTbl					
+
+				SET @ERROR_NO = @@ERROR	
+			END	
+
+			SET @HistlogCount = @HistlogCount + 1
+		END
+
+		/***** Insert into dbo.ETIDetailRecord table ****/
+		
+		DELETE FROM @ETIDetailRecord
+
+		/* Isner one OMNI and other Accounts record into temp ETIDetailRecord table*/
+		INSERT INTO @ETIDetailRecord 
+		(
+			RawDataID,
+			EqlEquilendID,
+			ExternalRefNbr,
+			LoanType,
+			AcctNbr,
+			Depository,
+			SecCode,
+			SettlementDate,
+			TermDate,
+			BrkNbr,
+			FaceAmount,
+			RawPrice,
+			TradePrice,
+			CCYCode,
+			Principal,
+			CollCCYCode,
+			RebateRate,
+			SecLocCode,
+			SecID,
+			BrkID,
+			TxnRefNbr,
+			RecordTypeID,
+			BatchDate,
+			AsOfDate,
+			TransmitFlg,
+			DisclosureType,
+			TOE,
+			GCIRecordType,
+			GCIStatus,
+			GCITransactionType,
+			GCIPostingType,
+			GCILenderModuleTrade,
+			GCIAutoAuthorised			
+		)		
+		SELECT 
+			DISTINCT RawDataID	= rd.[ID],
+			EqlEquilendID	= @EqlEquilendID,
+			ExternalRefNbr =  dbo.f_GetExternalRefNbr(rd.ID),	
+			LoanType		= rd.LoanType,
+			AcctNbr			= NULL,
+			Depository		= rd.Depository,
+			SecCode			= rd.SecCode,
+			SettlementDate	= rd.SettlementDate,
+			TermDate		= rd.TermDate,
+			BrkNbr			= rd.BrkNbr,
+			FaceAmount		= rd.FaceAmount,
+			Price			= rd.Price,
+			TradePrice		= rd.Price,
+			CCYCode			= rd.CCYCode,
+			Principal		= rd.Principal,
+			CollCCYCode		= rd.CollCCYCode,
+			RebateRate		= rd.RebateRate,	
+			SecLocCode		= rd.SecLocCode,
+			SecID			= rd.SecID,
+			BrkId			= rd.BrkID,
+			TxnRefNbr		= rd.TxnRefNbr,
+			RecordTypeID	= rd.RecordTypeID,
+			BatchDate		= rd.BatchDate,
+			AsOfDate		= NULL,--rd.AsOfDate,
+			TransmitFlg		= rd.TransmitFlg,
+			DisclosureType	= rd.DisclosureType,
+			TOE				= @TOE,  
+			GCIRecordType		=	GCIParam.GCIRecordType,
+			GCIStatus			=	GCIParam.GCIStatus,
+			GCITransactionType	=	GCIParam.GCITransactionType,
+			GCIPostingType		=	GCIParam.GCIPostingType,
+			GCILenderModuleTrade =	GCIParam.GCILenderModuleTrade,
+			GCIAutoAuthorised	=	GCIParam.GCIAutoAuthorised			
+		FROM 
+			dbo.ETIRawData rd
+		INNER JOIN 
+			@HistLogTbl hist 
+		ON 
+			hist.SourceID = rd.SourceID AND
+			hist.RecordTypeId = rd.RecordTypeId 
+		INNER JOIN
+			dbo.f_GetGCIParameter(@RecordTypeID,NULL,NULL) GCIParam
+		ON
+			GCIParam.RecordTypeID = rd.RecordTypeID
+		INNER JOIN 
+			#BrkTbl brk
+		ON
+			brk.BrkId = rd.BrkID AND
+			rd.TxnRefNbr = @TxnRefNbr AND
+			rd.SourceID = @SourceId AND
+			rd.StatusID = 40
+
+--SELECT * FROM @ETIDetailRecord	
+
+		IF (ISNULL(@BatchNbr,0) = 0)
+		BEGIN
+			SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+		END	
+
+		INSERT INTO dbo.ETIDetailRecord 
+		(
+			RawDataID,
+			EqlEquilendID,
+			RecordIndicator,
+			ExternalRefNbr,
+			TOE,
+			LoanType,
+			AcctNbr,
+			Depository,
+			SecCode,
+			SettlementDate,
+			BrkNbr,
+			FaceAmount,
+			RawPrice,
+			TradePrice,
+			CCYCode,
+			Principal,
+			CollCCYCode,
+			RebateRate,
+			RebatePaid,
+			AcctNbrRealloc,
+			ExternalRefNbrRealloc,
+			SettlementCCYCode,
+			BatchDate,
+			AsOfDate,
+			CollateralDate,
+			GoodFundsDate,
+			TermDate,
+			FinderNbr,
+			PoolNbr,
+			Comments,
+			CleanUpFlg,
+			BrkStandingInstruct1,
+			BrkStandingInstruct2,
+			BrkStandingInstruct3,
+			BrkStandingInstruct4,
+			SecLocCode,
+			TransmitFlg,
+			CollateralNbr,
+			XRefWlIndicator,
+			DisclosureType,
+			UserID,
+			Filter,
+			SecID,
+			BrkID,
+			TxnRefNbr,
+			TxnRefNbrNew,
+			RecordTypeID,
+			SubRecordID,
+			IsIncludedInFile,
+			isPending,
+			StatusID,
+			IsCollateral,
+			BGNREF,
+			ModifiedBy,
+			ModifiedDate,
+			BatchNbr,
+			CreatedDate,  
+			GCIRecordType,
+			GCIStatus,
+			GCITransactionType,
+			GCIPostingType,
+			GCILenderModuleTrade,
+			GCIAutoAuthorised,
+			GPTransmit,
+			SendErrToPirum,
+			IsPrePay,
+			TPUID
+		)		
+		SELECT 
+			DISTINCT
+			RawDataID,
+			EqlEquilendID,
+			'DTL',
+			ExternalRefNbr,
+			TOE,
+			LoanType,
+			AcctNbr,
+			Depository,
+			SecCode,
+			NULL,
+			BrkNbr,
+			FaceAmount,
+			RawPrice,
+			TradePrice,
+			CCYCode,
+			Principal,
+			CollCCYCode,
+			RebateRate,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			BatchDate,
+			@BatchDate,
+			NULL, --TODO CollateralDate
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			NULL,
+			TransmitFlg,
+			NULL, --TODO CollateralNbr
+			'W',
+			NULL,
+			@G1UserCode,
+			NULL,
+			SecID,
+			BrkID,
+			TxnRefNbr,
+			0,
+			RecordTypeID,
+			0,
+			0,
+			1,
+			@StatusId,
+			@IsCollateral,
+			@BGNREF,
+			LEFT(@ModifiedBy,8),
+			NULL,
+			@BatchNbr,
+			GETDATE(),  
+			GCIRecordType,
+			GCIStatus,
+			GCITransactionType,
+			GCIPostingType,
+			GCILenderModuleTrade,
+			GCIAutoAuthorised,
+			@GPTransmit,
+			@SendToPirumRSL,
+			@IsPrePay,
+			@TPUID
+		FROM 
+			@ETIDetailRecord
+
+		SET @ERROR_NO = @@ERROR	
+
+		UPDATE 
+			@TempXMLTable
+		SET 
+			IsProcessed = 1
+		WHERE 
+			TxnRefNbr = @TxnRefNbr
+
+		SELECT 
+			@Count = MIN(RowID) 
+		FROM 
+			@TempXMLTable 
+		WHERE 
+			IsProcessed = 0 
+	END
+
+	
+	/* Now book all closed loans*/	
+	--SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+	SET @RecordTypeID = 1
+	SET @TOE = 'TSL'
+	SET @StatusId = 0
+	SET @ModifiedBy	= ISNULL(@ModifiedBy, SUSER_SNAME())
+	SET @FinderLdnLoc  = 'LDN'
+	SET @FinderNYLoc = 'NY'
+	SET @BrkCrGrpID = 0
+	SET	@BrkGrpID = 0
+	SET	@BrkID = 0
+	SET @RawDataID = NULL
+
+	SELECT TOP 1 @BatchDate = BatchDate FROM @TempXMLTable
+
+
+	/* Get all the accounts */
+	INSERT INTO #AllocationTbl 
+	(
+		SecID,
+		BGNREF,
+		AcctId,
+		AcctNbr,
+		BrkNbr,
+		FaceAmountFromAlloc,
+		FaceAmountActual		
+	)
+	SELECT DISTINCT 
+		TempLoan.SecID,
+		TempLoan.BGNREF,
+		Acc.AcctId,
+		TempLoan.Acctnbr,
+		TempLoan.BrkNbr,
+		TempLoan.FaceAmount,
+		TempLoan.FaceAmount
+	FROM 
+		@TempLoansandCollaterals TempLoan
+	INNER JOIN
+		Account Acc
+	ON
+		Acc.AcctNbr = TempLoan.AcctNbr
+	WHERE
+		IsStreetside = 0
+
+		--select * from #AllocationTbl
+
+	UPDATE 
+		@TempXMLTable
+	SET 
+		IsProcessed = 0
+
+	INSERT INTO ETITranUploadHistLog
+	(
+		[TemplateID],
+		[BrkCrGrpID],
+		[BrkGrpID],
+		[BrkID],
+		[RecordTypeID],
+		[FileName],
+		[AsOfDate],
+		[IsSuccess],
+		[ModifiedBy],
+		[ModifiedDate]
+	)
+	SELECT 
+		DISTINCT 0,
+		@BrkCrGrpID,
+		@BrkGrpID,
+		@BrkID,--b.BrkId,
+		@RecordTypeID,
+		@FileName,
+		@BatchDate,
+		@Ret,
+		@ModifiedBy,
+		@ModifiedDate
+
+	SET @SourceID = @@IDENTITY	
+	SET @ERROR_NO = @@ERROR	
+
+	/* Insert SourceId for selected broker in temp HistLogTbl for further processing*/
+	INSERT INTO @HistLogTbl 
+	(
+		SourceId,
+		BrkCrGrpId,
+		BrkId,
+		RecordTypeID
+	)
+	SELECT DISTINCT
+		@SourceID,
+		@BrkCrGrpId,
+		@BrkID,
+		@RecordTypeID
+
+
+	/***** 2nd step : Insert into dbo.ETIRawData table ****/
+	
+	SET @Count = 1 
+	SELECT @TotalCount = COUNT(*) FROM @TempXMLTable WHERE IsCollateral = 0
+	WHILE (@Count <= @TotalCount)
+	BEGIN
+		SET @TxnRefNbr = NULL
+		SET @BGNREF = NULL
+		SET @RawDataID = NULL
+
+		/* Get the values in variables */
+		SELECT 
+			@TxnRefNbr = TxnRefNbr,
+			@BGNREF	= BGNREF
+		FROM 
+			@TempXMLTable 
+		WHERE 
+			RowID = @Count
+
+		INSERT INTO dbo.ETIRawData
+		(
+			[SourceID],
+			[SecID],
+			[BrkID],
+			[TxnRefNbr],
+			[BulkNbr],
+			[RecordTypeID],
+			[SecLocID],
+			[SecLocCode],
+			[SecCode],
+			[FaceAmount],
+			[Price],
+			[PriceOverride],
+			[Principal],
+			[CCYCode],
+			[CollCcyCode],
+			[SettlementDate],
+			[TermDate],
+			[BrkNbr],
+			[Depository],
+			[LoanType],
+			[DisclosureType],
+			[RebateRate],
+			[BatchDate],
+			[AsOfDate],
+			[IsValid],
+			[ErorBitMap],
+			[StatusID],
+			[TransmitFlg],
+			[BasketNbr],
+			[ModifiedBy],
+			[ModifiedDate]
+		)
+		SELECT 
+			DISTINCT @SourceId,
+			temp.SecId,
+			b.BrkId,
+			0,-- TxnRefNbr
+			0, --BulkNbr
+			@RecordTypeID,	
+			NULL,
+			temp.SecLocCode,
+			temp.SecCode,
+			temp.FaceAmount,
+			temp.TradePrice, -- Price
+			NULL, -- PriceOverride
+			CASE b.BusinessInd
+				WHEN 'FI' THEN
+					ROUND((temp.FaceAmount * temp.TradePrice) / 100,2)
+				ELSE ROUND((temp.FaceAmount * temp.TradePrice),2)
+			END, -- Principal
+			ISNULL(temp.CCYCode, ''),
+			temp.CollCCYCode, -- CollateralCCY
+			CASE temp.SettleDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.SettleDate  END,
+			CASE temp.termDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.termDate END,
+			temp.BrkNbr,
+			temp.ClearAgentNbr,
+			bs.LoanType,
+			NULL,--temp.Disclosure, --need to check
+			temp.RepoRate, -- need to check
+			@BatchDate,
+			temp.AsOfDate,
+			1, -- IsValid
+			0, -- ErrorBitMap
+			@StatusId,
+			temp.Transmit,
+			temp.BasketNbr,
+			@ModifiedBy,
+			@ModifiedDate
+		FROM 
+			@TempLoansandCollaterals temp
+		INNER JOIN
+			@TempXMLTable tempxml
+		ON
+			tempxml.BGNREF = temp.BGNREF AND
+			temp.Isstreetside = 1 AND
+			temp.BGNREF	= @BGNREF
+		INNER JOIN
+		(
+			SELECT SecID,SUM(FaceAmountActual) FaceAmount ,BGNREF
+			FROM #AllocationTbl
+			GROUP BY SecID,BGNREF
+			
+		) Acc
+		ON
+			Acc.SecID = temp.SecID AND
+			Acc.BGNREF = temp.BGNREF AND
+			temp.IsStreetside = 1
+		INNER JOIN 
+			MOBETTER.dbo.Broker b 
+		ON 
+			b.BrkNbr = temp.BrkNbr AND
+			@BatchDate BETWEEN b.EffectiveDateBegin AND b.EffectiveDateEnd AND
+			ISNULL(b.IsDeleted,0) = 0
+		LEFT JOIN 
+			MOBETTER.DBO.Broker bs
+		ON	
+			bs.BrkID = b.BrkID	AND
+			@BatchDate BETWEEN bs.EffectiveDateBegin AND bs.EffectiveDateEnd AND
+			ISNULL(bs.IsDeleted,0) = 0
+
+		SELECT @RawDataID = @@IDENTITY
+	
+		/***** 3rd step : Insert into dbo.ETIAllocation table ****/
+		INSERT INTO dbo.ETIAllocation
+		(
+			[RawDataID],
+			[SourceID],
+			[SecID],
+			[BrkID],
+			[AcctId],
+			[AcctNbr],
+			[RecordTypeID],
+			[SecLocID],
+			[SecCode],
+			[FaceAmount],
+			[Price],
+			[Principal],
+			[CCYCode],
+			[CollCCYCode],
+			[SettlementDate],
+			[BrkNbr],
+			[SecLocCode],
+			[Depository],
+			[LoanType],
+			[RebateRate],
+			[TxnRefNbr],
+			[StatusID]
+		)
+		SELECT	
+			DISTINCT rd.ID,
+				rd.SourceID,
+				rd.SecId,
+				rd.BrkID,
+				acc.AcctId,
+				acc.AcctNbr,
+				(@RecordTypeID + 1),
+				NULL,
+				rd.SecCode,
+				temp.FaceAmount,
+				CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE rd.Price END,
+				(temp.FaceAmount * rd.Price),
+				rd.CCYCode,
+				rd.CollCCYCode,
+				rd.SettlementDate,
+				rd.BrkNbr,
+				rd.SecLocCode,
+				temp.ClearAgentNbr,
+				rd.LoanType,
+				rd.RebateRate,
+				0,--a.TxnRefNbr,
+				0--dbo.f_GetETIProcessFlowStatus (@RecordTypeID, 'Verified')
+		FROM 
+			@TempLoansandCollaterals temp 		
+		INNER JOIN 
+			dbo.ETIRawData rd 
+		ON	
+			rd.SecId = temp.SecId AND
+			rd.BrkNbr = temp.BrkNbr AND
+			rd.Depository = temp.ClearAgentNbr AND
+			rd.ID = @RawDataID AND
+			temp.BGNREF = @BGNREF
+		INNER JOIN   
+			#AllocationTbl acc 
+		ON 
+			acc.BGNREF = temp.BGNREF AND
+			acc.SecID = temp.SecID AND
+			acc.BrkNbr = temp.BrkNbr AND
+			acc.AcctNbr = temp.AcctNbr AND
+			temp.FaceAmount > 0
+		INNER JOIN 
+			@HistLogTbl hist 
+		ON 
+			hist.SourceID = rd.SourceID /*AND
+			hist.BrkId = rd.BrkId*/
+		WHERE 
+			temp.FaceAmount > 0 --insert only account allocated records
+
+		/* Isner one OMNI and other Accounts record into temp ETIDetailRecord table*/
+		INSERT INTO @ETIDetailRecordNewLoan 
+		(
+			RawDataID,
+			ExternalRefNbr,
+			LoanType,
+			AcctNbr,
+			WLDepository,
+			SecCode,
+			SettlementDate,
+			TermDate,
+			BrkNbr,
+			FaceAmount,
+			RawPrice,
+			TradePrice,
+			CCYCode,
+			Principal,
+			CollCCYCode,
+			RebateRate,
+			SecLocCode,
+			SecID,
+			BrkID,
+	--			TxnRefNbr,
+			RecordTypeID,
+			BatchDate,
+			AsOfDate,
+			CollateralDate,
+			GoodFundsDate,
+			FinderNbr,
+			PoolNbr,
+			Comments,
+			SettlementInstr,
+			SettlementCCY,
+			CleanUpFlg,
+			TransmitFlg,
+			DisclosureType,
+			TriPartyGrpID,
+			CollSchedID,
+			ProductCategory,
+			LowDivRate,
+			STTLevel,
+			STTEndDate,
+			STTDivRate,
+			BulkNbr,
+			ScripEndDate,
+			ProductCategoryLoanType,	--LoanType
+			ProductCategoryLoanDuration,
+			LoanCategory,
+			BasketNbr,
+	--LIBOR AND Goto Columns
+			LIBORRate,			  
+			ResetDate,			
+			GotoRepoRate,	
+			GotoTermDate,
+			GotoRemarks,		  		
+			GotoSTTLevel,
+			GotoSTTDivRate,  		  
+			GotoSTTEndDate,
+			GotoScripEndDate,
+			GotoProductCategory,
+			GotoProductCategoryLoanType, 
+			GotoProductCategoryLoanDuration,
+			DesiredSTTLevel,
+			IsProjectedDividend,
+			ProjectedDividendAmount,
+			BgnRef,  
+			GCIRecordType,
+			GCIStatus,
+			GCITransactionType,
+			GCIPostingType,
+			GCILenderModuleTrade,
+			GCIAutoAuthorised,
+			GPTransmit,		
+			SFTRCancelledLoanRefNbr,
+			ExecutionTimestamp,
+			IsPrePay,
+			TPUID			
+		)		
+		SELECT DISTINCT
+			a.RawDataID,
+			a.ExternalRefNbr,
+			a.LoanType,
+			a.AcctNbr,
+			a.Depository,
+			a.SecCode,
+			a.SettlementDate,
+			a.TermDate,
+			a.BrkNbr,
+			a.FaceAmount,
+			a.Price,
+			a.TradePrice,
+			a.CCYCode,
+			a.Principal,
+			a.CollCCYCode,
+			a.RebateRate,
+			a.SecLocCode,
+			a.SecID,
+			a.BrkID,
+	--			a.TxnRefNbr,
+			a.RecordTypeID,
+			a.BatchDate,
+			a.AsOfDate,
+			a.CollateralDate,
+			a.GoodFundsDate,
+			a.FinderNbr,
+			a.PoolNbr,
+			a.Comments,
+			a.SettlementInstr, --a.SettlementInstr, -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
+			null,			 --a.SettlementCCY,   -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
+			a.CleanUpFlg,
+			a.TransmitFlg,
+			a.DisclosureType,
+			a.TriPartyGrpID,
+			a.CollSchedID,
+			a.ProductCategory,
+			a.LowDivRate,
+			CASE LEN(a.STTLevel) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(5,2),a.STTLevel) END,
+			a.STTEndDate,
+			CASE LEN(a.STTDivRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(13,6),a.STTDivRate) END,
+			a.BulkNbr,
+			a.ScripEndDate,
+			a.ProductCategoryLoanType,	--LoanType
+			a.ProductCategoryLoanDuration,
+			a.LoanCategory,
+			CASE LEN(a.BasketNbr) WHEN 0 THEN NULL ELSE a.BasketNbr END,	    
+	--LIBOR AND Goto Columns
+			CASE LEN(a.LIBORRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,10),a.LIBORRate) END,	    
+			a.ResetDate,			
+			CASE LEN(a.GotoRepoRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,7),a.GotoRepoRate) END,	    
+			a.GotoTermDate,
+			a.GotoRemarks,		  		
+			NULL, -- CASE LEN(a.GotoSTTLevel) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(5,2),a.GotoSTTLevel) END,
+			NULL, -- CASE LEN(a.GotoSTTDivRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(13,6),a.GotoSTTDivRate) END,  		  
+			NULL, -- a.GotoSTTEndDate,
+			NULL, -- a.GotoScripEndDate,
+			a.GotoProductCategory,
+			a.GotoProductCategoryLoanType, 
+			a.GotoProductCategoryLoanDuration,
+			a.DesiredSTTLevel,
+			a.IsProjectedDividend,
+			a.ProjectedDividendAmount,
+			a.BgnRef,
+			a.GCIRecordType,
+			a.GCIStatus,
+			a.GCITransactionType,
+			a.GCIPostingType,
+			a.GCILenderModuleTrade,
+			a.GCIAutoAuthorised,
+			a.GPTransmit,
+			a.SFTRCancelledLoanRefNbr,
+			a.ExecutionTimestamp,
+			a.IsPrePay,
+			a.TPUID
+			FROM
+			(	
+				SELECT 
+					DISTINCT RawDataID	= rd.[ID],
+					ExternalRefNbr	= NULL,
+					RecordTypeID	= rd.RecordTypeID,
+					BrkId			= rd.BrkID,
+					SecID			= rd.SecID,
+					AcctNbr			= NULL,
+					LoanType		= rd.LoanType,
+					Depository		= temp.ClearAgentNbr,
+					SecCode			= rd.SecCode,
+					SettlementDate	= temp.SettleDate,
+					TermDate		= CASE temp.TermDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.TermDate END,
+					BrkNbr			= rd.BrkNbr,
+					FaceAmount		= rd.FaceAmount,
+					Price			= rd.Price,
+					PriceOverride	= rd.PriceOverride,
+					TradePrice		= rd.Price,
+					CCYCode			= rd.CCYCode,
+					Principal		= rd.Principal,
+					CollCCYCode		= rd.CollCCYCode,
+					RebateRate		= rd.RebateRate,
+					SecLocCode		= rd.SecLocCode,
+					TxnRefNbr		= rd.TxnRefNbr,
+					BatchDate		= rd.BatchDate,
+					AsOfDate		= rd.AsOfDate,
+					CollateralDate	= temp.SettleDate,--CASE temp.CollateralDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.CollateralDate END, --need to confirm
+					GoodFundsDate	= temp.SettleDate,--CASE temp.GoodFundDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GoodFundDate END,
+					FinderNbr		= temp.FinderNbr,
+					PoolNbr			= NULL,--temp.CMPool, -- need to confirm
+					Comments		= tempxml.Comments,
+					SettlementInstr = temp.SMODE, -- need to confirm
+					SettlementCCY	= NULL,--temp.CCYCode, -- need to confirm
+					CleanUpFlg		= NULL,--temp.CleanUpFlg,
+					TransmitFlg		= rd.TransmitFlg,
+					DisclosureType	= rd.DisclosureType,
+					TriPartyGrpID	= temp.TriPartyGrpID,
+					CollSchedID		= temp.CollSchedID,
+					ProductCategory	= temp.ProductCategory	,
+					LowDivRate		= NULL,--temp.LowDivRate,
+					STTLevel	= temp.STTLevel,
+					STTEndDate	= temp.STTEndDate,
+					STTDivRate	= temp.STTDivRate,
+					BulkNbr			= rd.BulkNbr,
+					ScripEndDate	= temp.ScripEndDate,
+					ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+					ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
+					LoanCategory					= temp.LoanCategory,
+					BasketNbr					    = rd.BasketNbr,		
+					LIBORRate						= temp.LIBORRate,			  
+					ResetDate						= temp.ResetDate,		
+					GotoRepoRate					= temp.GotoRepoRate,	
+					GotoTermDate					= temp.GotoTermDate,		
+					GotoRemarks						= temp.GotoRemarks,		  		
+					GotoSTTLevel				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
+					GotoSTTDivRate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
+					GotoSTTEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
+					GotoScripEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+					GotoProductCategory				= temp.GotoProductCategory,
+					GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
+					GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
+					DesiredSTTLevel				= temp.DesiredSTTLevel,
+					IsProjectedDividend				= temp.IsProjectedDividend,
+					ProjectedDividendAmount			= temp.ProjectedDividendAmount,
+					BgnRef							= temp.BgnRef,  
+					GCIRecordType					= GCIParam.GCIRecordType,
+					GCIStatus						= GCIParam.GCIStatus,
+					GCITransactionType				= GCIParam.GCITransactionType,
+					GCIPostingType					= GCIParam.GCIPostingType,
+					GCILenderModuleTrade			= GCIParam.GCILenderModuleTrade,
+					GCIAutoAuthorised				= GCIParam.GCIAutoAuthorised,
+					GPTransmit						= temp.GPTransmit,
+					SFTRCancelledLoanRefNbr			=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN NULL         -----------If Settlement Date changes then send new UTI i.e SFTRCancelledLoanRefNbr should be NULL,
+															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN tempxml.TxnRefNbr		-----------If Transmit changes then use then keep the same UTI i.e. SFTRCancelledLoanRefNbr should be the TxnRefNbr of cancelled loan
+															ELSE tempxml.TxnRefNbr END,													-----------If None of the above condiitons then keep the same UTI i.e. SFTRCancelledLoanRefNbr should be the TxnRefNbr of cancelled loan					
+					ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()         -----------If Settlement Date changes then generate new timestamp
+															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN temp.CreatedDate			 -----------If Transmit changes then use the same timestamp as Closed loan
+															ELSE temp.CreatedDate END,														 -----------If None of the above condiitons then use the same timestamp as Closed loan
+					IsPrePay						= temp.IsPrePay,
+					TPUID							= temp.TPUID
+				FROM 
+					@TempLoansandCollaterals temp
+				INNER JOIN
+					@TempXMLTable tempxml
+				ON
+					tempxml.BGNREF = temp.BGNREF AND
+					temp.Isstreetside = 1 AND
+					temp.BGNREF = @BGNREF				
+				INNER JOIN 
+					dbo.ETIRawData rd 
+				ON	
+					rd.SecId = temp.SecId AND
+					rd.BrkNbr = temp.BrkNbr AND
+					rd.Depository = temp.ClearAgentNbr AND
+					rd.ID = @RawDataID AND
+					rd.RecordTypeId = @RecordTypeId
+				INNER JOIN
+					dbo.f_GetGCIParameter(@RecordTypeId,'L',NULL) GCIParam
+				ON
+					GCIParam.RecordTypeID = rd.RecordTypeID
+				INNER JOIN 
+					@HistLogTbl hist 
+				ON 
+					hist.SourceID = rd.SourceID
+				WHERE 
+					temp.FaceAmount > 0 --insert only account allocated records.
+				UNION
+				SELECT 
+					DISTINCT RawDataID	= rd.[ID],
+					ExternalRefNbr	= NULL,
+					RecordTypeID	= alloc.RecordTypeID,
+					BrkId			= alloc.BrkID,
+					SecID			= alloc.SecID,
+					AcctNbr			= alloc.AcctNbr,
+					LoanType		= alloc.LoanType,
+					Depository		= temp.ClearAgentNbr,
+					SecCode			= alloc.SecCode,
+					SettlementDate	= temp.SettleDate,--NULL,
+					TermDate		= CASE temp.TermDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.TermDate END,
+					BrkNbr			= alloc.BrkNbr,
+					FaceAmount		= alloc.FaceAmount,
+					Price			= alloc.Price,
+					PriceOverride	= rd.PriceOverride,
+					TradePrice		= alloc.Price,
+					CCYCode			= alloc.CCYCode,
+					Principal		= alloc.Principal,
+					CollCCYCode		= alloc.CollCCYCode,
+					RebateRate		= alloc.RebateRate,
+					SecLocCode		= alloc.SecLocCode,
+					TxnRefNbr		= alloc.TxnRefNbr,
+					BatchDate		= rd.BatchDate,
+					AsOfDate		= rd.AsOfDate,
+					CollateralDate	= temp.SettleDate,
+					GoodFundsDate	= temp.SettleDate,
+					FinderNbr		= temp.FinderNbr,
+					PoolNbr			= NULL,--temp.CMPool,
+					Comments		= tempxml.Comments,
+					SettlementInstr = temp.SMODE,
+					SettlementCCY	= NULL,--temp.CCYCode,
+					CleanUpFlg		= NULL,--temp.CleanUpFlg,	
+					TransmitFlg		= rd.TransmitFlg,
+					DisclosureType	= rd.DisclosureType,
+					TriPartyGrpID	= temp.TriPartyGrpID,
+					CollSchedID		= temp.CollSchedID,
+					ProductCategory	= temp.ProductCategory,
+					LowDivRate		= NULL,--temp.LowDivRate,
+					STTLevel	= temp.STTLevel,
+					STTEndDate	= temp.STTEndDate,
+					STTDivRate	= temp.STTDivRate,
+					BulkNbr			= rd.BulkNbr,
+					ScripEndDate	= temp.ScripEndDate,
+					ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+					ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
+					LoanCategory					= temp.LoanCategory,
+					BasketNbr						= rd.BasketNbr,
+					LIBORRate						= temp.LIBORRate,
+					ResetDate						= temp.ResetDate,		
+					GotoRepoRate					= temp.GotoRepoRate,	
+					GotoTermDate					= temp.GotoTermDate,		
+					GotoRemarks						= temp.GotoRemarks,		  		
+					GotoSTTLevel				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
+					GotoSTTDivRate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
+					GotoSTTEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
+					GotoScripEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+					GotoProductCategory				= temp.GotoProductCategory,
+					GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
+					GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
+					DesiredSTTLevel				= temp.DesiredSTTLevel,
+					IsProjectedDividend				= temp.IsProjectedDividend,
+					ProjectedDividendAmount			= temp.ProjectedDividendAmount,
+					BgnRef							= temp.BgnRef,  
+					GCIRecordType					= GCIParam.GCIRecordType,
+					GCIStatus						= GCIParam.GCIStatus,
+					GCITransactionType				= GCIParam.GCITransactionType,
+					GCIPostingType					= GCIParam.GCIPostingType,
+					GCILenderModuleTrade			= GCIParam.GCILenderModuleTrade,
+					GCIAutoAuthorised				= GCIParam.GCIAutoAuthorised,
+					GPTransmit						= NULL,
+					SFTRCancelledLoanRefNbr			=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN NULL         -----------If Settlement Date changes then send new UTI i.e SFTRCancelledLoanRefNbr should be NULL,
+															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN tempxml.TxnRefNbr		-----------If Transmit changes then use then keep the same UTI i.e. SFTRCancelledLoanRefNbr should be the TxnRefNbr of cancelled loan
+															ELSE tempxml.TxnRefNbr END,													-----------If None of the above condiitons then keep the same UTI i.e. SFTRCancelledLoanRefNbr should be the TxnRefNbr of cancelled loan					
+					ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()        -----------If Settlement Date changes then generate new timestamp
+															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN temp.CreatedDate					-----------If Transmit changes then use the same timestamp as Closed loan
+															ELSE temp.CreatedDate END,																-----------If None of the above condiitons then use the same timestamp as Closed loan
+					IsPrePay						= temp.IsPrePay,
+					TPUID							= temp.TPUID
+				FROM 
+					@TempLoansandCollaterals temp
+				INNER JOIN
+					@TempXMLTable tempxml
+				ON
+					tempxml.BGNREF = temp.BGNREF AND
+					temp.Isstreetside = 0 AND
+					temp.BGNREF = @BGNREF				
+				INNER JOIN 
+					dbo.ETIRawData rd 
+				ON	
+					rd.SecId = temp.SecId AND
+					rd.BrkNbr = temp.BrkNbr AND
+					rd.Depository = temp.ClearAgentNbr AND
+					rd.ID = @RawDataID AND
+					rd.RecordTypeId = @RecordTypeId	
+				INNER JOIN 
+					dbo.ETIAllocation alloc 
+				ON 
+					alloc.[RawDataID] = rd.[ID] AND
+					alloc.SecId = rd.SecId AND
+					alloc.BrkNbr = rd.BrkNbr AND
+					alloc.AcctNbr = temp.AcctNbr AND
+					alloc.Depository = temp.ClearAgentNbr AND
+					alloc.RawDataID = @RawDataID
+				INNER JOIN
+					dbo.f_GetGCIParameter(@RecordTypeId + 1,NULL,NULL) GCIParam
+				ON
+					GCIParam.RecordTypeID = alloc.RecordTypeID
+				INNER JOIN 
+					@HistLogTbl hist 
+				ON 
+					hist.SourceID = rd.SourceID
+				WHERE 
+					temp.FaceAmount > 0 --insert only account allocated records.
+			) a
+
+		-- Update ExternalRefNbr
+		--UPDATE 
+		--	@ETIDetailRecordNewLoan
+		--SET 
+		--	-- Format: yymmddxxxxxx
+		--	ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
+		--FROM
+		--	@ETIDetailRecordNewLoan detail
+
+		-- Update ExternalRefNbr with Closed Loan
+		UPDATE 
+			@ETIDetailRecordNewLoan
+		SET 
+			ExternalRefNbr =  @BGNREF
+		WHERE 
+			RawDataID = @RawDataID	
+
+		-- Update NetDividendPercentage for REcordTypeId = 1
+		UPDATE 
+			@ETIDetailRecordNewLoan
+		SET 		
+			NetDividendPercentage =	temp.NetDividendPercentage
+		FROM
+			@ETIDetailRecordNewLoan Dtl
+		INNER JOIN
+		(
+			SELECT SecId,ClearAgentNbr, MIN(NetDividendPercentage) NetDividendPercentage FROM @TempLoansandCollaterals GROUP BY SecID,ClearAgentNbr
+		)Temp
+		ON
+			Temp.SecID = Dtl.SecID AND
+			Temp.ClearAgentNbr = Dtl.WLDepository AND
+			Dtl.RecordTypeId = 1
+
+		UPDATE 
+			@ETIDetailRecordNewLoan
+		SET 		
+			NetDividendPercentage = NULL
+		WHERE
+			RecordTypeId = 2
+
+		UPDATE 
+			@TempXMLTable
+		SET 
+			IsProcessed = 1
+		WHERE 
+			TxnRefNbr = @TxnRefNbr
+
+		SELECT 
+			@Count = MIN(RowID) 
+		FROM 
+			@TempXMLTable 
+		WHERE 
+			IsProcessed = 0 
+
+	END
+
+	--select * from @ETIDetailRecordNewLoan
+		-- Get BatchNbr
+	SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+
+	INSERT INTO dbo.ETIDetailRecord 
+	(
+		[RawDataID],
+		[EqlEquilendID],
+		[EqlEquiLendReturnID],
+		[RecordIndicator],
+		[ExternalRefNbr],
+		[TOE],
+		[LoanType],
+		[AcctNbr],
+		[Depository],
+		[SecCode],
+		[SettlementDate],
+		[BrkNbr],
+		[FaceAmount],
+		[RawPrice],
+		[TradePrice],
+		[CCYCode],
+		[Principal],
+		[CollCCYCode],
+		[RebateRate],
+		[RebatePaid],
+		[AcctNbrRealloc],
+		[ExternalRefNbrRealloc],
+		[SettlementCCYCode],
+		[BatchDate],
+		[AsOfDate],
+		[CollateralDate],
+		[GoodFundsDate],
+		[TermDate],
+		[FinderNbr],
+		[PoolNbr],
+		[Comments],
+		[CleanUpFlg],
+		[BrkStandingInstruct1],
+		[BrkStandingInstruct2],
+		[BrkStandingInstruct3],
+		[BrkStandingInstruct4],
+		[SecLocCode],
+		[TransmitFlg],
+		[CollateralNbr],
+		[BulkNbr],
+		[XRefWlIndicator],
+		[DisclosureType],
+		[UserID],
+		[Filter],
+		[SecID],
+		[BrkID],
+		[TxnRefNbr],
+		[TxnRefNbrNew],
+		[RecordTypeID],
+		[SubRecordID],
+		[IsIncludedInFile],
+		[isPending],
+		[TriPartyGrpID],
+		[CollSchedID],
+		[ProductCategory],
+		[LowDivRate],
+		[STTLevel],
+		[STTEndDate],
+		[STTDivRate],
+		[StatusID],
+		[ModifiedBy],
+		[ModifiedDate],
+		[ScripEndDate],
+		[ProductCategoryLoanType],
+		[ProductCategoryLoanDuration],
+		[BasketNbr],
+		--LIBOR AND Goto Columns
+		[LIBORRate],			  
+		[ResetDate],			
+		[GotoRepoRate],	
+		[GotoTermDate],
+		[GotoRemarks],		  		
+		[GotoSTTLevel],
+		[GotoSTTDivRate],  		  
+		[GotoSTTEndDate],
+		[GotoScripEndDate],
+		[GotoProductCategory],
+		[GotoProductCategoryLoanType], 
+		[GotoProductCategoryLoanDuration],
+		[LoanCategory],
+		[DesiredSTTLevel],
+		[IsProjectedDividend],
+		[ProjectedDividendAmount],
+		[OfficeLocation],
+		[TRFLoanType],
+		[TradeCategory],
+		[AgencyReference],
+		[CollType],
+		[Coll_Grp],
+		[BatchNbr],
+		[BgnRef],
+		[CreatedDate],  
+		[GCIRecordType],
+		[GCIStatus],
+		[GCITransactionType],
+		[GCIPostingType],
+		[GCILenderModuleTrade],
+		[GCIAutoAuthorised],
+		[NetDividendPercentage],
+		[OverseasTaxPercentage],
+		[DomesticTaxPercentage],
+		GPTransmit,
+		DVP,
+		CashWashCurr,
+		CashWashValue,
+		MatchedInvVehType,
+		InvVehRes,
+		InvalidVehFlag,
+		CollLOCCode,
+		TriPartyInd,
+		LoanStatus,	
+		SFTRCancelledLoanRefNbr,
+		IsPrePay,
+		TPUID
+	)	
+	SELECT	DISTINCT
+		RawDataID,
+		NULL,
+		NULL,
+		'DTL',
+		ExternalRefNbr,
+		@TOE,
+		LoanType,
+		AcctNbr,
+		WLDepository,
+		SecCode,
+		SettlementDate,
+		UPPER(BrkNbr),
+		FaceAmount,
+		RawPrice,
+		TradePrice,
+		CCYCode,
+		Principal,
+		CollCCYCode,
+		RebateRate,
+		NULL,
+		NULL,
+		NULL,
+		SettlementCCY,
+		BatchDate,
+		AsOfDate,
+		CollateralDate,
+		GoodFundsDate,
+		TermDate,
+		FinderNbr,
+		NULL,--PoolNbr,
+		Comments,
+		CleanUpFlg,
+		SettlementInstr,
+		NULL,
+		NULL,
+		NULL,
+		SecLocCode,
+		TransmitFlg,
+		NULL,
+		BulkNbr,
+		'W',
+		DisclosureType,
+		@G1UserCode,
+		NULL,
+		SecID,
+		BrkID,
+		0,--TxnRefNbr,
+		0,
+		RecordTypeID,
+		0,
+		0,
+		1,
+		TriPartyGrpID,
+		CollSchedID,
+		ProductCategory,
+		LowDivRate,
+		STTLevel,
+		STTEndDate,
+		STTDivRate,
+		@StatusId,
+		@ModifiedBy,
+		NULL,
+		ScripEndDate,
+		ProductCategoryLoanType,
+		ProductCategoryLoanDuration,
+		BasketNbr,	
+--LIBOR AND Goto Columns
+		LIBORRate,			  
+		ResetDate,			
+		GotoRepoRate,	
+		GotoTermDate,
+		GotoRemarks,		  		
+		GotoSTTLevel,
+		GotoSTTDivRate,  		  
+		GotoSTTEndDate,
+		GotoScripEndDate,
+		GotoProductCategory,
+		GotoProductCategoryLoanType, 
+		GotoProductCategoryLoanDuration,
+		LoanCategory,			 
+		DesiredSTTLevel,
+		IsProjectedDividend,
+		ProjectedDividendAmount,
+		dbo.f_GetOfficeLocation(FinderNbr),	-- OfficeLocation
+		dbo.f_GetTRFLoanType(FinderNbr), -- TRFLoanType
+		dbo.f_GetTradeCategory(TransmitFlg,WLDepository,SettlementDate,0),--TradeCategory
+		dbo.f_GetAgencyReference(TransmitFlg,WLDepository),--AgencyReference
+		dbo.f_GetCollType(LoanType), -- CollType
+		dbo.f_GetCollGroup(LoanType), -- CollGroup
+		@BatchNbr,
+		BgnRef,
+		ExecutionTimestamp,
+		GCIRecordType,
+		GCIStatus,
+		GCITransactionType,
+		GCIPostingType,
+		GCILenderModuleTrade,
+		GCIAutoAuthorised,
+		NetDividendPercentage,
+		dbo.f_GetGCIPercentage('O'),
+		dbo.f_GetGCIPercentage('D'),
+		GPTransmit,
+		dbo.f_GetDVP(LoanCategory),--DVP
+		CollCCYCode,--CashWashCurr,
+		dbo.f_GetCashWashValue(LoanType,SecLocCode,Principal),--CashWashValue,
+		dbo.f_GetMatchedInvVehType(LoanCategory),--MatchedInvVehType,
+		dbo.f_GetInvVehRes(LoanCategory,CollCCYCode),--InvVehRes,
+		dbo.f_GetInvalidVehFlag(LoanCategory),--InvalidVehFlag,
+		dbo.f_GetCollLOCCode(RecordTypeID,WLDepository),--CollLOCCode
+		dbo.f_GetTriPartyInd(LoanType), --TriPartyInd,
+		CASE WHEN (LoanCategory = 'CR' AND LoanType = 'C') THEN 1 ELSE 0 END,
+		SFTRCancelledLoanRefNbr,
+		IsPrePay,
+		TPUID		
+	FROM 
+		@ETIDetailRecordNewLoan
+
+	
+
+--	/* Now book all closed collaterals*/
+	
+	
+--	--SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+--	SET @RecordTypeID = 24
+--	SET @TOE = 'GPL'
+--	SET @StatusId = 0
+--	SET @ModifiedBy	= ISNULL(@ModifiedBy, SUSER_SNAME())
+--	SET @FinderLdnLoc  = 'LDN'
+--	SET @FinderNYLoc = 'NY'
+--	SET @BrkCrGrpID = 0
+--	SET	@BrkGrpID = 0
+--	SET	@BrkID = 0
+--	SET @RawDataID = NULL
+
+--	SELECT TOP 1 @BatchDate = BatchDate FROM @TempXMLTable
+
+
+--	/* Get all the accounts */
+--	INSERT INTO #AllocationTbl 
+--	(
+--		SecID,
+--		BGNREF,
+--		AcctId,
+--		AcctNbr,
+--		BrkNbr,
+--		FaceAmountFromAlloc,
+--		FaceAmountActual		
+--	)
+--	SELECT DISTINCT 
+--		TempLoan.SecID,
+--		TempLoan.BGNREF,
+--		Acc.AcctId,
+--		TempLoan.Acctnbr,
+--		TempLoan.BrkNbr,
+--		TempLoan.FaceAmount,
+--		TempLoan.FaceAmount
+--	FROM 
+--		@TempLoansandCollaterals TempLoan
+--	INNER JOIN
+--		Account Acc
+--	ON
+--		Acc.AcctNbr = TempLoan.AcctNbr
+--	WHERE
+--		IsStreetside = 0
+
+--		--select * from #AllocationTbl
+
+--	UPDATE 
+--		@TempXMLTable
+--	SET 
+--		IsProcessed = 0
+
+--	INSERT INTO ETITranUploadHistLog
+--	(
+--		[TemplateID],
+--		[BrkCrGrpID],
+--		[BrkGrpID],
+--		[BrkID],
+--		[RecordTypeID],
+--		[FileName],
+--		[AsOfDate],
+--		[IsSuccess],
+--		[ModifiedBy],
+--		[ModifiedDate]
+--	)
+--	SELECT 
+--		DISTINCT 0,
+--		@BrkCrGrpID,
+--		@BrkGrpID,
+--		@BrkID,--b.BrkId,
+--		@RecordTypeID,
+--		@FileName,
+--		@BatchDate,
+--		@Ret,
+--		@ModifiedBy,
+--		@ModifiedDate
+
+--	SET @SourceID = @@IDENTITY	
+--	SET @ERROR_NO = @@ERROR	
+
+--	/* Insert SourceId for selected broker in temp HistLogTbl for further processing*/
+--	INSERT INTO @HistLogTbl 
+--	(
+--		SourceId,
+--		BrkCrGrpId,
+--		BrkId,
+--		RecordTypeID
+--	)
+--	SELECT DISTINCT
+--		@SourceID,
+--		@BrkCrGrpId,
+--		@BrkID,
+--		@RecordTypeID
+
+
+--	/***** 2nd step : Insert into dbo.ETIRawData table ****/
+	
+--	SET @Count = SELECT MIN(RowID) FROM  @TempXMLTable WHERE IsCollateral = 1
+--	SELECT @TotalCount = COUNT(*) FROM @TempXMLTable
+--	WHILE (@Count <= @TotalCount)
+--	BEGIN
+--		SET @TxnRefNbr = NULL
+--		SET @BGNREF = NULL
+--		SET @RawDataID = NULL
+
+--		/* Get the values in variables */
+--		SELECT 
+--			@TxnRefNbr = TxnRefNbr,
+--			@BGNREF	= BGNREF
+--		FROM 
+--			@TempXMLTable 
+--		WHERE 
+--			RowID = @Count
+
+--		INSERT INTO dbo.ETIRawData
+--		(
+--			[SourceID],
+--			[SecID],
+--			[BrkID],
+--			[TxnRefNbr],
+--			[BulkNbr],
+--			[RecordTypeID],
+--			[SecLocID],
+--			[SecLocCode],
+--			[SecCode],
+--			[FaceAmount],
+--			[Price],
+--			[PriceOverride],
+--			[Principal],
+--			[CCYCode],
+--			[CollCcyCode],
+--			[SettlementDate],
+--			[TermDate],
+--			[BrkNbr],
+--			[Depository],
+--			[LoanType],
+--			[DisclosureType],
+--			[RebateRate],
+--			[BatchDate],
+--			[AsOfDate],
+--			[IsValid],
+--			[ErorBitMap],
+--			[StatusID],
+--			[TransmitFlg],
+--			[BasketNbr],
+--			[ModifiedBy],
+--			[ModifiedDate]
+--		)
+--		SELECT 
+--			DISTINCT @SourceId,
+--			temp.SecId,
+--			b.BrkId,
+--			0,-- TxnRefNbr
+--			0, --BulkNbr
+--			@RecordTypeID,	
+--			NULL,
+--			temp.SecLocCode,
+--			temp.SecCode,
+--			temp.FaceAmount,
+--			temp.TradePrice, -- Price
+--			NULL, -- PriceOverride
+--			CASE b.BusinessInd
+--				WHEN 'FI' THEN
+--					ROUND((temp.FaceAmount * temp.TradePrice) / 100,2)
+--				ELSE ROUND((temp.FaceAmount * temp.TradePrice),2)
+--			END, -- Principal
+--			ISNULL(temp.CCYCode, ''),
+--			temp.CollCCYCode, -- CollateralCCY
+--			CASE temp.SettleDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.SettleDate  END,
+--			CASE temp.termDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.termDate END,
+--			temp.BrkNbr,
+--			temp.ClearAgentNbr,
+--			bs.LoanType,
+--			NULL,--temp.Disclosure, --need to check
+--			temp.RepoRate, -- need to check
+--			@BatchDate,
+--			temp.AsOfDate,
+--			1, -- IsValid
+--			0, -- ErrorBitMap
+--			@StatusId,
+--			temp.Transmit,
+--			temp.BasketNbr,
+--			@ModifiedBy,
+--			@ModifiedDate
+--		FROM 
+--			@TempLoansandCollaterals temp
+--		INNER JOIN
+--			@TempXMLTable tempxml
+--		ON
+--			tempxml.BGNREF = temp.BGNREF AND
+--			temp.Isstreetside = 1 AND
+--			temp.BGNREF	= @BGNREF
+--		INNER JOIN
+--		(
+--			SELECT SecID,SUM(FaceAmountActual) FaceAmount ,BGNREF
+--			FROM #AllocationTbl
+--			GROUP BY SecID,BGNREF
+			
+--		) Acc
+--		ON
+--			Acc.SecID = temp.SecID AND
+--			Acc.BGNREF = temp.BGNREF AND
+--			temp.IsStreetside = 1
+--		INNER JOIN 
+--			MOBETTER.dbo.Broker b 
+--		ON 
+--			b.BrkNbr = temp.BrkNbr AND
+--			@BatchDate BETWEEN b.EffectiveDateBegin AND b.EffectiveDateEnd AND
+--			ISNULL(b.IsDeleted,0) = 0
+--		LEFT JOIN 
+--			MOBETTER.DBO.Broker bs
+--		ON	
+--			bs.BrkID = b.BrkID	AND
+--			@BatchDate BETWEEN bs.EffectiveDateBegin AND bs.EffectiveDateEnd AND
+--			ISNULL(bs.IsDeleted,0) = 0
+
+--		SELECT @RawDataID = @@IDENTITY
+	
+--		/***** 3rd step : Insert into dbo.ETIAllocation table ****/
+--		INSERT INTO dbo.ETIAllocation
+--		(
+--			[RawDataID],
+--			[SourceID],
+--			[SecID],
+--			[BrkID],
+--			[AcctId],
+--			[AcctNbr],
+--			[RecordTypeID],
+--			[SecLocID],
+--			[SecCode],
+--			[FaceAmount],
+--			[Price],
+--			[Principal],
+--			[CCYCode],
+--			[CollCCYCode],
+--			[SettlementDate],
+--			[BrkNbr],
+--			[SecLocCode],
+--			[Depository],
+--			[LoanType],
+--			[RebateRate],
+--			[TxnRefNbr],
+--			[StatusID]
+--		)
+--		SELECT	
+--			DISTINCT rd.ID,
+--				rd.SourceID,
+--				rd.SecId,
+--				rd.BrkID,
+--				acc.AcctId,
+--				acc.AcctNbr,
+--				(@RecordTypeID + 1),
+--				NULL,
+--				rd.SecCode,
+--				temp.FaceAmount,
+--				CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE rd.Price END,
+--				(temp.FaceAmount * rd.Price),
+--				rd.CCYCode,
+--				rd.CollCCYCode,
+--				rd.SettlementDate,
+--				rd.BrkNbr,
+--				rd.SecLocCode,
+--				temp.ClearAgentNbr,
+--				rd.LoanType,
+--				rd.RebateRate,
+--				0,--a.TxnRefNbr,
+--				0--dbo.f_GetETIProcessFlowStatus (@RecordTypeID, 'Verified')
+--		FROM 
+--			@TempLoansandCollaterals temp 		
+--		INNER JOIN 
+--			dbo.ETIRawData rd 
+--		ON	
+--			rd.SecId = temp.SecId AND
+--			rd.BrkNbr = temp.BrkNbr AND
+--			rd.Depository = temp.ClearAgentNbr AND
+--			rd.ID = @RawDataID AND
+--			temp.BGNREF = @BGNREF
+--		INNER JOIN   
+--			#AllocationTbl acc 
+--		ON 
+--			acc.BGNREF = temp.BGNREF AND
+--			acc.SecID = temp.SecID AND
+--			acc.BrkNbr = temp.BrkNbr AND
+--			acc.AcctNbr = temp.AcctNbr AND
+--			temp.FaceAmount > 0
+--		INNER JOIN 
+--			@HistLogTbl hist 
+--		ON 
+--			hist.SourceID = rd.SourceID /*AND
+--			hist.BrkId = rd.BrkId*/
+--		WHERE 
+--			temp.FaceAmount > 0 --insert only account allocated records
+
+--		/* Isner one OMNI and other Accounts record into temp ETIDetailRecord table*/
+--		INSERT INTO @ETIDetailRecordNewLoan 
+--		(
+--			RawDataID,
+--			ExternalRefNbr,
+--			LoanType,
+--			AcctNbr,
+--			WLDepository,
+--			SecCode,
+--			SettlementDate,
+--			TermDate,
+--			BrkNbr,
+--			FaceAmount,
+--			RawPrice,
+--			TradePrice,
+--			CCYCode,
+--			Principal,
+--			CollCCYCode,
+--			RebateRate,
+--			SecLocCode,
+--			SecID,
+--			BrkID,
+--	--			TxnRefNbr,
+--			RecordTypeID,
+--			BatchDate,
+--			AsOfDate,
+--			CollateralDate,
+--			GoodFundsDate,
+--			FinderNbr,
+--			PoolNbr,
+--			Comments,
+--			SettlementInstr,
+--			SettlementCCY,
+--			CleanUpFlg,
+--			TransmitFlg,
+--			DisclosureType,
+--			TriPartyGrpID,
+--			CollSchedID,
+--			ProductCategory,
+--			LowDivRate,
+--			STTLevel,
+--			STTEndDate,
+--			STTDivRate,
+--			BulkNbr,
+--			ScripEndDate,
+--			ProductCategoryLoanType,	--LoanType
+--			ProductCategoryLoanDuration,
+--			LoanCategory,
+--			BasketNbr,
+--	--LIBOR AND Goto Columns
+--			LIBORRate,			  
+--			ResetDate,			
+--			GotoRepoRate,	
+--			GotoTermDate,
+--			GotoRemarks,		  		
+--			GotoSTTLevel,
+--			GotoSTTDivRate,  		  
+--			GotoSTTEndDate,
+--			GotoScripEndDate,
+--			GotoProductCategory,
+--			GotoProductCategoryLoanType, 
+--			GotoProductCategoryLoanDuration,
+--			DesiredSTTLevel,
+--			IsProjectedDividend,
+--			ProjectedDividendAmount,
+--			BgnRef,  
+--			GCIRecordType,
+--			GCIStatus,
+--			GCITransactionType,
+--			GCIPostingType,
+--			GCILenderModuleTrade,
+--			GCIAutoAuthorised,
+--			GPTransmit,			
+--			ExecutionTimestamp,
+--			IsPrePay,
+--			TPUID,
+--			SFTRClosedLoanRefNbr --TODO
+--		)		
+--		SELECT DISTINCT
+--			a.RawDataID,
+--			a.ExternalRefNbr,
+--			a.LoanType,
+--			a.AcctNbr,
+--			a.Depository,
+--			a.SecCode,
+--			a.SettlementDate,
+--			a.TermDate,
+--			a.BrkNbr,
+--			a.FaceAmount,
+--			a.Price,
+--			a.TradePrice,
+--			a.CCYCode,
+--			a.Principal,
+--			a.CollCCYCode,
+--			a.RebateRate,
+--			a.SecLocCode,
+--			a.SecID,
+--			a.BrkID,
+--	--			a.TxnRefNbr,
+--			a.RecordTypeID,
+--			a.BatchDate,
+--			a.AsOfDate,
+--			a.CollateralDate,
+--			a.GoodFundsDate,
+--			a.FinderNbr,
+--			a.PoolNbr,
+--			a.Comments,
+--			a.SettlementInstr, --a.SettlementInstr, -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
+--			null,			 --a.SettlementCCY,   -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
+--			a.CleanUpFlg,
+--			a.TransmitFlg,
+--			a.DisclosureType,
+--			a.TriPartyGrpID,
+--			a.CollSchedID,
+--			a.ProductCategory,
+--			a.LowDivRate,
+--			CASE LEN(a.STTLevel) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(5,2),a.STTLevel) END,
+--			a.STTEndDate,
+--			CASE LEN(a.STTDivRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(13,6),a.STTDivRate) END,
+--			a.BulkNbr,
+--			a.ScripEndDate,
+--			a.ProductCategoryLoanType,	--LoanType
+--			a.ProductCategoryLoanDuration,
+--			a.LoanCategory,
+--			CASE LEN(a.BasketNbr) WHEN 0 THEN NULL ELSE a.BasketNbr END,	    
+--	--LIBOR AND Goto Columns
+--			CASE LEN(a.LIBORRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,10),a.LIBORRate) END,	    
+--			a.ResetDate,			
+--			CASE LEN(a.GotoRepoRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,7),a.GotoRepoRate) END,	    
+--			a.GotoTermDate,
+--			a.GotoRemarks,		  		
+--			NULL, -- CASE LEN(a.GotoSTTLevel) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(5,2),a.GotoSTTLevel) END,
+--			NULL, -- CASE LEN(a.GotoSTTDivRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(13,6),a.GotoSTTDivRate) END,  		  
+--			NULL, -- a.GotoSTTEndDate,
+--			NULL, -- a.GotoScripEndDate,
+--			a.GotoProductCategory,
+--			a.GotoProductCategoryLoanType, 
+--			a.GotoProductCategoryLoanDuration,
+--			a.DesiredSTTLevel,
+--			a.IsProjectedDividend,
+--			a.ProjectedDividendAmount,
+--			a.BgnRef,
+--			a.GCIRecordType,
+--			a.GCIStatus,
+--			a.GCITransactionType,
+--			a.GCIPostingType,
+--			a.GCILenderModuleTrade,
+--			a.GCIAutoAuthorised,
+--			a.GPTransmit,			
+--			a.ExecutionTimestamp,
+--			a.IsPrePay,
+--			a.TPUID,
+--			a.SFTRClosedLoanRefNbr --TODO
+--			FROM
+--			(	
+--				SELECT 
+--					DISTINCT RawDataID	= rd.[ID],
+--					ExternalRefNbr	= NULL,
+--					RecordTypeID	= rd.RecordTypeID,
+--					BrkId			= rd.BrkID,
+--					SecID			= rd.SecID,
+--					AcctNbr			= NULL,
+--					LoanType		= rd.LoanType,
+--					Depository		= temp.ClearAgentNbr,
+--					SecCode			= rd.SecCode,
+--					SettlementDate	= temp.SettleDate,
+--					TermDate		= CASE temp.TermDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.TermDate END,
+--					BrkNbr			= rd.BrkNbr,
+--					FaceAmount		= rd.FaceAmount,
+--					Price			= rd.Price,
+--					PriceOverride	= rd.PriceOverride,
+--					TradePrice		= rd.Price,
+--					CCYCode			= rd.CCYCode,
+--					Principal		= rd.Principal,
+--					CollCCYCode		= rd.CollCCYCode,
+--					RebateRate		= rd.RebateRate,
+--					SecLocCode		= rd.SecLocCode,
+--					TxnRefNbr		= rd.TxnRefNbr,
+--					BatchDate		= rd.BatchDate,
+--					AsOfDate		= rd.AsOfDate,
+--					CollateralDate	= temp.SettleDate,--CASE temp.CollateralDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.CollateralDate END, --need to confirm
+--					GoodFundsDate	= temp.SettleDate,--CASE temp.GoodFundDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GoodFundDate END,
+--					FinderNbr		= temp.FinderNbr,
+--					PoolNbr			= NULL,--temp.CMPool, -- need to confirm
+--					Comments		= tempxml.Comments,
+--					SettlementInstr = temp.SMODE, -- need to confirm
+--					SettlementCCY	= NULL,--temp.CCYCode, -- need to confirm
+--					CleanUpFlg		= NULL,--temp.CleanUpFlg,
+--					TransmitFlg		= rd.TransmitFlg,
+--					DisclosureType	= rd.DisclosureType,
+--					TriPartyGrpID	= temp.TriPartyGrpID,
+--					CollSchedID		= temp.CollSchedID,
+--					ProductCategory	= temp.ProductCategory	,
+--					LowDivRate		= NULL,--temp.LowDivRate,
+--					STTLevel	= temp.STTLevel,
+--					STTEndDate	= temp.STTEndDate,
+--					STTDivRate	= temp.STTDivRate,
+--					BulkNbr			= rd.BulkNbr,
+--					ScripEndDate	= temp.ScripEndDate,
+--					ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+--					ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
+--					LoanCategory					= temp.LoanCategory,
+--					BasketNbr					    = rd.BasketNbr,		
+--					LIBORRate						= temp.LIBORRate,			  
+--					ResetDate						= temp.ResetDate,		
+--					GotoRepoRate					= temp.GotoRepoRate,	
+--					GotoTermDate					= temp.GotoTermDate,		
+--					GotoRemarks						= temp.GotoRemarks,		  		
+--					GotoSTTLevel				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
+--					GotoSTTDivRate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
+--					GotoSTTEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
+--					GotoScripEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+--					GotoProductCategory				= temp.GotoProductCategory,
+--					GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
+--					GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
+--					DesiredSTTLevel				= temp.DesiredSTTLevel,
+--					IsProjectedDividend				= temp.IsProjectedDividend,
+--					ProjectedDividendAmount			= temp.ProjectedDividendAmount,
+--					BgnRef							= temp.BgnRef,  
+--					GCIRecordType					= GCIParam.GCIRecordType,
+--					GCIStatus						= GCIParam.GCIStatus,
+--					GCITransactionType				= GCIParam.GCITransactionType,
+--					GCIPostingType					= GCIParam.GCIPostingType,
+--					GCILenderModuleTrade			= GCIParam.GCILenderModuleTrade,
+--					GCIAutoAuthorised				= GCIParam.GCIAutoAuthorised,
+--					GPTransmit						= temp.GPTransmit,					
+--					ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()         -----------If Settlement Date changes then generate new timestamp
+--															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN temp.CreatedDate			 -----------If Transmit changes then use the same timestamp as Closed loan
+--															ELSE temp.CreatedDate END,														 -----------If None of the above condiitons then use the same timestamp as Closed loan
+--					IsPrePay						= temp.IsPrePay,
+--					TPUID							= temp.TPUID,
+--					SFTRClosedLoanRefNbr			=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN NULL         -----------If Settlement Date changes then send new UTI i.e SFTRClosedLoanRefNbr should be NULL,
+--															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN tempxml.TxnRefNbr		-----------If Transmit changes then use then keep the same UTI i.e. SFTRClosedLoanRefNbr should be the TxnRefNbr of closed loan
+--															ELSE tempxml.TxnRefNbr END,													-----------If None of the above condiitons then keep the same UTI i.e. SFTRClosedLoanRefNbr should be the TxnRefNbr of closed loan
+--					CollateralNbr					=  CASE WHEN temp.TxnType = 'L' AND temp.AllocFlag <> 0 THEN 0 
+--														    ELSE 1 END --TODO
+--				FROM 
+--					@TempLoansandCollaterals temp
+--				INNER JOIN
+--					@TempXMLTable tempxml
+--				ON
+--					tempxml.BGNREF = temp.BGNREF AND
+--					temp.Isstreetside = 1 AND
+--					temp.BGNREF = @BGNREF				
+--				INNER JOIN 
+--					dbo.ETIRawData rd 
+--				ON	
+--					rd.SecId = temp.SecId AND
+--					rd.BrkNbr = temp.BrkNbr AND
+--					rd.Depository = temp.ClearAgentNbr AND
+--					rd.ID = @RawDataID AND
+--					rd.RecordTypeId = @RecordTypeId
+--				INNER JOIN
+--					dbo.f_GetGCIParameter(@RecordTypeId,'L',NULL) GCIParam
+--				ON
+--					GCIParam.RecordTypeID = rd.RecordTypeID
+--				INNER JOIN 
+--					@HistLogTbl hist 
+--				ON 
+--					hist.SourceID = rd.SourceID
+--				WHERE 
+--					temp.FaceAmount > 0 --insert only account allocated records.
+--				UNION
+--				SELECT 
+--					DISTINCT RawDataID	= rd.[ID],
+--					ExternalRefNbr	= NULL,
+--					RecordTypeID	= alloc.RecordTypeID,
+--					BrkId			= alloc.BrkID,
+--					SecID			= alloc.SecID,
+--					AcctNbr			= alloc.AcctNbr,
+--					LoanType		= alloc.LoanType,
+--					Depository		= temp.ClearAgentNbr,
+--					SecCode			= alloc.SecCode,
+--					SettlementDate	= temp.SettleDate,--NULL,
+--					TermDate		= CASE temp.TermDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.TermDate END,
+--					BrkNbr			= alloc.BrkNbr,
+--					FaceAmount		= alloc.FaceAmount,
+--					Price			= alloc.Price,
+--					PriceOverride	= rd.PriceOverride,
+--					TradePrice		= alloc.Price,
+--					CCYCode			= alloc.CCYCode,
+--					Principal		= alloc.Principal,
+--					CollCCYCode		= alloc.CollCCYCode,
+--					RebateRate		= alloc.RebateRate,
+--					SecLocCode		= alloc.SecLocCode,
+--					TxnRefNbr		= alloc.TxnRefNbr,
+--					BatchDate		= rd.BatchDate,
+--					AsOfDate		= rd.AsOfDate,
+--					CollateralDate	= temp.SettleDate,
+--					GoodFundsDate	= temp.SettleDate,
+--					FinderNbr		= temp.FinderNbr,
+--					PoolNbr			= NULL,--temp.CMPool,
+--					Comments		= tempxml.Comments,
+--					SettlementInstr = temp.SMODE,
+--					SettlementCCY	= NULL,--temp.CCYCode,
+--					CleanUpFlg		= NULL,--temp.CleanUpFlg,	
+--					TransmitFlg		= rd.TransmitFlg,
+--					DisclosureType	= rd.DisclosureType,
+--					TriPartyGrpID	= temp.TriPartyGrpID,
+--					CollSchedID		= temp.CollSchedID,
+--					ProductCategory	= temp.ProductCategory,
+--					LowDivRate		= NULL,--temp.LowDivRate,
+--					STTLevel	= temp.STTLevel,
+--					STTEndDate	= temp.STTEndDate,
+--					STTDivRate	= temp.STTDivRate,
+--					BulkNbr			= rd.BulkNbr,
+--					ScripEndDate	= temp.ScripEndDate,
+--					ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+--					ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
+--					LoanCategory					= temp.LoanCategory,
+--					BasketNbr						= rd.BasketNbr,
+--					LIBORRate						= temp.LIBORRate,
+--					ResetDate						= temp.ResetDate,		
+--					GotoRepoRate					= temp.GotoRepoRate,	
+--					GotoTermDate					= temp.GotoTermDate,		
+--					GotoRemarks						= temp.GotoRemarks,		  		
+--					GotoSTTLevel				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
+--					GotoSTTDivRate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
+--					GotoSTTEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
+--					GotoScripEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+--					GotoProductCategory				= temp.GotoProductCategory,
+--					GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
+--					GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
+--					DesiredSTTLevel				= temp.DesiredSTTLevel,
+--					IsProjectedDividend				= temp.IsProjectedDividend,
+--					ProjectedDividendAmount			= temp.ProjectedDividendAmount,
+--					BgnRef							= temp.BgnRef,  
+--					GCIRecordType					= GCIParam.GCIRecordType,
+--					GCIStatus						= GCIParam.GCIStatus,
+--					GCITransactionType				= GCIParam.GCITransactionType,
+--					GCIPostingType					= GCIParam.GCIPostingType,
+--					GCILenderModuleTrade			= GCIParam.GCILenderModuleTrade,
+--					GCIAutoAuthorised				= GCIParam.GCIAutoAuthorised,
+--					GPTransmit						= NULL,					
+--					ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()        -----------If Settlement Date changes then generate new timestamp
+--															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN temp.CreatedDate					-----------If Transmit changes then use the same timestamp as Closed loan
+--															ELSE temp.CreatedDate END,																-----------If None of the above condiitons then use the same timestamp as Closed loan
+--					IsPrePay						= temp.IsPrePay,
+--					TPUID							= temp.TPUID,
+--					SFTRClosedLoanRefNbr			=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN NULL         -----------If Settlement Date changes then send new UTI i.e SFTRClosedLoanRefNbr should be NULL,
+--															WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN tempxml.TxnRefNbr		-----------If Transmit changes then use then keep the same UTI i.e. SFTRClosedLoanRefNbr should be the TxnRefNbr of closed loan
+--															ELSE tempxml.TxnRefNbr END,													-----------If None of the above condiitons then keep the same UTI i.e. SFTRClosedLoanRefNbr should be the TxnRefNbr of closed loan
+--					CollateralNbr					=  CASE WHEN temp.TxnType = 'L' AND temp.AllocFlag <> 0 THEN 0 
+--														    ELSE 1 END --TODO
+--				FROM 
+--					@TempLoansandCollaterals temp
+--				INNER JOIN
+--					@TempXMLTable tempxml
+--				ON
+--					tempxml.BGNREF = temp.BGNREF AND
+--					temp.Isstreetside = 0 AND
+--					temp.BGNREF = @BGNREF				
+--				INNER JOIN 
+--					dbo.ETIRawData rd 
+--				ON	
+--					rd.SecId = temp.SecId AND
+--					rd.BrkNbr = temp.BrkNbr AND
+--					rd.Depository = temp.ClearAgentNbr AND
+--					rd.ID = @RawDataID AND
+--					rd.RecordTypeId = @RecordTypeId	
+--				INNER JOIN 
+--					dbo.ETIAllocation alloc 
+--				ON 
+--					alloc.[RawDataID] = rd.[ID] AND
+--					alloc.SecId = rd.SecId AND
+--					alloc.BrkNbr = rd.BrkNbr AND
+--					alloc.AcctNbr = temp.AcctNbr AND
+--					alloc.Depository = temp.ClearAgentNbr AND
+--					alloc.RawDataID = @RawDataID
+--				INNER JOIN
+--					dbo.f_GetGCIParameter(@RecordTypeId + 1,NULL,NULL) GCIParam
+--				ON
+--					GCIParam.RecordTypeID = alloc.RecordTypeID
+--				INNER JOIN 
+--					@HistLogTbl hist 
+--				ON 
+--					hist.SourceID = rd.SourceID
+--				WHERE 
+--					temp.FaceAmount > 0 --insert only account allocated records.
+--			) a
+
+--		-- Update ExternalRefNbr
+--		--UPDATE 
+--		--	@ETIDetailRecordNewLoan
+--		--SET 
+--		--	-- Format: yymmddxxxxxx
+--		--	ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
+--		--FROM
+--		--	@ETIDetailRecordNewLoan detail
+
+--		-- Update ExternalRefNbr with Closed Loan
+--		UPDATE 
+--			@ETIDetailRecordNewLoan
+--		SET 
+--			ExternalRefNbr =  @BGNREF
+--		WHERE 
+--			RawDataID = @RawDataID	
+
+--		-- Update NetDividendPercentage for REcordTypeId = 1
+--		UPDATE 
+--			@ETIDetailRecordNewLoan
+--		SET 		
+--			NetDividendPercentage =	temp.NetDividendPercentage
+--		FROM
+--			@ETIDetailRecordNewLoan Dtl
+--		INNER JOIN
+--		(
+--			SELECT SecId,ClearAgentNbr, MIN(NetDividendPercentage) NetDividendPercentage FROM @TempLoansandCollaterals GROUP BY SecID,ClearAgentNbr
+--		)Temp
+--		ON
+--			Temp.SecID = Dtl.SecID AND
+--			Temp.ClearAgentNbr = Dtl.WLDepository AND
+--			Dtl.RecordTypeId = 1
+
+--		UPDATE 
+--			@ETIDetailRecordNewLoan
+--		SET 		
+--			NetDividendPercentage = NULL
+--		WHERE
+--			RecordTypeId = 2
+
+--		UPDATE 
+--			@TempXMLTable
+--		SET 
+--			IsProcessed = 1
+--		WHERE 
+--			TxnRefNbr = @TxnRefNbr
+
+--		SELECT 
+--			@Count = MIN(RowID) 
+--		FROM 
+--			@TempXMLTable 
+--		WHERE 
+--			IsProcessed = 0 
+
+--	END
+
+--	--select * from @ETIDetailRecordNewLoan
+--		-- Get BatchNbr
+--	SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+
+--	INSERT INTO dbo.ETIDetailRecord 
+--	(
+--		[RawDataID],
+--		[EqlEquilendID],
+--		[EqlEquiLendReturnID],
+--		[RecordIndicator],
+--		[ExternalRefNbr],
+--		[TOE],
+--		[LoanType],
+--		[AcctNbr],
+--		[Depository],
+--		[SecCode],
+--		[SettlementDate],
+--		[BrkNbr],
+--		[FaceAmount],
+--		[RawPrice],
+--		[TradePrice],
+--		[CCYCode],
+--		[Principal],
+--		[CollCCYCode],
+--		[RebateRate],
+--		[RebatePaid],
+--		[AcctNbrRealloc],
+--		[ExternalRefNbrRealloc],
+--		[SettlementCCYCode],
+--		[BatchDate],
+--		[AsOfDate],
+--		[CollateralDate],
+--		[GoodFundsDate],
+--		[TermDate],
+--		[FinderNbr],
+--		[PoolNbr],
+--		[Comments],
+--		[CleanUpFlg],
+--		[BrkStandingInstruct1],
+--		[BrkStandingInstruct2],
+--		[BrkStandingInstruct3],
+--		[BrkStandingInstruct4],
+--		[SecLocCode],
+--		[TransmitFlg],
+--		[CollateralNbr],
+--		[BulkNbr],
+--		[XRefWlIndicator],
+--		[DisclosureType],
+--		[UserID],
+--		[Filter],
+--		[SecID],
+--		[BrkID],
+--		[TxnRefNbr],
+--		[TxnRefNbrNew],
+--		[RecordTypeID],
+--		[SubRecordID],
+--		[IsIncludedInFile],
+--		[isPending],
+--		[TriPartyGrpID],
+--		[CollSchedID],
+--		[ProductCategory],
+--		[LowDivRate],
+--		[STTLevel],
+--		[STTEndDate],
+--		[STTDivRate],
+--		[StatusID],
+--		[ModifiedBy],
+--		[ModifiedDate],
+--		[ScripEndDate],
+--		[ProductCategoryLoanType],
+--		[ProductCategoryLoanDuration],
+--		[BasketNbr],
+--		--LIBOR AND Goto Columns
+--		[LIBORRate],			  
+--		[ResetDate],			
+--		[GotoRepoRate],	
+--		[GotoTermDate],
+--		[GotoRemarks],		  		
+--		[GotoSTTLevel],
+--		[GotoSTTDivRate],  		  
+--		[GotoSTTEndDate],
+--		[GotoScripEndDate],
+--		[GotoProductCategory],
+--		[GotoProductCategoryLoanType], 
+--		[GotoProductCategoryLoanDuration],
+--		[LoanCategory],
+--		[DesiredSTTLevel],
+--		[IsProjectedDividend],
+--		[ProjectedDividendAmount],
+--		[OfficeLocation],
+--		[TRFLoanType],
+--		[TradeCategory],
+--		[AgencyReference],
+--		[CollType],
+--		[Coll_Grp],
+--		[BatchNbr],
+--		[BgnRef],
+--		[CreatedDate],  
+--		[GCIRecordType],
+--		[GCIStatus],
+--		[GCITransactionType],
+--		[GCIPostingType],
+--		[GCILenderModuleTrade],
+--		[GCIAutoAuthorised],
+--		[NetDividendPercentage],
+--		[OverseasTaxPercentage],
+--		[DomesticTaxPercentage],
+--		GPTransmit,
+--		DVP,
+--		CashWashCurr,
+--		CashWashValue,
+--		MatchedInvVehType,
+--		InvVehRes,
+--		InvalidVehFlag,
+--		CollLOCCode,
+--		TriPartyInd,
+--		LoanStatus,		
+--		IsPrePay,
+--		TPUID,
+--		SFTRClosedLoanRefNbr
+--	)	
+--	SELECT	DISTINCT
+--		RawDataID,
+--		NULL,
+--		NULL,
+--		'DTL',
+--		ExternalRefNbr,
+--		@TOE,
+--		LoanType,
+--		AcctNbr,
+--		WLDepository,
+--		SecCode,
+--		SettlementDate,
+--		UPPER(BrkNbr),
+--		FaceAmount,
+--		RawPrice,
+--		TradePrice,
+--		CCYCode,
+--		Principal,
+--		CollCCYCode,
+--		RebateRate,
+--		NULL,
+--		NULL,
+--		NULL,
+--		SettlementCCY,
+--		BatchDate,
+--		AsOfDate,
+--		CollateralDate,
+--		GoodFundsDate,
+--		TermDate,
+--		FinderNbr,
+--		NULL,--PoolNbr,
+--		Comments,
+--		CleanUpFlg,
+--		SettlementInstr,
+--		NULL,
+--		NULL,
+--		NULL,
+--		SecLocCode,
+--		TransmitFlg,
+--		CollateralNbr, --TODO
+--		BulkNbr,
+--		'W',
+--		DisclosureType,
+--		@G1UserCode,
+--		NULL,
+--		SecID,
+--		BrkID,
+--		0,--TxnRefNbr,
+--		0,
+--		RecordTypeID,
+--		0,
+--		0,
+--		1,
+--		TriPartyGrpID,
+--		CollSchedID,
+--		ProductCategory,
+--		LowDivRate,
+--		STTLevel,
+--		STTEndDate,
+--		STTDivRate,
+--		@StatusId,
+--		@ModifiedBy,
+--		NULL,
+--		ScripEndDate,
+--		ProductCategoryLoanType,
+--		ProductCategoryLoanDuration,
+--		BasketNbr,	
+----LIBOR AND Goto Columns
+--		LIBORRate,			  
+--		ResetDate,			
+--		GotoRepoRate,	
+--		GotoTermDate,
+--		GotoRemarks,		  		
+--		GotoSTTLevel,
+--		GotoSTTDivRate,  		  
+--		GotoSTTEndDate,
+--		GotoScripEndDate,
+--		GotoProductCategory,
+--		GotoProductCategoryLoanType, 
+--		GotoProductCategoryLoanDuration,
+--		LoanCategory,			 
+--		DesiredSTTLevel,
+--		IsProjectedDividend,
+--		ProjectedDividendAmount,
+--		dbo.f_GetOfficeLocation(FinderNbr),	-- OfficeLocation
+--		dbo.f_GetTRFLoanType(FinderNbr), -- TRFLoanType
+--		dbo.f_GetTradeCategory(TransmitFlg,WLDepository,SettlementDate,0),--TradeCategory
+--		dbo.f_GetAgencyReference(TransmitFlg,WLDepository),--AgencyReference
+--		dbo.f_GetCollType(LoanType), -- CollType
+--		dbo.f_GetCollGroup(LoanType), -- CollGroup
+--		@BatchNbr,
+--		BgnRef,
+--		ExecutionTimestamp,
+--		GCIRecordType,
+--		GCIStatus,
+--		GCITransactionType,
+--		GCIPostingType,
+--		GCILenderModuleTrade,
+--		GCIAutoAuthorised,
+--		NetDividendPercentage,
+--		dbo.f_GetGCIPercentage('O'),
+--		dbo.f_GetGCIPercentage('D'),
+--		GPTransmit,
+--		dbo.f_GetDVP(LoanCategory),--DVP
+--		CollCCYCode,--CashWashCurr,
+--		dbo.f_GetCashWashValue(LoanType,SecLocCode,Principal),--CashWashValue,
+--		dbo.f_GetMatchedInvVehType(LoanCategory),--MatchedInvVehType,
+--		dbo.f_GetInvVehRes(LoanCategory,CollCCYCode),--InvVehRes,
+--		dbo.f_GetInvalidVehFlag(LoanCategory),--InvalidVehFlag,
+--		dbo.f_GetCollLOCCode(RecordTypeID,WLDepository),--CollLOCCode
+--		dbo.f_GetTriPartyInd(LoanType), --TriPartyInd,
+--		CASE WHEN (LoanCategory = 'CR' AND LoanType = 'C') THEN 1 ELSE 0 END,		
+--		IsPrePay,
+--		TPUID,
+--		SFTRClosedLoanRefNbr --TODO
+--	FROM 
+--		@ETIDetailRecordNewLoan
+
+	
+
+	SELECT DISTINCT
+		SourceId,RecordTypeID
+	FROM 
+		@HistLogTbl
+
+	DROP TABLE #BrkTbl 
+	
+	SET @ERROR_NO = @@ERROR	
+
+	IF @ERROR_NO <> 0 
+		RAISERROR ( 'Error raised in p_SaveData_ETI_CloseRebookLoansandCollaterals', 16, 1 )
+END
