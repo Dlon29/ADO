@@ -1,5 +1,1988 @@
-<?xml version="1.0" encoding="utf-8" ?>
-<CloseLoan>
-	<FieldName RowId="1" TxnRefNbr="" AsOfDate="" SettlementDate="" SecCode="" SecType="" BrokerId="" BrkNbr="" BrkCrGroupId="" BrkGroupId="" RecordTypeID=""
-	  BatchDate="" TransmitFlg="" ModifiedBy="" TOE="" IsCollateral="" BGNREF="" Comments="" GPTransmit="" IsSuppressed="" SendToPirum="" LoanSettlementDate="" IsPrePay="" TPUID=""></FieldName>
-</CloseLoan>
+CREATE PROCEDURE [dbo].[p_ETIUploadReturn]  
+(
+	@SQL_IDENTIFIER		VARCHAR(10),
+	@SQL_CONDITION1		VARCHAR(MAX)
+)
+AS
+BEGIN
+	
+	SET NOCOUNT ON
+	SET ARITHABORT ON -- Need to set this option else proc throws exception
+
+	DECLARE @SourceID INT, @SMODEList VARCHAR(100), @CollRemedyCode CHAR(1),
+			@ModifiedDate DATETIME, @Ret SMALLINT, @BrkCrGrpID INT,@BrkGrpID INT, @BrkID INT, @SecId INT,
+			@LastPriceDate DATETIME, @ERROR_NO INT,@BatchNbr INT,@RecordIndicator VARCHAR(3),@TOE VARCHAR(3),@hXmlDoc INT,
+			@hdoc INT, @StatusId INT,@Count INT, @TotalCount INT,--@RawDataID INT, 
+			@EqlCtpyLegalEntityID INT ,@hdoc1 INT,@ISOCountry VARCHAR(3), @SwitchRule_Yes CHAR(1)
+
+	DECLARE @TxnRefNbr INT,@AsOfDate DATETIME,@SettlementDate DATETIME,@SecCode	VARCHAR(12),@SecType CHAR(2),
+			@AcctNbr VARCHAR(12),@BrkNbr VARCHAR(50),@ReturnQty BIGINT,@RecordTypeID INT,
+			@FileName VARCHAR(50),@BatchDate DATETIME,@TradePrice DECIMAL(17,7),@TransmitFlg	VARCHAR(1),@ModifiedBy	VARCHAR(50),
+			@LoanType VARCHAR(1),@CCYCode VARCHAR(3),@CollCCYCode VARCHAR(3),@SecLocCode VARCHAR(2),
+			@Depository VARCHAR(10),@EqlEquilendID BIGINT,@EqlEquiLendReturnID BIGINT, @EqlCtpyOrgId INT, 
+			@EqlRetProccessStatusId INT, @IsDTC VARCHAR(3), @SendToWL VARCHAR(3), @RecallID INT, @IsFullReturn BIT,@IsCollateral BIT,  
+			@BgnRef VARCHAR(12),@GPTransmit VARCHAR(1),@NewBGNREF VARCHAR(12),@ReturnCount INT, @TotalReturnCount INT, @IsPSLRSLReq INT,
+			@IsPendingReturn BIT, @LoanQuantity BIGINT, @WLDepositoryFundCode VARCHAR(10), @DomainLookupIDFundCode INT, 
+			@DomainLookupCodeFundCode VARCHAR(20), @BucketSecType VARCHAR(5), @IsEmailSuppressedFlag INT, @ALDAccountNumberDesc VARCHAR(50), 
+			@FinderOWNRepoDesc VARCHAR(50), @ALDAccountNumber VARCHAR(max), @FinderOWNRepo VARCHAR(10), @OverrideSwitchRules CHAR(1), 
+			@RRLinkRefNbrList VARCHAR(MAX) = NULL, @RRLinkRefNbr VARCHAR(8), @RevRepoLendingProcessID VARCHAR(1), --This is passed as VARCHAR in SP
+			@G1UserCode VARCHAR(8),@PirumPirumReturnRef VARCHAR(50), @ExistingLADACAPManualInput TINYINT,@NewLADACAPManualInput TINYINT,
+			@RecordType_PSL_OMNI TINYINT = 11, @RecordType_PSL_Account TINYINT = 12, @IsFirstTimeReturn BIT = 0, @GCILenderModuleTrade INT
+
+    SELECT @GCILenderModuleTrade = [LAVA].[dbo].[f_GetDomainLookupValue]('GCILenderModuleTrade','G1CollateralReturn' )
+
+	DECLARE @TempXMLTable TABLE 
+	(
+		RowID						INT IDENTITY(1,1),
+		TxnRefNbr					INT,
+		AsOfDate					DATETIME,
+		SettlementDate				DATETIME,
+		SecCode						VARCHAR(12),
+		SecType						CHAR(2) ,	
+		BrkCrGrpID					INT,
+		BrkGrpID					INT,
+		BrkID						INT,	
+		BrkNbr						VARCHAR(12),
+		AcctNbr						VARCHAR(12),
+		ReturnQty					BIGINT,	
+		ReturnQtyFromAlloc			BIGINT,
+		TradePrice					DECIMAL(17,7),
+		RecordTypeID				INT,
+		BatchDate					DATETIME,
+		TransmitFlg					VARCHAR(1),
+		EqlCtpyOrgId				BIGINT,
+		EqlCtpyLegalEntityID		BIGINT,
+		EqlSTBUSAOrgId				BIGINT,
+		EqlSTBUSALegalEntityID		BIGINT,
+		EqlEquiLendReturnSeqNbr		INT,
+		EqlInternalRefID			VARCHAR(40),
+		EqlEquilendId				BIGINT,
+		EqlEquiLendReturnID			BIGINT,
+		EqlReturnType				VARCHAR(10),
+		EqlBorrSettlementInstrID	VARCHAR(10),
+		EqlCtpySubAcctID			VARCHAR(10),
+		EqlEquiLendRecallID			BIGINT,
+		EqlSTBUSASubAcctID			VARCHAR(10),
+		RecordCreatedBy				VARCHAR(50),
+		RecordReceivedDate			DATETIME,
+		EqlUpdateReasonCode			VARCHAR(2),
+		EqlNarrative				VARCHAR(100),
+		ModifiedBy					VARCHAR(50),
+		TOE							VARCHAR(3),
+		SourceId					INT,
+		IsDTC						VARCHAR(3),
+		SendToWL					VARCHAR(3),
+		RecallID					INT,
+		IsFullReturn				BIT ,
+		IsProcessed					BIT,
+		IsCollateral    			BIT,
+		BgnRef						VARCHAR(12),
+		Depository					VARCHAR(10),
+		GPTransmit					VARCHAR(1),
+		IsPSLRSLReq					INT, -- 0 : Only PSL/RSL, 1 : PSL & RSL
+		IsSuppressed				INT,
+		OverrideSwitchRules			CHAR(1) NULL,
+		RRLinkRefNbr				VARCHAR(8),
+		IsSelectedByUser			BIT,
+		PirumPirumReturnRef			VARCHAR(50),
+		AllocationChangeReason		INT,
+		ACAPEligibleManualInput		BIT 
+	)
+
+	DECLARE @ETIDetailRecord TABLE 
+	(
+		[ID] [int] IDENTITY(1,1) NOT NULL,
+		[RawDataID] [int] NOT NULL,
+		[ExternalRefNbr] [varchar](12) NULL,
+		[LoanType] [char](1) NULL,
+		[AcctNbr] [varchar](12) NULL,
+		[Depository] [varchar](10) NULL,
+		[SecCode] [varchar](12) NULL,
+		[SettlementDate] [datetime] NULL,
+		[TermDate] [datetime] NULL,
+		[BrkNbr] [varchar](6) NULL,
+		[FaceAmount] [numeric](13, 0) NULL,
+		[RawPrice] [decimal](14, 7) NULL, 
+		[TradePrice] [decimal](14, 7) NULL, 
+		[CCYCode] [varchar](3) NULL,
+		[Principal] [decimal](17, 2) NULL,
+		[CollCCYCode] [varchar](3) NULL,
+		[RebateRate] [decimal](9, 6) NULL,
+		[SecLocCode] [varchar](2) NULL,
+		[SecID] [int] NULL,
+		[BrkID] [int] NULL,
+		[TxnRefNbr] [int] NULL,
+		[RecordTypeID] [smallint] NOT NULL,
+		[BatchDate] [datetime] NOT NULL,
+		[AsOfDate] [datetime] NULL, 
+		[TransmitFlg] [char](1) NULL,
+		[EqlEquilendId]	[BIGINT] NULL,
+		[EqlEquiLendReturnID] [BIGINT] NULL,
+		[DisclosureType] [char](1) NULL,
+		[TOE] [VARCHAR](3) NULL,
+		[BgnRef] [VARCHAR] (12) NULL,
+		GCIRecordType	VARCHAR(1),
+		GCIStatus		VARCHAR(1),
+		GCITransactionType	VARCHAR(1),
+		GCIPostingType	VARCHAR(3),
+		GCILenderModuleTrade	 VARCHAR(1),
+		GCIAutoAuthorised	VARCHAR(1),
+		GCISettleInd	VARCHAR(1),
+		FundCode		VARCHAR(10),
+		FinderNbr  VARCHAR(6),
+		[IsPrePay] [bit] NULL,
+		[TPUID] [VARCHAR] (20) NULL
+	)
+	
+	CREATE TABLE #AcctTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		TxnRefNbr INT,
+		AcctId INT,
+		BrkId INT,
+		AcctNbr VARCHAR(12),
+		FaceAmount BIGINT,
+		AllocFlag CHAR(1),
+		TxnType	VARCHAR(1),
+		FaceAmountFromAlloc BIGINT,
+		AllocationChangeReason INT
+	)
+
+	CREATE TABLE #AlgoAcctTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		TxnRefNbr INT,
+		AcctNbr VARCHAR(12),
+		AcctSN	VARCHAR(50),
+		AllocatedQty BIGINT,
+		FaceAmount BIGINT
+	)
+
+	CREATE TABLE #BrkTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		BrkId INT,
+		BrkNbr VARCHAR(6)
+	)
+
+	CREATE TABLE #LoanTbl 
+	(
+		RowId INT IDENTITY(1,1),
+		TxnRefNbr INT,
+		BrkId INT, 
+		BrkNbr VARCHAR(6),
+		AcctId INT,
+		AcctNbr VARCHAR(12),
+		TradePrice DECIMAL(17,7),
+		TxnSuffix VARCHAR(3),
+		AllocFlag CHAR(1),
+		TxnType	VARCHAR(1)	
+		
+	)
+
+	DECLARE @HistLogTbl TABLE 
+	(
+		RowId INT IDENTITY(1,1),
+		SourceId INT, 
+		BrkCrGrpId INT,
+		BrkId INT,
+		RecordTypeID INT,
+		EqlEquiLendReturnID BIGINT,
+		BatchNbr INT  ,
+		TxnRefNbr INT
+	)
+
+	DECLARE @TempG1LoanTbl TABLE
+	(
+		BrkNbr			VARCHAR(6),
+		AcctNbr			VARCHAR(12),
+		SecID			INT,
+		SecCode			VARCHAR(12),
+		FaceAmount		BIGINT,
+		TradePrice		DECIMAL(17,7),
+		TxnRefNbr		BIGINT,
+		IsStreetSide	BIT,
+		TxnSuffix		VARCHAR(6),
+		TxnType			VARCHAR(1),
+		Principal		DECIMAL(17, 2),
+		AllocFlag		CHAR(1),
+		CollCCY			VARCHAR(3),
+		SecLocCode		VARCHAR(2),
+		LoanType		VARCHAR(2)		
+	)
+
+	CREATE TABLE #TempBgnRef
+	(
+		BGNREF	VARCHAR(12),
+		Seq		VARCHAR(12)
+	)
+	
+	DECLARE @LoanCount INT, 
+			@TotalLoanCount INT,
+			@HistlogCount INT, 
+			@TotalHistlogCount INT,
+			@Activity_TOE CHAR(3),
+			@Activity_IsEmailSuppressFlag INT
+
+	SET @DomainLookupCodeFundCode = 'FUNDCODE_ALD_ACCOUNT'
+	SET @ALDAccountNumberDesc = 'ALD_ACCOUNT_NUMBER'
+	SET @FinderOWNRepoDesc ='FINDER_OWNREPO'
+	SET @SwitchRule_Yes = 'Y'
+
+	SELECT @RevRepoLendingProcessID = CONVERT(VARCHAR(1), @RevRepoLendingProcessID) FROM LendingProcessType WHERE LendingProcessName = 'RevRepo'
+
+	SET @DomainLookupIDFundCode = (SELECT DomainLookUpID FROM dbo.DomainLookUpID WHERE LookUpCode = @DomainLookupCodeFundCode)
+	SET @ALDAccountNumber = (SELECT Value FROM dbo.DomainLookUpValue WHERE DomainLookUpID = @DomainLookupIDFundCode AND ValueDesc = @ALDAccountNumberDesc)
+	SET @FinderOWNRepo = (SELECT Value FROM dbo.DomainLookUpValue WHERE DomainLookUpID = @DomainLookupIDFundCode AND ValueDesc = @FinderOWNRepoDesc)
+	
+    SET @Activity_TOE = 'PSL'
+
+	SELECT @SMODEList = CONVERT(VARCHAR(30), Value ) FROM [dbo].[DomainLookUpValue] 
+					WHERE ( [DomainLookUpID] IN ( Select DomainLookUpID FROM [dbo].[DomainLookUpID]  WHERE [LookUpCode] ='COLLREMCODE_CLEARAGENTNBR' ) )
+					AND ( [ValueDesc]='SMODEList' )
+
+	SELECT @CollRemedyCode = CONVERT(VARCHAR(5), Value ) FROM [dbo].[DomainLookUpValue] 
+					WHERE ( [DomainLookUpID] IN ( Select DomainLookUpID FROM [dbo].[DomainLookUpID]  WHERE [LookUpCode] ='COLLREMCODE_CLEARAGENTNBR' ) )
+					AND ( [ValueDesc]='CollRemCode' )
+
+	SELECT @Activity_IsEmailSuppressFlag = EmailSupressedFlag FROM dbo.DashBoardEmailActivityType WHERE TOE = @Activity_TOE
+
+	EXEC SP_XML_PREPAREDOCUMENT @hdoc output, @SQL_CONDITION1	
+
+	/* Insert selected TxnRefNbr for Return loan, into temp table for processing*/
+	INSERT INTO @TempXMLTable
+	(
+		TxnRefNbr,
+		AsOfDate,
+		SettlementDate,
+		SecCode,
+		SecType,
+		BrkCrGrpID,
+		BrkGrpID,
+		BrkID,
+		BrkNbr,
+		AcctNbr,
+		ReturnQty,
+		ReturnQtyFromAlloc,
+		TradePrice,
+		RecordTypeID,
+		BatchDate,
+		TransmitFlg,
+		EqlCtpyOrgId,
+		EqlCtpyLegalEntityID,
+		EqlSTBUSAOrgId,
+		EqlSTBUSALegalEntityID,
+		EqlEquiLendReturnSeqNbr,
+		EqlInternalRefID,
+		EqlEquilendId,
+		EqlEquiLendReturnID,
+		EqlReturnType,
+		EqlBorrSettlementInstrID,
+		EqlCtpySubAcctID,
+		EqlEquiLendRecallID,
+		EqlSTBUSASubAcctID,
+		RecordCreatedBy,
+		RecordReceivedDate,
+		EqlUpdateReasonCode,
+		EqlNarrative,
+		ModifiedBy,
+		TOE,
+		IsDTC,
+		SendToWL,
+		SourceId,		
+		RecallID,		
+		IsFullReturn,
+		IsProcessed,
+		IsCollateral,
+		BgnRef,
+		Depository,
+		GPTransmit,
+		IsPSLRSLReq,
+		IsSuppressed,
+		OverrideSwitchRules,
+		RRLinkRefNbr,
+		IsSelectedByUser,
+		PirumPirumReturnRef,
+		AllocationChangeReason,
+		ACAPEligibleManualInput 
+	)
+	SELECT 
+		TxnRefNbr,
+		AsOfDate,
+		SettlementDate,
+		SecCode,
+		SecType,
+		BrkCrGroupId,
+		BrkGroupId,
+		BrokerId,
+		BrkNbr,
+		AcctNbr,
+		ReturnQty,
+		ReturnQtyFromAlloc,
+		TradePrice,
+		RecordTypeID,
+		BatchDate,
+		TransmitFlg,
+		EqlCtpyOrgId,
+		LegalEntityId,
+		EqlSTBUSAOrgId,
+		EqlSTBUSALegalEntityID,
+		EqlEquiLendReturnSeqNbr,
+		EqlInternalRefID,
+		EqlEquilendId,
+		EqlEquiLendReturnID,
+		EqlReturnType,
+		EqlBorrSettlementInstrID,
+		EqlCtpySubAcctID,
+		EqlEquiLendRecallID,
+		EqlSTBUSASubAcctID,
+		RecordCreatedBy,
+		RecordReceivedDate,
+		EqlUpdateReasonCode,
+		EqlNarrative,
+		ModifiedBy,
+		TOE,
+		IsDTC,
+		SendToWL,
+		SourceId,
+		RecallID,
+		IsFullReturn,
+		0, --IsProcessed
+		IsCollateral = ISNULL(IsCollateral,0),
+		BgnRef,
+		Depository,
+		GPTransmit,
+		IsPSLRSLReq,
+		IsSuppressed,
+		OverrideSwitchRules,
+		dbo.f_RevRepoGetTxnRRLinkRefNbr(BatchDate, TxnRefNbr) AS RRLinkRefNbr,
+		1 AS IsSelectedByUser,
+		PirumPirumReturnRef,
+		NULLIF(AllocationChangeReason,0),
+		ISNULL(ACAPEligibleManualInput, 0)
+	FROM 
+		OPENXML(@hdoc, '/ReturnLoan/FieldName', 1)
+		WITH
+		(
+			TxnRefNbr					INT,
+			AsOfDate					DATETIME,
+			SettlementDate				DATETIME,
+			SecCode						VARCHAR(12),
+			SecType						CHAR(2) ,	
+			BrkCrGroupId				INT,
+			BrkGroupId					INT,
+			BrokerId					INT,	
+			BrkNbr						VARCHAR(50),
+			AcctNbr						VARCHAR(12),
+			ReturnQty					BIGINT,	
+			ReturnQtyFromAlloc			BIGINT,
+			TradePrice					DECIMAL(17,7),
+			RecordTypeID				INT,
+			BatchDate					DATETIME,
+			TransmitFlg					VARCHAR(1),
+			EqlCtpyOrgId				BIGINT,
+			LegalEntityId				BIGINT,
+			EqlSTBUSAOrgId				BIGINT,
+			EqlSTBUSALegalEntityID		BIGINT,
+			EqlEquiLendReturnSeqNbr		INT,
+			EqlInternalRefID			VARCHAR(40),
+			EqlEquilendId				BIGINT,
+			EqlEquiLendReturnID			BIGINT,
+			EqlReturnType				VARCHAR(10),
+			EqlBorrSettlementInstrID	VARCHAR(10),
+			EqlCtpySubAcctID			VARCHAR(10),
+			EqlEquiLendRecallID			BIGINT,
+			EqlSTBUSASubAcctID			VARCHAR(10),
+			RecordCreatedBy				VARCHAR(50),
+			RecordReceivedDate			DATETIME,
+			EqlUpdateReasonCode			VARCHAR(2),
+			EqlNarrative				VARCHAR(100),
+			ModifiedBy					VARCHAR(50),
+			TOE							VARCHAR(3),
+			IsDTC						VARCHAR(3),
+			SendToWL					VARCHAR(3),
+			SourceId					INT,
+			RecallID					INT,
+			IsFullReturn				BIT,
+			IsCollateral 				INT,
+			BgnRef						VARCHAR(12),
+			Depository					VARCHAR(10),
+			GPTransmit					VARCHAR(1),
+			IsPSLRSLReq					INT,
+			IsSuppressed				INT,
+			OverrideSwitchRules			CHAR(1),
+			PirumPirumReturnRef			VARCHAR(50),
+			AllocationChangeReason		INT,
+			ACAPEligibleManualInput     BIT
+		)
+
+	EXEC SP_XML_REMOVEDOCUMENT @hdoc
+
+	INSERT INTO @TempG1LoanTbl 
+	(
+		BrkNbr,
+		AcctNbr,
+		SecID,
+		SecCode,
+		FaceAmount,
+		TradePrice,
+		TxnRefNbr,
+		TxnSuffix,
+		TxnType,
+		IsStreetSide,
+		Principal,
+		AllocFlag,
+		CollCCY,
+		SecLocCode,
+		LoanType		
+	)
+	SELECT
+		BrkNbr,
+		AcctNbr,
+		SecID,
+		SecCode,
+		FaceAmount,
+		TradePrice,
+		TxnRefNbr,
+		TxnSuffix,
+		TxnType,
+		IsStreetSide,
+		Principal,
+		AllocFlag,
+		CollCCYCode,
+		SecLocCode,
+		LoanType		
+	FROM
+		GLOBALONE.dbo.Loan
+
+	/* Get next BatchNbr*/
+	--SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+
+	IF (@SQL_IDENTIFIER = 'LAVA')
+	BEGIN
+		--Now fetch records which have not been selected but have same RRLinkRefNbr as the selected ones and insert it into temp table for looping
+		--Get Top 1 Batch date and as of date to send to get sp
+		SELECT TOP 1 @BatchDate = BatchDate, @AsOfDate = AsOfDate, @ModifiedBy = ModifiedBy, @SecType = SecType FROM @TempXMLTable
+
+		--First get distinct RRLInkRefNbr from the selected records and for only those loans which has been returned fully
+		SELECT @RRLinkRefNbrList = STUFF((SELECT DISTINCT ',' + RRLInkRefNbr 
+										 FROM @TempXMLTable 
+										 WHERE ISNULL(RRLinkRefNbr, '') <> ''
+											AND IsFullReturn = 1
+										 FOR XML PATH('')), 
+										1, 1, '')
+
+		--Now fetch linked TxnRefNbrList for RRLinkRefNbr
+		IF ISNULL(@RRLinkRefNbrList, '') <> ''
+		BEGIN
+			IF OBJECT_ID('tempdb..#TempReverseRepoReturnLoanCollateral') IS NULL 
+			BEGIN
+				SELECT * 
+				INTO #TempReverseRepoReturnLoanCollateral
+				FROM LAVA.dbo.f_RevRepoCreateETIReturnLoanSchema()
+			END
+
+			--Call get SP to fetch linked TxnRefNbrList and other columns of xml
+			exec p_GetData_ETI_Return @TxnRefNbr = '', @AsOfDate = @AsOfDate, @SecCode = '', @BusinessInd = @SecType, @SourceId = '', @Identifier = 'RR', @xmlTxnRefNbr = '', 
+				@BrkCrGrpId = '0', @BrkGrpId = '0', @BrkId = '0', @BatchDate = @BatchDate, @Depository = '0', @CollateralNo = '0', @CollAcctNbr = '0', @LoanType = '0', 
+				@CollSchedID = '0', @BasketNbr = '0', @LendingProcess = @RevRepoLendingProcessID, @ISFICCLoan = 'False', @RRLinkRefNbr = @RRLinkRefNbrList, @xmlRRLinkRefNbr = NULL
+
+			--First update IsCollateral flag for existing Loans/Collaterals from the Cancelled Loans fetched
+			UPDATE TmpXML
+			SET TmpXML.IsCollateral = TmpRRLoanColl.IsCollateral,
+				TmpXML.AcctNbr = TmpRRLoanColl.AcctNbr
+			FROM @TempXMLTable TmpXML
+				INNER JOIN #TempReverseRepoReturnLoanCollateral TmpRRLoanColl ON TmpXML.TxnRefNbr = TmpRRLoanColl.TxnRefNbr
+			WHERE IsSelectedByUser = 1
+
+			/*Join the data of fetched data temp with XML temp based on txnrefnbr and get other column data
+			  and insert this into XML temp excluding the txnRefnbr already present in temps*/
+			INSERT INTO @TempXMLTable
+				(TxnRefNbr, AsOfDate, SettlementDate, SecCode, SecType, BrkCrGrpID, BrkGrpID, BrkID, BrkNbr, AcctNbr, ReturnQty,ReturnQtyFromAlloc, TradePrice,
+				RecordTypeID, BatchDate, TransmitFlg, ModifiedBy, TOE, SourceId, IsCollateral, BgnRef, Depository, GPTransmit, OverrideSwitchRules,
+				RRLinkRefNbr, IsSelectedByUser, IsProcessed,AllocationChangeReason, ACAPEligibleManualInput)
+			SELECT TxnRefNbr, AsOfDate, SettlementDate, SecCode, SecType, NULL AS BrkCrGrpID, NULL AS BrkGrpID, NULL AS BrkID, BrkNbr, AcctNbr, ReturnQty,ReturnQty, TradePrice,
+				RecordTypeID, @BatchDate, NULL AS TransmitFlg, @ModifiedBy, TOE, NULL AS SourceId, IsCollateral, BgnRef, Depository, GPTransmit, 
+				CASE WHEN OverrideSwitchRules = 'N/A' THEN NULL ELSE OverrideSwitchRules END, RRLinkRefNbr, 0 AS IsSelectedByUser, 0 AS IsProcessed, 0 AS AllocationChangeReason,
+				0 AS ACAPEligibleManualInput
+			FROM #TempReverseRepoReturnLoanCollateral --BrkCrGroupId, BrkGroupId, BrokerId, TransmitFlg, IsCollateral
+			WHERE TxnRefNbr NOT IN (SELECT DISTINCT TxnRefNbr FROM @TempXMLTable)
+
+			--Update Transmit, Suppress Email and Send to Pirum flag based on Top 1 of selected record for a given RRLinkRefNbr from IsSelectedByUser as 1
+			;WITH LoansSeletedByUser_CTE (RRLinkRefNbr, TOE, SettlementDate, RecallID, TransmitFlg, IsFullReturn, IsSuppressed, IsPSLRSLReq, OverrideSwitchRules)  
+			AS 
+			(  
+				SELECT RRLinkRefNbr, TOE, SettlementDate, RecallID, TransmitFlg, IsFullReturn, IsSuppressed, IsPSLRSLReq, OverrideSwitchRules
+				FROM @TempXMLTable  
+				WHERE IsSelectedByUser = 1 
+					AND IsFullReturn = 1
+			)
+			UPDATE TmpXML
+			SET TmpXML.TOE = TmpCTE.TOE,
+				TmpXML.SettlementDate = CASE WHEN TmpXML.SettlementDate IS NULL THEN TmpCTE.SettlementDate ELSE TmpXML.SettlementDate END,
+				TmpXML.RecallID = CASE WHEN TmpXML.IsCollateral = 1 THEN 0 ELSE TmpCTE.RecallID END,
+				TmpXML.TransmitFlg = TmpCTE.TransmitFlg,
+				TmpXML.IsFullReturn = TmpCTE.IsFullReturn,		--Ignored from front end and checked in SP below while processing each record
+				TmpXML.IsSuppressed = TmpCTE.IsSuppressed,
+				TmpXML.IsPSLRSLReq = TmpCTE.IsPSLRSLReq,
+				TmpXML.OverrideSwitchRules = TmpCTE.OverrideSwitchRules
+			FROM @TempXMLTable TmpXML
+				INNER JOIN LoansSeletedByUser_CTE TmpCTE ON TmpXML.RRLinkRefNbr = TmpCTE.RRLinkRefNbr
+			WHERE IsSelectedByUser = 0
+		END
+	END
+
+	SET @Count = 1 
+	SELECT @TotalCount = COUNT(*) FROM @TempXMLTable
+	
+	/*Loop thru all the TxnRefNbr selected for Return loan*/
+	WHILE (@Count <= @TotalCount)
+	BEGIN
+
+		SET @TxnRefNbr = NULL
+		SET @AsOfDate = NULL
+		SET @SettlementDate = NULL 
+		SET @SecCode = NULL
+		SET @SecType = NULL
+		SET @BrkNbr = NULL
+		SET @ReturnQty = NULL
+		SET @RecordTypeID = NULL
+		SET @BatchDate = NULL
+		SET @TransmitFlg = NULL
+		SET @TradePrice = NULL
+		SET	@EqlCtpyLegalEntityID = NULL
+		SET @ModifiedBy = NULL
+		SET @EqlEquilendID = NULL
+		SET @EqlEquiLendReturnID = NULL
+		SET @EqlCtpyOrgId = NULL
+		SET @BrkCrGrpID = NULL
+		SET @BrkGrpID = NULL
+		SET @BrkID = NULL
+		SET @TOE = NULL
+		SET @SourceId = NULL
+		SET @CCYCode = NULL
+		SET @ISOCountry = NULL
+		SET @EqlRetProccessStatusId  = NULL
+		SET @IsDTC = NULL
+		SET @SendToWL = NULL
+		SET @RecallID = NULL
+		SET @IsFullReturn = 0
+		SET @IsCollateral = NULL	 
+		SET @Depository = NULL
+		SET @GPTransmit = NULL
+		SET @NewBGNREF	= NULL
+		SET @IsPSLRSLReq = NULL
+		SET @IsPendingReturn = 0
+		SET @LoanQuantity = 0
+		SET @IsEmailSuppressedFlag = 0
+		SET @OverrideSwitchRules = ''
+		SET @RRLinkRefNbr = NULL
+		SET @PirumPirumReturnRef=null
+
+		/* Get the values in variables */
+		SELECT 
+				@TxnRefNbr = TxnRefNbr,
+				@AsOfDate = AsOfDate,
+				@SettlementDate = SettlementDate,
+				@SecCode = SecCode,
+				@SecType = SecType,
+				@BrkCrGrpID = BrkCrGrpID,
+				@BrkGrpID = BrkGrpID,
+				@BrkID = BrkID,
+				@BrkNbr = BrkNbr,
+				@ReturnQty = ReturnQty,
+				@TradePrice = TradePrice,
+				@RecordTypeID = RecordTypeID,
+				@BatchDate = BatchDate,
+				@TransmitFlg = TransmitFlg,
+				@EqlCtpyLegalEntityID = EqlCtpyLegalEntityID,
+				@ModifiedBy = ModifiedBy,
+				@EqlEquilendID = EqlEquilendId,
+				@EqlEquiLendReturnID = EqlEquiLendReturnID,
+				@EqlCtpyOrgId = EqlCtpyOrgId,
+				@TOE = TOE,
+				@IsDTC = IsDTC,
+				@SendToWL = SendToWL,
+				@SourceId = SourceId,
+				@RecallID = RecallID,
+				--@IsFullReturn = IsFullReturn,
+				@IsCollateral = IsCollateral,
+				@BgnRef = BgnRef ,
+				@Depository = Depository,
+				@GPTransmit = GPTransmit,
+				@IsPSLRSLReq = IsPSLRSLReq,
+				@IsEmailSuppressedFlag = IsSuppressed,
+				@OverrideSwitchRules = OverrideSwitchRules,
+				@RRLinkRefNbr = RRLinkRefNbr,
+				@PirumPirumReturnRef=PirumPirumReturnRef,
+				@NewLADACAPManualInput = ACAPEligibleManualInput
+		FROM 
+				@TempXMLTable 
+		WHERE 
+				RowID = @Count
+
+		SELECT @G1UserCode = dbo.f_GetG1LavaUserMapping (@ModifiedBy)  
+		/* Set default values to be inserted*/
+		SELECT	
+				@ModifiedDate		= GETDATE(),
+				@RecordIndicator	= 'DTL',
+				@ModifiedBy			= ISNULL(@ModifiedBy, SUSER_SNAME())				
+		
+			
+		/* Get the status id for Return Loan upload schedule*/
+		SET @StatusId = 40 
+
+		SET @ReturnCount = 1
+		SELECT @TotalReturnCount = CASE @IsPSLRSLReq WHEN 1 THEN 2 ELSE 1 END
+
+		-- Ignoring @IsFullReturn flag set from UI and calculating it based on Loan Qty and Return Qty
+		SELECT 
+			@LoanQuantity = FaceAmount 
+		FROM 
+			GLOBALONE.dbo.Loan 
+		WHERE 
+			TxnRefNbr = @TxnRefNbr AND 
+			IsStreetSide = CASE AllocFlag WHEN 0 THEN 0 ELSE 1 END
+		
+		IF (@LoanQuantity = @ReturnQty)
+		BEGIN
+			SET @IsFullReturn = 1
+		END
+		ELSE
+		BEGIN
+			SET @IsFullReturn = 0
+		END
+		
+		-- For RSL, PSL is mandatory. so first PSL reuqest followed by RSL.
+		 WHILE (@ReturnCount <= @TotalReturnCount)
+		 BEGIN
+			
+			-- /* Set default values to be inserted*/
+			 SELECT	
+				@TOE				= CASE WHEN  @IsPSLRSLReq = 0 THEN @TOE ELSE (CASE @IsPSLRSLReq WHEN 1 THEN 'PSL' ELSE 'RSL' END) END,
+				@RecordTypeID		= CASE @TOE WHEN 'PSL' THEN 11 ELSE 3 END,
+				@Ret				= 1,
+				@FileName			= CASE @TOE WHEN 'PSL' THEN 'Pending Return Loans From LAVA' ELSE 'Return Loans From LAVA' END,
+				@StatusId			= CASE @IsPSLRSLReq WHEN 0 THEN 40 ELSE (CASE @IsPSLRSLReq WHEN 1 THEN 40 ELSE 0 END) END,
+				@NewBGNREF			= NULL
+
+			/* Get next BatchNbr*/
+			SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+
+			SET @IsPendingReturn = CASE @TOE WHEN 'PSL' THEN 1 ELSE 0 END
+
+			TRUNCATE TABLE #TempBgnRef
+
+			INSERT INTO 
+				#TempBgnRef (BGNREF,Seq)
+			SELECT 
+				BGNREF,Seq 
+			FROM 
+				f_GetPendingTxnRefNbr (@TxnRefNbr)
+
+--SELECT '#TempBgnRef',* FROM #TempBgnRef
+
+			SELECT 
+				@NewBGNREF = @BGNREF + ':' + CONVERT(VARCHAR(12),(ISNULL(MAX(CONVERT(INT,Seq)),0) + 1))
+			FROM 
+				#TempBgnRef
+
+			IF NOT EXISTS (SELECT 1 FROM #TempBgnRef)
+			BEGIN
+				SELECT @IsFirstTimeReturn = 1
+			END
+
+			IF (@SQL_IDENTIFIER = 'EquiLend') -- this will be executed for EquiLend return
+			BEGIN
+				/* If domestic security return and user does not want to sent to WL then directly send to Equilend*/
+				IF (@SendToWL = 'No')
+					SET @EqlRetProccessStatusId = 230
+				ELSE
+					SET @EqlRetProccessStatusId = 220
+			END
+			
+			/* Get SecId based on SecCode */
+			SELECT 	
+				@SecId = SecId,
+				@CCYCode = CCYCode,
+				@ISOCountry = ISOCountry,
+				@BucketSecType = BucketSecurityType
+			FROM 	
+				dbo.f_GetSecurityDetail (@SecCode, NULL)
+
+
+			IF ((@SQL_IDENTIFIER = 'LAVA') OR (@SQL_IDENTIFIER = 'EquiLend' AND ISNULL(@SendToWL,'Yes') = 'Yes')) 
+			BEGIN			
+
+				TRUNCATE TABLE #BrkTbl
+				TRUNCATE TABLE #LoanTbl
+				TRUNCATE TABLE #AcctTbl
+				TRUNCATE TABLE #AlgoAcctTbl
+				TRUNCATE TABLE #TempBgnRef
+
+				IF (@SQL_IDENTIFIER = 'EquiLend') -- this will be executed for EquiLend return
+				BEGIN
+					SELECT 
+						@BrkNbr = BrkNbr,
+						@TradePrice = TradePrice
+					FROM 
+						@TempG1LoanTbl
+					WHERE
+						SecId = @SecId AND 
+						TxnRefNbr = @TxnRefNbr AND 
+						IsStreetSide = 1				
+				END
+
+				/* Get BrkId based on BrkNbr*/
+				IF @BrkNbr IS NOT NULL
+				BEGIN
+					INSERT INTO #BrkTbl 
+					(
+						BrkId,
+						BrkNbr
+					)
+					SELECT 
+						BrkID,
+						BrkNbr
+					FROM 
+						dbo.[Broker] 
+					WHERE 
+						BrkNbr = @BrkNbr AND 
+						@BatchDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd AND 
+						IsDeleted = 0
+				END
+			
+				/* If no record found in Broker table for selected loan, then do not proceed further*/
+				IF ((SELECT COUNT(*) FROM #BrkTbl) = 0)
+				BEGIN
+					RAISERROR('Invalid broker.', 16, 1)
+					RETURN 1
+				END
+
+				/* Get Loan details */
+				INSERT INTO #LoanTbl
+				(
+					TxnRefNbr,
+					BrkId, 
+					BrkNbr,
+					AcctId,
+					AcctNbr,
+					TradePrice,
+					TxnSuffix,
+					AllocFlag,
+					TxnType
+				)
+				SELECT 
+					DISTINCT Loan.TxnRefNbr,
+					Brk.BrkId,
+					Brk.BrkNbr, 
+					Acc.AcctId,
+					Loan.AcctNbr,
+					Loan.TradePrice,
+					Loan.TxnSuffix,
+					Loan.AllocFlag,
+					Loan.TxnType
+				FROM 
+					@TempG1LoanTbl Loan
+				INNER JOIN 
+					MOBETTER.dbo.Account Acc
+				ON 
+					Acc.AcctNbr = Loan.AcctNbr AND 
+					@AsOfDate BETWEEN Acc.EffectiveDateBegin AND Acc.EffectiveDateEnd AND
+					Acc.IsDeleted = CONVERT(BIT, 0) 
+				INNER JOIN 
+					dbo.AcctSetup AccSet
+				ON 
+					AccSet.AcctNbr = Loan.AcctNbr AND 
+					Loan.IsStreetSide = 0 AND
+					Loan.FaceAmount <> 0
+				INNER JOIN 
+					#BrkTbl Brk 
+				ON 
+					Brk.BrkNbr = Loan.BrkNbr AND 
+					Loan.SecId = @SecId AND 
+					Loan.TxnRefNbr = @TxnRefNbr AND 
+					Loan.IsStreetSide = 0
+				
+				/* If no record found in Loan table for selected loan, then do not proceed further*/
+				IF ((SELECT COUNT(*) FROM #LoanTbl) = 0)
+				BEGIN
+					RAISERROR('Invalid Loan #.', 16, 1)
+					RETURN 1
+				END
+
+				/* Get all the accounts associated with TxnRefNo and return quantity to each account : This is the case of Single return loan*/
+				INSERT INTO #AcctTbl 
+				(
+					TxnRefNbr,
+					AcctId,
+					BrkId,
+					AcctNbr,
+					FaceAmount,
+					AllocFlag,
+					TxnType,
+					FaceAmountFromAlloc,
+					AllocationChangeReason
+				)
+				SELECT DISTINCT 
+					temp.TxnRefNbr,
+					loan.AcctId,
+					loan.BrkId,
+					temp.Acctnbr,
+					temp.ReturnQty,
+					loan.AllocFlag,
+					loan.TxnType,
+					temp.ReturnQtyFromAlloc,
+					temp.AllocationChangeReason
+				FROM 
+					@TempXMLTable temp
+				INNER JOIN 
+					#LoanTbl loan 
+				ON 
+					loan.TxnRefNbr = temp.TxnRefNbr AND
+					loan.Acctnbr = temp.Acctnbr
+
+				/* If no record account found for selected loan, then do not proceed further : This is the case of Multiple return loan*/
+				IF ((SELECT COUNT(*) FROM #AcctTbl) = 0)
+				BEGIN
+					INSERT INTO #AlgoAcctTbl 
+					(
+						AcctNbr,
+						AcctSN,
+						AllocatedQty,
+						FaceAmount
+					)
+				
+					EXEC dbo.p_GetData_ETI_ReturnAllocation @TxnRefNbr,@AsOfDate,@SecCode,@SecType,'',@ReturnQty,@TradePrice,@TOE --,@RecallID
+
+					INSERT INTO #AcctTbl 
+					(
+						TxnRefNbr,
+						AcctId,
+						BrkId,
+						AcctNbr,
+						FaceAmount,
+						AllocFlag,
+						TxnType,
+						FaceAmountFromAlloc,
+						AllocationChangeReason
+					)
+					SELECT DISTINCT 
+						loan.TxnRefNbr,
+						loan.AcctId,
+						loan.BrkId,
+						temp.Acctnbr,
+						temp.FaceAmount,
+						Loan.AllocFlag,
+						Loan.TxnType,
+						NULL,
+						0
+					FROM 
+						#AlgoAcctTbl temp
+					INNER JOIN 
+						#LoanTbl loan 
+					ON 
+						loan.Acctnbr = temp.Acctnbr
+				END
+
+				/***** 1st step : Insert into dbo.ETITranUploadHistLog table ***/	
+				SET @Ret = 1
+
+				/* Insert in UploadLogHist table */
+				IF (@SQL_IDENTIFIER = 'LAVA')
+				BEGIN
+					SET @FileName = 'From LAVA'
+				END
+				ELSE IF (@SQL_IDENTIFIER = 'EquiLend')
+				BEGIN
+					SET @FileName = 'From EquiLend'
+				END
+			
+				IF (@SQL_IDENTIFIER = 'LAVA')
+				BEGIN
+					/* Get the BrkId if it is present in temp Broker, Acct, Loan,HistLogTbl and TempXmlTable*/
+					SET @BrkID = NULL
+					IF (@BrkCrGrpId IS NULL OR @BrkCrGrpId = 0)
+					BEGIN
+						SELECT TOP 1
+							@BrkID = b.BrkID 
+						FROM
+							#BrkTbl b 
+						INNER JOIN 
+							#AcctTbl a 
+						ON 
+							a.BrkId = b.BrkId
+						INNER JOIN 
+							@TempXMLTable temp 
+						ON 
+							temp.BrkNbr = b.BrkNbr AND 
+							temp.BrkNbr = @BrkNbr
+					END
+					ELSE
+					BEGIN
+						SET @BrkID = 0
+					END
+
+					/* If selected BrkId is not in temp HistLogTbl(more then one record could be present in the @TempXMLTable table for Return loan) 
+					then insert record into ETITranUploadHistLog table for selected Broker--one entry for each broker*/
+					--IF 
+					--(
+					--	((SELECT COUNT(*) FROM @HistLogTbl) = 0 )OR 
+					--	--@BrkCrGrpId IS NULL OR 
+					--	--@BrkCrGrpId = 0 OR 
+					--	((SELECT COUNT(*) FROM @HistLogTbl WHERE /*BrkCrGrpId = @BrkCrGrpId AND */ RecordTypeID = @RecordTypeID) = 0)
+					--)
+					/* If selected Recordtypeid is not in temp HistLogTbl then insert record into ETITranUploadHistLog table for selected RecordTypeid*/
+					IF ((SELECT COUNT(*) FROM @HistLogTbl WHERE RecordTypeID = @RecordTypeID) = 0 )
+					BEGIN				
+						INSERT INTO ETITranUploadHistLog
+						(
+							[TemplateID],
+							[BrkCrGrpID],
+							[BrkGrpID],
+							[BrkID],
+							[RecordTypeID],
+							[FileName],
+							[AsOfDate],
+							[IsSuccess],
+							[ModifiedBy],
+							[ModifiedDate]
+						)
+						SELECT 
+							DISTINCT 0,
+							@BrkCrGrpID,
+							@BrkGrpID,
+							@BrkID,--b.BrkId,
+							@RecordTypeID,
+							@FileName,
+							@BatchDate,
+							@Ret,
+							@ModifiedBy,
+							@ModifiedDate
+
+						SET @SourceID = @@IDENTITY
+						SET @ERROR_NO = @@ERROR	
+
+						/* Insert SourceId for selected brkoer in temp HistLogTbl for further processing*/
+						INSERT INTO @HistLogTbl 
+						(
+							SourceId,
+							BrkCrGrpId,
+							BrkId,
+							RecordTypeID,
+							EqlEquiLendReturnID,
+							BatchNbr,
+							TxnRefNbr
+						)
+						SELECT DISTINCT
+							@SourceID,
+							@BrkCrGrpId,
+							a.BrkId,
+							@RecordTypeID,
+							@EqlEquiLendReturnID,
+							@BatchNbr,
+							@TxnRefNbr
+						FROM 
+							#BrkTbl b
+						INNER JOIN 
+							#AcctTbl a 
+						ON 
+							a.BrkId = b.BrkId AND
+							a.FaceAmount <> 0 
+					END
+					ELSE
+					BEGIN
+						SELECT @SourceID = SourceId, @BatchNbr = BatchNbr FROM @HistLogTbl WHERE RecordTypeID = @RecordTypeID
+					END
+				END  -- END OF IF (@SQL_IDENTIFIER = 'LAVA')
+				ELSE IF (@SQL_IDENTIFIER = 'EquiLend')
+				BEGIN
+					SET @BrkCrGrpID = 0
+					SET @BrkGrpID = 0
+					SET @BrkId = 0
+
+					IF 
+					(
+						((SELECT COUNT(*) FROM @HistLogTbl) = 0 )OR 
+						((SELECT COUNT(*) FROM @HistLogTbl WHERE SourceID = @SourceID) = 0)
+					)
+					BEGIN
+						/* Insert SourceId for selected brkoer in temp HistLogTbl for further processing*/
+						INSERT INTO @HistLogTbl 
+						(
+							SourceId,
+							BrkCrGrpId,
+							BrkId,
+							RecordTypeID,
+							EqlEquiLendReturnID
+						)
+						SELECT DISTINCT
+							@SourceID,
+							@BrkCrGrpId,
+							a.BrkId,
+							@RecordTypeID,
+							@EqlEquiLendReturnID
+						FROM 
+							#BrkTbl b
+						INNER JOIN 
+							#AcctTbl a 
+						ON 
+							a.BrkId = b.BrkId AND
+							a.FaceAmount <> 0
+					END
+				END  --END OF IF (@SQL_IDENTIFIER = 'EquiLend')
+
+				/***** 2nd step : Insert into dbo.ETIRawData table ****/
+
+				SET @HistlogCount = 1
+				SELECT @TotalHistlogCount = COUNT(*) FROM @HistLogTbl
+
+				/* Loop thru all the record which are in @HistLogTbl*/
+				WHILE (@HistlogCount <= @TotalHistlogCount)
+				BEGIN
+					/* Insert data into ETIRawData table
+					 insert only those loan which are valid. It is possible that for some loan, there is no loan information available in temp acc and loan tablesl*/
+					SET @SourceId = NULL
+
+					IF (@SQL_IDENTIFIER = 'LAVA')
+					BEGIN
+						SELECT 
+							@SourceId = SourceId 
+						FROM 
+							@HistLogTbl 
+						WHERE 
+							RowId = @HistlogCount AND
+							RecordTypeID = @RecordTypeID
+						END
+					ELSE IF (@SQL_IDENTIFIER = 'EquiLend')
+					BEGIN
+						SELECT 
+							@SourceId = SourceId 
+						FROM 
+							@HistLogTbl 						
+						WHERE 
+							RowId = @HistlogCount AND
+							EqlEquiLendReturnID = @EqlEquiLendReturnID
+					END	
+
+					IF (@SourceId IS NOT NULL)
+					BEGIN 
+					
+						INSERT INTO dbo.ETIRawData 
+						(
+							[SourceID],
+							[SecID],
+							[BrkID],
+							[TxnRefNbr],
+							[RecordTypeID],
+							[SecLocID],
+							[SecLocCode],
+							[SecCode],
+							[FaceAmount],	
+							[Price],
+							[PriceOverride],
+							[Principal],
+							[CCYCode],
+							[CollCcyCode],
+							[SettlementDate],
+							[TermDate],
+							[BrkNbr],
+							[Depository],
+							[LoanType],
+							[DisclosureType],
+							[RebateRate],
+							[BatchDate],
+							[AsOfDate],
+							[IsValid],
+							[ErorBitMap],
+							[StatusID],
+							[TransmitFlg],
+							[EqlEquilendID],
+							[EqlEquilendReturnID],
+							[IsCollateral],
+							[ModifiedBy],
+							[ModifiedDate]							
+						)
+						SELECT
+							DISTINCT @SourceId,
+							@SecId,
+							l.BrkId,
+							l.TxnRefNbr,
+							@RecordTypeID,	
+							NULL,
+							TmpLoan.SecLocCode,
+							@SecCode,
+							acc.FaceAmount,
+							TmpLoan.TradePrice,
+							NULL,
+							CASE @IsFullReturn WHEN 1 THEN TmpLoan.Principal ELSE (CASE @SecType WHEN 'FI' THEN CONVERT(DECIMAL(20,10),((TmpLoan.TradePrice/100) * acc.FaceAmount)) ELSE (TmpLoan.TradePrice * acc.FaceAmount) END) END,--(l.TradePrice * acc.FaceAmount),
+							NULL,
+							TmpLoan.CollCCY,
+							@SettlementDate,
+							NULL,
+							l.BrkNbr,
+							@Depository,
+							TmpLoan.LoanType,
+							NULL,
+							NULL,
+							@BatchDate,
+							@AsOfDate,
+							1,
+							NULL,
+							@StatusId,
+							@TransmitFlg,
+							@EqlEquilendID,
+							@EqlEquilendReturnID,
+							@IsCollateral,
+							@ModifiedBy,
+							@ModifiedDate
+						FROM 
+							#LoanTbl l 
+						INNER JOIN
+							@TempG1LoanTbl TmpLoan
+						ON
+							l.TxnRefNbr = TmpLoan.TxnRefNbr AND
+							TmpLoan.IsStreetSide = (CASE TmpLoan.TxnType WHEN 'B' THEN 0 ELSE (CASE TmpLoan.AllocFlag WHEN 0 THEN 0 ELSE 1 END) END)
+						INNER JOIN 
+						(
+							SELECT 
+								SUM(a.FaceAmount) FaceAmount,
+								TxnRefNbr 
+							FROM 
+								#AcctTbl a 
+							WHERE 
+								a.TxnRefNbr = TxnRefNbr 
+							GROUP BY 
+								TxnRefNbr
+						) acc
+						ON
+							acc.TxnRefNbr = l.TxnRefNbr
+
+						SET @ERROR_NO = @@ERROR	
+
+						--MAY 2025
+						IF EXISTS (SELECT 1 FROM #AcctTbl WHERE FaceAmountFromAlloc IS NOT NULL )
+						BEGIN
+							INSERT INTO [dbo].[ETIOverrideAllocationRestriction]
+								   ([RawDataID]
+								   ,[SourceID]
+								   ,[RecordTypeID]
+								   ,[AcctId]
+								   ,[AcctNbr]
+								   ,[FaceAmountFromAllocationAlgorithm]
+								   ,[FaceAmountActuallyBooked]
+								   ,[AccountAllocationChanged]
+								   ,[AvailabilityRestrictionsOverriden]
+								   ,[BatchDate]
+								   ,[ModifiedBy]
+								   ,[ModifiedDate]
+								   ,[AllocationChangeReason])
+							/*
+							SELECT DISTINCT --OMNI LEVEL DATA
+								   ERD.ID
+								   ,ERD.SourceID
+								   ,ERD.RecordTypeID
+								   ,NULL
+								   ,NULL
+								   ,0
+								   ,0
+								   ,MAX(CASE WHEN A.FaceAmountFromAlloc <> A.FaceAmount THEN 1 ELSE 0 END) AS AccountAllocationChanged
+								   ,0 AS AvailRestOverriden
+								   ,ERD.BatchDate
+								   ,ERD.ModifiedBy
+								   ,ERD.ModifiedDate
+								   ,NULLIF(MAX(A.AllocationChangeReason),0)
+							FROM
+								#AcctTbl A
+							CROSS APPLY
+								ETIRawData ERD
+							WHERE
+								ERD.SourceID = @SourceID AND
+								ERD.RecordTypeID = @RecordType_PSL_OMNI
+							GROUP BY
+								ERD.ID
+								,ERD.SourceID
+								,ERD.RecordTypeID
+								,ERD.BatchDate
+								,ERD.ModifiedBy
+								,ERD.ModifiedDate
+							UNION
+							*/
+							SELECT DISTINCT --ACCOUNT LEVEL DATA
+								   ERD.ID
+								   ,ERD.SourceID
+								   ,@RecordType_PSL_Account
+								   ,A.AcctId
+								   ,A.AcctNbr
+								   ,A.FaceAmountFromAlloc
+								   ,A.FaceAmount
+								   ,CASE WHEN A.FaceAmountFromAlloc <> A.FaceAmount THEN 1 ELSE 0 END AS AccountAllocationChanged
+								   ,0 AS AvailRestOverriden
+								   ,ERD.BatchDate
+								   ,ERD.ModifiedBy
+								   ,ERD.ModifiedDate
+								   ,NULL
+							FROM
+								#AcctTbl A
+							CROSS APPLY
+								ETIRawData ERD
+							WHERE
+								ERD.SourceID = @SourceID AND
+								ERD.RecordTypeID = @RecordType_PSL_OMNI
+						END
+					END	 -- END OF IF (@SourceId IS NOT NULL)
+
+				--	SET @HistlogCount = @HistlogCount + 1
+				--END  -- END OF WHILE (@HistlogCount <= @TotalHistlogCount)
+
+					/***** 3rd step : Insert into dbo.ETIAllocation table ****/
+					INSERT INTO dbo.ETIAllocation 
+					(
+						[RawDataID],
+						[SourceID],
+						[SecID],
+						[BrkID],
+						[AcctId],
+						[AcctNbr],
+						[RecordTypeID],
+						[SecLocID],
+						[SecCode],
+						[FaceAmount],
+						[Price],
+						[Principal],
+						[CCYCode],
+						[CollCCYCode],
+						[SettlementDate],
+						[BrkNbr],
+						[SecLocCode],
+						[Depository],
+						[LoanType],
+						[RebateRate],
+						[TxnRefNbr],
+						[StatusID]
+					)
+					SELECT	DISTINCT 
+						rd.ID,
+						rd.SourceID,
+						rd.SecId,
+						rd.BrkID,
+						a.AcctId,
+						a.AcctNbr,
+						(@RecordTypeID + 1),
+						NULL,
+						rd.SecCode,
+						a.FaceAmount,
+						rd.Price,
+						CASE @IsFullReturn WHEN 1 THEN l.Principal ELSE (a.FaceAmount * (CASE @SecType WHEN 'FI' THEN (rd.Price/100) ELSE rd.Price END)) END,
+						--(a.FaceAmount * (CASE @SecType WHEN 'FI' THEN (rd.Price/100) ELSE rd.Price END)),
+						NULL,
+						l.CollCCY,
+						rd.SettlementDate,
+						rd.BrkNbr,
+						l.SecLocCode,
+						@Depository,
+						l.LoanType,
+						NULL,
+						a.TxnRefNbr,
+						@StatusId
+					FROM 
+						#AcctTbl a
+					INNER JOIN 
+						@TempG1LoanTbl l 
+					ON 
+						l.TxnRefNbr = a.TxnRefNbr AND
+						l.AcctNbr = a.AcctNbr AND
+						a.FaceAmount <> 0 
+					INNER JOIN 
+						dbo.ETIRawData rd 
+					ON	
+						rd.TxnRefNbr = a.TxnRefNbr
+						AND rd.SourceID = @SourceId
+						AND	rd.RecordTypeID = @RecordTypeID
+						AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(@EqlEquiLendReturnID, 0)
+					INNER JOIN 
+						@HistLogTbl hist 
+					ON 
+						hist.SourceID = rd.SourceID AND 
+						hist.RecordTypeID = @RecordTypeID 
+						AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(hist.EqlEquiLendReturnID, 0)
+					INNER JOIN 
+						[Reference].[dbo].[Security] s 
+					ON 
+						s.SecID = @SecID
+					WHERE 
+						l.IsStreetSide = CONVERT(BIT, 0)
+
+					
+					/***** 4th step : Insert into dbo.ETIDetailRecord table ****/
+
+					DELETE FROM @ETIDetailRecord
+
+					/* Isner one OMNI and other Accounts record into temp ETIDetailRecord table*/
+					INSERT INTO @ETIDetailRecord 
+					(
+						[RawDataID],
+						[ExternalRefNbr],
+						[LoanType],
+						[AcctNbr],
+						[Depository],
+						[SecCode],
+						[SettlementDate],
+						[TermDate],
+						[BrkNbr],
+						[FaceAmount],
+						[RawPrice],
+						[TradePrice],
+						[CCYCode],
+						[Principal],
+						[CollCCYCode],
+						[RebateRate],
+						[SecLocCode],
+						[SecID],
+						[BrkID],
+						[TxnRefNbr],
+						[RecordTypeID],
+						[BatchDate],
+						[AsOfDate],
+						[TransmitFlg],
+						[EqlEquilendId],
+						[EqlEquiLendReturnID],
+						[DisclosureType],
+						[TOE],
+						[BgnRef],
+						GCIRecordType,
+						GCIStatus,
+						GCITransactionType,
+						GCIPostingType,
+						GCILenderModuleTrade,
+						GCIAutoAuthorised,
+						GCISettleInd						
+					)	
+					SELECT		
+						a.RawDataID,
+						a.ExternalRefNbr,
+						a.LoanType,
+						a.AcctNbr,
+						a.Depository,
+						a.SecCode,
+						a.SettlementDate,
+						NULL,	
+						a.BrkNbr,
+						a.FaceAmount,
+						a.Price,
+						a.TradePrice,
+						a.CCYCode,
+						a.Principal,--(a.FaceAmount * a.TradePrice),
+						a.CollCCYCode,
+						a.RebateRate,
+						a.SecLocCode,
+						a.SecID,
+						a.BrkID,
+						a.TxnRefNbr,
+						a.RecordTypeID,
+						a.BatchDate,
+						a.AsOfDate,
+						a.TransmitFlg,
+						a.EqlEquilendID,
+						a.EqlEquiLendReturnID,
+						a.DisclosureType,
+						a.TOE,					
+						CASE @IsPSLRSLReq WHEN 0 THEN @BGNREF  ELSE (CASE @IsPSLRSLReq WHEN 1 THEN @BGNREF ELSE @NewBGNREF END) END,--@BgnRef,
+						a.GCIRecordType,
+						a.GCIStatus,
+						a.GCITransactionType,
+						a.GCIPostingType,
+						a.GCILenderModuleTrade,
+						a.GCIAutoAuthorised,
+						a.GCISettleInd						
+					FROM
+						(	
+							SELECT 
+								DISTINCT RawDataID	= rd.[ID],
+								ExternalRefNbr =  dbo.f_GetExternalRefNbr(rd.ID),
+								RecordTypeID	= rd.RecordTypeID,
+								BrkId			= rd.BrkID,
+								SecID			= SecID,
+								AcctNbr			= NULL,
+								LoanType		= rd.LoanType,
+								Depository		= Depository,
+								SecCode			= SecCode,
+								SettlementDate	= SettlementDate,
+								TermDate		= TermDate,
+								BrkNbr			= BrkNbr,
+								FaceAmount		= rd.FaceAmount,
+								Price			= Price,
+								PriceOverride	= rd.PriceOverride,
+								TradePrice		= Price,
+								CCYCode			= CCYCode,
+								Principal		= Principal,
+								CollCCYCode		= CollCCYCode,
+								RebateRate		= RebateRate,
+								SecLocCode		= rd.SecLocCode,
+								TxnRefNbr		= rd.TxnRefNbr,
+								BatchDate		= BatchDate,
+								AsOfDate		= AsOfDate,
+								TransmitFlg		= TransmitFlg,
+								EqlEquilendID	= rd.EqlEquilendID,
+								EqlEquiLendReturnID = rd.EqlEquiLendReturnID,
+								DisclosureType	= DisclosureType,
+								TOE				= CASE hist.RecordTypeId WHEN 11 THEN 'PSL' ELSE 'RSL' END,
+								GCIRecordType		=	GCIParam.GCIRecordType,
+								GCIStatus			=	GCIParam.GCIStatus,
+								GCITransactionType	=	GCIParam.GCITransactionType,
+								GCIPostingType		=	GCIParam.GCIPostingType,
+								GCILenderModuleTrade =	(CASE WHEN (acc.AllocFlag=0 and acc.TxnType='B') THEN @GCILenderModuleTrade ELSE GCIParam.GCILenderModuleTrade END),
+								GCIAutoAuthorised	=	GCIParam.GCIAutoAuthorised	,
+								GCISettleInd		=	GCIParam.GCISettleInd
+							FROM 
+								dbo.ETIRawData rd
+							INNER JOIN  
+								#AcctTbl acc 
+							ON 
+								acc.TxnRefNbr = rd.TxnRefNbr AND 
+								acc.FaceAmount <> 0 AND
+								rd.RecordTypeId = @RecordTypeId
+								AND rd.SourceID = @SourceId 
+								AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(@EqlEquiLendReturnID, 0) 
+							INNER JOIN
+								dbo.f_GetGCIParameter(@RecordTypeID,NULL,@IsFullReturn) GCIParam
+							ON
+								GCIParam.RecordTypeID = rd.RecordTypeID
+							INNER JOIN 
+								@HistLogTbl hist 
+							ON 
+								hist.SourceID = rd.SourceID 							
+								AND hist.RecordTypeID = @RecordTypeID 
+								AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(hist.EqlEquiLendReturnID, 0) 
+							UNION
+							SELECT 
+								DISTINCT RawDataID	= Alloc.[RawDataID],
+								ExternalRefNbr =  dbo.f_GetExternalRefNbr(rd.ID),
+								RecordTypeID	= Alloc.RecordTypeID,
+								BrkId			= Alloc.BrkID,
+								SecID			= Alloc.SecID,
+								AcctNbr			= acc.AcctNbr,
+								LoanType		= Alloc.LoanType,
+								Depository		= Alloc.Depository,
+								SecCode			= Alloc.SecCode,
+								SettlementDate	= NULL,
+								TermDate		= rd.TermDate,
+								BrkNbr			= Alloc.BrkNbr,
+								FaceAmount		= Alloc.FaceAmount,
+								Price			= Alloc.Price,
+								PriceOverride	= rd.PriceOverride,
+								TradePrice		= Alloc.Price,
+								CCYCode			= Alloc.CCYCode,
+								Principal		= Alloc.Principal,
+								CollCCYCode		= Alloc.CollCCYCode,
+								RebateRate		= Alloc.RebateRate,
+								SecLocCode		= Alloc.SecLocCode,
+								TxnRefNbr		= Alloc.TxnRefNbr,
+								BatchDate		= rd.BatchDate,
+								AsOfDate		= rd.AsOfDate,
+								TransmitFlg		= rd.TransmitFlg,
+								EqlEquilendID	= rd.EqlEquilendID,
+								EqlEquiLendReturnID = rd.EqlEquiLendReturnID,
+								DisclosureType	= DisclosureType,
+								TOE				= CASE hist.RecordTypeId WHEN 11 THEN 'PSL' ELSE 'RSL' END,
+								GCIRecordType		=	GCIParam.GCIRecordType,
+								GCIStatus			=	GCIParam.GCIStatus,
+								GCITransactionType	=	GCIParam.GCITransactionType,
+								GCIPostingType		=	GCIParam.GCIPostingType,
+								GCILenderModuleTrade =	GCIParam.GCILenderModuleTrade,
+								GCIAutoAuthorised	=	GCIParam.GCIAutoAuthorised	,
+								GCISettleInd		=	GCIParam.GCISettleInd
+							FROM 
+								dbo.ETIRawData rd
+							INNER JOIN   
+								#AcctTbl acc 
+							ON 
+								acc.TxnRefNbr = rd.TxnRefNbr AND
+								acc.FaceAmount <> 0 
+								AND rd.RecordTypeId = @RecordTypeId 
+								AND rd.SourceID = @SourceId 
+								AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(@EqlEquiLendReturnID, 0) 					
+							INNER JOIN	
+								#LoanTbl loan 
+							ON 
+								loan.TxnRefNbr = rd.TxnRefNbr AND 
+								acc.TxnRefNbr = loan.TxnRefNbr AND 
+								loan.AcctNbr = acc.AcctNbr	
+							INNER JOIN 
+								dbo.ETIAllocation Alloc 
+							ON 
+								Alloc.[RawDataID] = rd.[ID] AND
+								Alloc.AcctNbr = loan.AcctNbr
+							INNER JOIN
+								dbo.f_GetGCIParameter(@RecordTypeID + 1,NULL,NULL) GCIParam
+							ON
+								GCIParam.RecordTypeID = Alloc.RecordTypeID
+							INNER JOIN 
+								@HistLogTbl hist 
+							ON 
+								hist.SourceID = rd.SourceID
+								AND hist.RecordTypeID = @RecordTypeID 
+								AND ISNULL(rd.EqlEquiLendReturnID, 0) = ISNULL(hist.EqlEquiLendReturnID, 0) 
+						) a			
+		
+					IF (@BucketSecType = 'FI')
+					BEGIN
+						---Update the FinderNbr field in @ETIDetailRecord from GlobalOne.Loan table as this field is needed in the next statement-----------
+						UPDATE 
+							@ETIDetailRecord
+						SET
+							FinderNbr = gloan.FinderNbr
+						FROM	
+							@ETIDetailRecord detail
+						INNER JOIN
+							GLOBALONE.dbo.Loan gloan
+						ON
+							detail.TxnRefNbr = gloan.TxnRefNbr
+						
+						UPDATE 
+							@ETIDetailRecord
+						SET 		
+							FundCode =  (CASE WHEN ISNULL(detail.FinderNbr,'') = @FinderOWNRepo THEN Acct.SecondAcctCode ELSE Acct.AcctCode END)
+						FROM
+							@ETIDetailRecord detail	
+						INNER JOIN
+							MOBETTER.dbo.Account Acct
+						ON
+							detail.AcctNbr = Acct.AcctNbr AND
+							detail.AcctNbr in (select [VALUE] from LAVA.dbo.fn_SplitStringWithDelimiter(',',@ALDAccountNumber)) AND
+							@BatchDate BETWEEN Acct.EffectiveDateBegin AND Acct.EffectiveDateEnd AND 
+							ISNULL(Acct.IsDeleted,0) = 0
+					END
+
+					UPDATE 
+							@ETIDetailRecord
+						SET
+							IsPrePay = gloan.IsPrePay,
+							TPUID	 = gloan.TPUID
+						FROM	
+							@ETIDetailRecord detail
+						INNER JOIN
+							GLOBALONE.dbo.Loan gloan
+						ON
+							detail.TxnRefNbr = gloan.TxnRefNbr
+
+
+					SELECT 
+						@ExistingLADACAPManualInput = ACAPEligibleManualInput
+					FROM 
+						LoanAddtlDetails TLAD
+					INNER JOIN 
+						@ETIDetailRecord xmlpa
+					ON 
+						TLAD.TxnRefNbr = xmlpa.TxnRefNbr
+					WHERE 
+					    (@BatchDate BETWEEN TLAD.EffectiveDateBegin AND TLAD.EffectiveDateEnd)
+						AND ( ISNULL(TLAD.EffectiveDateEnd, '12/31/9999') = '12/31/9999' )	
+						AND ( TLAD.IsDeleted = 0 )  
+					
+
+					INSERT INTO dbo.ETIDetailRecord 
+					(
+						[RawDataID],
+						[EqlEquilendID],
+						[EqlEquiLendReturnID],
+						[RecordIndicator],
+						[ExternalRefNbr],
+						[TOE],
+						[LoanType],
+						[AcctNbr],
+						[Depository],
+						[SecCode],
+						[SettlementDate],
+						[BrkNbr],
+						[FaceAmount],
+						[RawPrice],
+						[TradePrice],
+						[CCYCode],
+						[Principal],
+						[CollCCYCode],
+						[RebateRate],
+						[RebatePaid],
+						[AcctNbrRealloc],
+						[ExternalRefNbrRealloc],
+						[SettlementCCYCode],
+						[BatchDate],
+						[AsOfDate],
+						[CollateralDate],
+						[GoodFundsDate],
+						[TermDate],
+						[FinderNbr],
+						[PoolNbr],
+						[Comments],
+						[CleanUpFlg],
+						[BrkStandingInstruct1],
+						[BrkStandingInstruct2],
+						[BrkStandingInstruct3],
+						[BrkStandingInstruct4],
+						[SecLocCode],
+						[TransmitFlg],
+						[CollateralNbr],
+						[XRefWlIndicator],
+						[DisclosureType],
+						[UserID],
+						[Filter],
+						[SecID],
+						[BrkID],
+						[TxnRefNbr],
+						[TxnRefNbrNew],
+						[RecordTypeID],
+						[SubRecordID],
+						[IsIncludedInFile],
+						[isPending],
+						[StatusID],
+            			[IsCollateral],
+						[ModifiedBy],
+						[ModifiedDate],
+						[BgnRef],
+						[BatchNbr],
+						[CreatedDate],
+						[TradeCategory],
+						[AgencyReference],
+						GCIRecordType,
+						GCIStatus,
+						GCITransactionType,
+						GCIPostingType,
+						GCILenderModuleTrade,
+						GCIAutoAuthorised,
+						GCISettleInd,
+						GPTransmit,
+						CashWashCurr,
+						AcctCode,
+						EmailSupressedFlag,
+						OverrideSwitchRule,
+						RRLinkRefNbr,
+						IsPrePay,
+						TPUID,
+						PirumPirumReturnRef,
+						ACAPEligibleManualInput						
+					)		
+					SELECT		
+						RawDataID,
+						EqlEquilendID,
+						EqlEquiLendReturnID,
+						'DTL',
+						ExternalRefNbr,
+						TOE,
+						LoanType,
+						AcctNbr,
+						Depository,
+						SecCode,
+						SettlementDate,
+						BrkNbr,
+						FaceAmount,
+						RawPrice,
+						TradePrice,
+						CCYCode,
+						Principal,
+						CollCCYCode,
+						RebateRate,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						BatchDate,
+						AsOfDate,
+						SettlementDate,
+						SettlementDate,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						NULL,
+						SecLocCode,
+						TransmitFlg,
+						NULL,
+						'W',
+						NULL,
+						@G1UserCode,
+						NULL,
+						SecID,
+						BrkID,
+						TxnRefNbr,
+						0,
+						RecordTypeID,
+						0,
+						0,
+						1,
+						@StatusId,
+            			@IsCollateral,
+						@ModifiedBy,
+						@ModifiedDate,
+						BgnRef,
+						@BatchNbr,
+						GETDATE(),
+						dbo.f_GetTradeCategory(TransmitFlg,Depository,SettlementDate, @IsPendingReturn),--TradeCategory
+						dbo.f_GetAgencyReference(TransmitFlg,Depository),--AgencyReference,
+						GCIRecordType,
+						GCIStatus,
+						GCITransactionType,
+						GCIPostingType,
+						GCILenderModuleTrade,
+						GCIAutoAuthorised,
+						GCISettleInd,
+						@GPTransmit,
+						dbo.f_GetCashWashCurr(LoanType,SecLocCode,CollCCYCode),
+						FundCode,
+						CASE WHEN @IsEmailSuppressedFlag <> 0 THEN @Activity_IsEmailSuppressFlag ELSE @IsEmailSuppressedFlag END,
+						CASE WHEN @OverrideSwitchRules = @SwitchRule_Yes THEN @SwitchRule_Yes ELSE NULL END,
+						@RRLinkRefNbr,
+						IsPrePay,
+						TPUID,
+						@PirumPirumReturnRef,
+						ACAPEligibleManualInput = CASE
+													 WHEN @IsFirstTimeReturn = 1 THEN
+														 LAVA.dbo.f_GetACAPEligibleManualInput(
+                                                        ISNULL(@ExistingLADACAPManualInput,0),
+                                                        ISNULL(@NewLADACAPManualInput,0),
+                                                        @TOE
+                                                    )
+													 ELSE
+														 @ExistingLADACAPManualInput
+												  END
+					FROM 
+						@ETIDetailRecord
+
+				SET @HistlogCount = @HistlogCount + 1
+	
+				END  -- END OF WHILE (@HistlogCount <= @TotalHistlogCount)	
+
+			END  --- END OF IF ((@SQL_IDENTIFIER = 'LAVA') OR (@SQL_IDENTIFIER = 'EquiLend' AND ISNULL(@SendToWL,'Yes') = 'Yes'))
+
+			--Move this Condition top, for the 'PSL&RSL' functionality
+			IF (@SQL_IDENTIFIER = 'LAVA' AND @RecallID IS NOT NULL AND @RecallID != 0 AND @TOE = 'PSL')
+			BEGIN -- need to modify below update for full return
+
+				INSERT INTO dbo.RecallIDReturnDetail
+				(
+					RecallID,
+					SecID,
+					TxnRefNbr,
+					AcctNbr,
+					SharesToRecall,
+					RecallIDStatus,
+					SettleDate,
+					ActualReturnDate,
+					ActualReturnQuantity,
+					ModifiedBy,
+					ModifiedDate
+				)		
+				SELECT
+					@RecallID,
+					@SecId,
+					@TxnRefNbr,
+					AcctNbr,
+					0,
+					4,
+					@SettlementDate,
+					@BatchDate,
+					FaceAmount,
+					@ModifiedBy,
+					@ModifiedDate
+				FROM 
+					#AcctTbl 
+				WHERE
+					FaceAmount <> 0 
+
+				IF (@IsFullReturn = 1)
+				BEGIN
+					UPDATE
+						RecallIdDetail
+					SET
+						RecallIDStatus = 4,
+						SettleDate = @SettlementDate,
+						ModifiedBy = @ModifiedBy,
+						ModifiedDate = @ModifiedDate
+					WHERE
+						SecId = @SecId AND
+						TxnRefNbr = @TxnRefNbr AND
+						RecallIDStatus = 3
+				END
+				BEGIN
+				UPDATE
+					RecallIdDetail
+				SET
+					RecallIDStatus = 4,
+					SettleDate = @SettlementDate,
+					ModifiedBy = @ModifiedBy,
+					ModifiedDate = @ModifiedDate
+				WHERE
+					RecallID = @RecallID AND
+					SecId = @SecId AND
+					TxnRefNbr = @TxnRefNbr AND
+					RecallIDStatus = 3
+			END
+			END	 --END OF IF (@SQL_IDENTIFIER = 'LAVA' AND @RecallID IS NOT NULL AND @RecallID != 0 AND @TOE = 'PSL')
+
+			-- Reset variables for RSL booking
+			SET  @IsPSLRSLReq = 2
+
+			SET @ReturnCount = @ReturnCount + 1
+
+		END -- end of WHILE (@ReturnCount <= @TotalReturnCount)
+
+		
+		IF (@SQL_IDENTIFIER = 'EquiLend')
+		BEGIN				
+		-- insert data in dbo.EquiLendReturnProcessStatus table
+
+			INSERT INTO dbo.EquiLendReturnProcessStatus
+			(
+				EqlReturnType,
+				EqlCtpyOrgId,
+				EqlCtpyLegalEntityID,
+				EqlBorrSettlementInstrID,
+				EqlCtpySubAcctID,
+				EqlEquiLendID,
+				EqlEquiLendRecallID,
+				EqlEquiLendReturnID,
+				EqlEquiLendReturnSeqNbr,
+				EqlInternalRefID,
+				EqlSTBUSAOrgID,
+				EqlSTBUSALegalEntityID,
+				EqlSTBUSASubAcctID,
+				EqlSettlementDate,
+				EqlReturnUnitQty,
+				SecID,
+				SecCode,
+				BucketSecType,
+				CCYCode,
+				ISOCountry,
+				StatusID,
+				BatchDate,
+				RecordCreatedBy,
+				RecordReceivedDate,
+				ModifiedBy,
+				ModifiedDate,
+				EqlLendSettlementInstrID,
+				EqlUpdateReasonCode,
+				EqlPrivateComments,
+				EqlNarrative,
+				TOE,
+				TransmitFlg,
+				IsDTC,
+				SendToWL,
+				TxnRefNbr,
+				RawDataID,
+				RecordTypeID	
+			)
+			SELECT
+				EqlReturnType,
+				EqlCtpyOrgId,
+				EqlCtpyLegalEntityID,
+				EqlBorrSettlementInstrID,
+				EqlCtpySubAcctID,
+				EqlEquiLendID,
+				EqlEquiLendRecallID,
+				EqlEquiLendReturnID,
+				EqlEquiLendReturnSeqNbr,
+				EqlInternalRefID,
+				EqlSTBUSAOrgId, 
+				EqlSTBUSALegalEntityID, 
+				EqlSTBUSASubAcctID,
+				SettlementDate,
+				ReturnQty,
+				@SecID,
+				SecCode,
+				SecType,
+				@CCYCode,
+				@ISOCountry,
+				@EqlRetProccessStatusId,
+				BatchDate,
+				RecordCreatedBy,
+				RecordReceivedDate,
+				ISNULL(ModifiedBy, SUSER_SNAME()), 
+				GETDATE(),
+				NULL,--EqlLendSettlementInstrID
+				NULL,--CASE EqlUpdateReasonCode WHEN 0 THEN NULL ELSE EqlUpdateReasonCode END EqlUpdateReasonCode,
+				NULL,--EqlPrivateComments
+				EqlNarrative,
+				CASE SendToWL WHEN 'Yes' THEN TOE ELSE NULL END, -- insert TOE in this table only when Send To wL is true
+				TransmitFlg,
+				CASE IsDTC WHEN 'Yes' THEN 1 ELSE 0 END,
+				CASE SendToWL WHEN 'Yes' THEN 1 ELSE 0 END,
+				TxnRefNbr,
+				NULL,--RawDataID,
+				52
+			FROM 
+				@TempXMLTable 			
+			WHERE
+				EqlEquiLendReturnID = @EqlEquiLendReturnID
+
+			UPDATE 
+				dbo.EquiLendReturnRequest
+			SET 
+				StatusID = 205,
+				ModifiedBy = ISNULL(@ModifiedBy, SUSER_SNAME()),
+				ModifiedDate = GETDATE()				
+			WHERE 
+				EqlEquiLendReturnID = @EqlEquiLendReturnID			
+
+		END
+	
+		SET @ERROR_NO = @@ERROR	
+
+		IF (@SQL_IDENTIFIER = 'LAVA')
+		BEGIN
+			UPDATE 
+				@TempXMLTable
+			SET 
+				IsProcessed = 1
+			WHERE 
+				TxnRefNbr = @TxnRefNbr
+		END
+		ELSE IF (@SQL_IDENTIFIER = 'EquiLend')
+		BEGIN
+			UPDATE 
+				@TempXMLTable
+			SET 
+				IsProcessed = 1
+			WHERE 
+				EqlEquiLendReturnID = @EqlEquiLendReturnID
+		END
+
+		SELECT 
+			@Count = MIN(RowID) 
+		FROM 
+			@TempXMLTable 
+		WHERE 
+			IsProcessed = 0 
+	END
+
+--=====================================================================================================================
+-- New/Return loan Irish security + LSS trades [ Coll Remedy Code (ADF3) = 'Y' for SMODE ( IE3 or FEDLSS)]
+--=====================================================================================================================
+	UPDATE ETI
+	SET 
+		CollRemedyCode = @CollRemedyCode
+	FROM
+		dbo.ETIDetailRecord ETI
+	INNER JOIN
+		GlobalOne.dbo.Loan L
+	ON
+		ETI.TxnRefNbr = L.TxnRefNbr AND
+		ETI.SecID     = L.SecID
+	WHERE
+		L.SMODE IN (SELECT Parameter FROM dbo.f_ParseParameters(@SMODEList))
+
+
+	SELECT DISTINCT
+		SourceId,RecordTypeID
+	FROM 
+		@HistLogTbl
+
+	DROP TABLE #AcctTbl 
+	DROP TABLE #BrkTbl 
+	DROP TABLE #LoanTbl 
+
+	SET ARITHABORT OFF
+
+END
