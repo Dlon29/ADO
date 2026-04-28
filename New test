@@ -1,3 +1,37 @@
+USE [LAVA]
+GO
+/****** Object:  StoredProcedure [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]    Script Date: 04/10/2026 11:28:24 ******/
+IF  EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]') AND type in (N'P', N'PC'))
+DROP PROCEDURE [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]
+GO
+/****** Object:  StoredProcedure [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]    ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+/**  
+**  PROCEDURE		:  dbo.p_SaveData_ETI_CloseRebookLoansandCollaterals
+**                
+**  Author			:  	Dillon Colaco
+**  Date			:   04/10/2026
+**	Input Parameter :
+		@pRawDataID			-	XML which contains the return Loan data (single or multiple)		
+	
+	Ouput Parameter	:
+
+**  Description		:	This SP will be called to save closed and rebooked loans & collaterals data
+
+**  Usage		:				
+		exec p_SaveData_ETI_CloseRebookLoansandCollaterals
+			@SQL_IDENTIFIER=N'LAVA',
+			@SQL_CONDITION1=N'<?xml version="1.0" encoding="utf-8"?><CloseLoan><FieldName RowId="1" TxnRefNbr="1024799" AsOfDate="2/27/2026" SettlementDate="2/27/2026" SecCode=" 91282CKT7 " SecType="" BrokerId="486" BrkNbr="WF1JP2" BrkCrGroupId="" BrkGroupId="" RecordTypeID="" BatchDate="2/27/2026" TransmitFlg="N" ModifiedBy="dcolaco" TOE="" IsCollateral="1" BGNREF="C1024799" Comments="" GPTransmit="Y" IsSuppressed="" SendToPirum="" LoanSettlementDate="02/18/2026" IsPrePay="" TPUID=""></FieldName></CloseLoan>'
+
+**
+**  History Log
+**		04/10/2026		Dillon Colaco		Initial creation
+**/
+
+
 CREATE PROCEDURE [dbo].[p_SaveData_ETI_CloseRebookLoansandCollaterals]  
 (
 	@SQL_IDENTIFIER		VARCHAR(10),
@@ -18,7 +52,7 @@ BEGIN
 			@ModifiedBy	VARCHAR(50),@LoanType VARCHAR(1),@Depository VARCHAR(10), @EqlEquilendID BIGINT,@IsCollateral INT, 
 			@BGNREF VARCHAR(12), @FinderLdnLoc VARCHAR(3),@FinderNYLoc VARCHAR(3),@BatchNbr INT,@GPTransmit VARCHAR(1), @RawDataID INT,
 			@SendToPirumPSL BIT, @SendToPirumRSL BIT, @LoanSettlementDate DATETIME, @IsPrePay BIT, @TPUID VARCHAR(20), @G1UserCode VARCHAR(8),
-			@PSLReturnLoanXML VARCHAR(MAX), @RSLReturnLoanXML VARCHAR(MAX), @NewCollateralXML VARCHAR(MAX), @RecordTypeIdPSL INT = 11, @RecordTypeIdRSL INT = 3,--, @RETURN_XML_EQUI VARCHAR(MAX)
+			@PSLReturnLoanXML VARCHAR(MAX), @RSLReturnLoanXML VARCHAR(MAX), @NewCollateralXML VARCHAR(MAX), @RecordTypeIdPSL INT = 11, @RecordTypeIdRSL INT = 3,
 			@RecordTypeIdGPL INT = 23, @BucketSecType VARCHAR(5)
 
 	DECLARE @TempXMLTable TABLE 
@@ -48,8 +82,6 @@ BEGIN
 		LoanSettlementDate		DATETIME,
 		IsPrePay				BIT,
 		TPUID					VARCHAR(20)
-		--,	
-		--IsEqlLoan				BIT
 	)	
 
 	DECLARE @ETIDetailRecord TABLE 
@@ -261,8 +293,8 @@ BEGIN
 		TermDate		DATETIME,
 		BrkNbr			VARCHAR(6),
 		FaceAmount		NUMERIC(13, 0),
-		RawPrice		DECIMAL(14, 7),   --  // Neelima-- change in code to make Price as 7 Decimal From Deciaml(13,6)
-		TradePrice		DECIMAL(14, 7),   --  // Neelima-- change in code to make Price as 7 Decimal From Deciaml(13,6)
+		RawPrice		DECIMAL(14, 7),   
+		TradePrice		DECIMAL(14, 7),   
 		CCYCode			VARCHAR(3),
 		Principal		DECIMAL(17, 2),
 		CollCCYCode		VARCHAR(3),
@@ -292,7 +324,7 @@ BEGIN
 		STTDivRate	VARCHAR(30),
 		BulkNbr		INT,
 		ScripEndDate   DATETIME,
-		ProductCategoryLoanType		VARCHAR(20),	--LoanType
+		ProductCategoryLoanType		VARCHAR(20),	
 		ProductCategoryLoanDuration	VARCHAR(20),
 		LoanCategory varchar(2) NULL,
 		BasketNbr INT NULL,
@@ -355,8 +387,6 @@ BEGIN
 		LoanSettlementDate,
 		IsPrePay,
 		TPUID
-		--,
-		--IsEqlLoan
 	)
 	SELECT 
 		EqlEquilendID,
@@ -383,8 +413,6 @@ BEGIN
 		LoanSettlementDate,
 		IsPrePay,
 		TPUID
-		--,
-		--IsEqlLoan
 	FROM 
 		OPENXML(@hdoc, '/CloseLoan/FieldName', 1)
 		WITH
@@ -412,8 +440,6 @@ BEGIN
 			LoanSettlementDate		DATETIME,
 			IsPrePay				BIT,
 			TPUID					VARCHAR(20)
-			--,
-			--IsEqlLoan				BIT
 		)
 		ORDER BY IsCollateral ASC		
 
@@ -567,7 +593,7 @@ BEGIN
 		,Loan.LoanStatus
 		,Loan.AllocFlag
 		,Loan.SecLocCode
-		,Loan.Remarks -- need to check
+		,Loan.Remarks 
 		,Loan.SecDesc
 		,Loan.LoanDate
 		,Loan.CollNbr
@@ -661,12 +687,12 @@ BEGIN
 		@TempXMLTable Temp
 	ON
 		Temp.BGNREF = Loan.BGNREF
-	
+
 	--PSL	
 	SELECT @PSLReturnLoanXML = 
 	(
 		SELECT 
-			t.RowID						AS [@RowId]						,
+			t.RowID						AS [@RowID]						,
 			t.TxnRefNbr					AS [@TxnRefNbr]					,
 			t.AsOfDate					AS [@AsOfDate]					,
 			t.SettlementDate			AS [@SettlementDate]			,	
@@ -676,15 +702,15 @@ BEGIN
 			t.BrkGrpID					AS [@BrkGroupId]				,
 			t.BrkID						AS [@BrokerId]					,
 			t.BrkNbr					AS [@BrkNbr]					,	
-			l.AcctNbr					AS [@AcctNbr]					,	--TODO
+			l.AcctNbr					AS [@AcctNbr]					,		--TODO
 			l.FaceAmount				AS [@ReturnQty]					,		--TODO
 			0							AS [@ReturnQtyFromAlloc]		,		--TODO
 			l.TradePrice				AS [@TradePrice]				,	
 			@RecordTypeIdPSL			AS [@RecordTypeID]				,
-			t.BatchDate					AS[@BatchDate]					,
-			t.TransmitFlg				AS[@TransmitFlg]				,	
+			t.BatchDate					AS [@BatchDate]					,
+			t.TransmitFlg				AS [@TransmitFlg]				,	
 			''							AS [@EqlCtpyOrgId]				,      --TODO
-			''							AS [@EqlCtpyLegalEntityID]		,	   --TODO
+			''							AS [@LegalEntityId]				,	   --TODO
 			''							AS [@EqlSTBUSAOrgId]			,	   --TODO
 			''							AS [@EqlSTBUSALegalEntityID]	,	   --TODO
 			''							AS [@EqlEquiLendReturnSeqNbr]	,	   --TODO
@@ -701,29 +727,28 @@ BEGIN
 			''							AS [@EqlUpdateReasonCode]		,	   --TODO
 			''							AS [@EqlNarrative]				,	   --TODO
 			t.ModifiedBy				AS [@ModifiedBy]				,	
-			'PSL'						AS [@TOE]						,	
-			t.SourceId					AS [@SourceId]					,
+			'PSL'						AS [@TOE]						,				
 			'' 							AS [@IsDTC]						,
 			'' 							AS [@SendToWL]					,
+			t.SourceId					AS [@SourceId]					,
 			0 							AS [@RecallID]					,
 			0 							AS [@IsFullReturn]				,
 			t.IsProcessed				AS [@IsProcessed]				,	
 			t.IsCollateral    			AS [@IsCollateral]				,
 			t.BgnRef					AS [@BgnRef]					,	
-			l.ClearAgentNbr				AS [@Depository]				,	--TODO
+			l.ClearAgentNbr				AS [@Depository]				,	  --TODO
 			'Y'							AS [@GPTransmit]				,	
 			'0'							AS [@IsPSLRSLReq]				,	
-			''							AS  [@IsSuppressed]				,
-			''							AS  [@OverrideSwitchRules]		,	
-			''							AS  [@RRLinkRefNbr]				,     --TODO
-			''							AS  [@IsSelectedByUser]			,	  --TODO
-			''							AS  [@PirumPirumReturnRef]		,	  --TODO
-			''							AS  [@AllocationChangeReason]	,	  --TODO
-			''							AS  [@ACAPEligibleManualInput]		  --TODO
+			''							AS [@IsSuppressed]				,
+			''							AS [@OverrideSwitchRules]		,	
+			''							AS [@RRLinkRefNbr]				,     --TODO
+			''							AS [@IsSelectedByUser]			,	  --TODO
+			''							AS [@PirumPirumReturnRef]		,	  --TODO
+			''							AS [@AllocationChangeReason]	,	  --TODO
+			''							AS [@ACAPEligibleManualInput]		  --TODO
 		FROM @TempXMLTable t
-		INNER JOIN @TempLoansandCollaterals l --TODO
-		ON t.BGNREF = l.BGNREF
-		--WHERE ISNULL(t.IsEqlLoan, 0) = 0
+		INNER JOIN @TempLoansandCollaterals l 
+			ON t.BGNREF = l.BGNREF
 		FOR XML PATH('FieldName'), ROOT('ReturnLoan')
 	);	
 
@@ -731,7 +756,7 @@ BEGIN
 	SELECT @RSLReturnLoanXML = 
 	(
 		SELECT 
-			t.RowID						AS [@RowId]						,
+			t.RowID						AS [@RowID]						,
 			t.TxnRefNbr					AS [@TxnRefNbr]					,
 			t.AsOfDate					AS [@AsOfDate]					,
 			t.SettlementDate			AS [@SettlementDate]			,	
@@ -741,7 +766,7 @@ BEGIN
 			t.BrkGrpID					AS [@BrkGroupId]				,
 			t.BrkID						AS [@BrokerId]					,
 			t.BrkNbr					AS [@BrkNbr]					,	
-			l.AcctNbr					AS [@AcctNbr]					,	--TODO
+			l.AcctNbr					AS [@AcctNbr]					,		--TODO
 			l.FaceAmount				AS [@ReturnQty]					,		--TODO
 			0							AS [@ReturnQtyFromAlloc]		,		--TODO
 			l.TradePrice				AS [@TradePrice]				,	
@@ -749,7 +774,7 @@ BEGIN
 			t.BatchDate					AS[@BatchDate]					,
 			t.TransmitFlg				AS[@TransmitFlg]				,	
 			''							AS [@EqlCtpyOrgId]				,      --TODO
-			''							AS [@EqlCtpyLegalEntityID]		,	   --TODO
+			''							AS [@LegalEntityId]				,	   --TODO
 			''							AS [@EqlSTBUSAOrgId]			,	   --TODO
 			''							AS [@EqlSTBUSALegalEntityID]	,	   --TODO
 			''							AS [@EqlEquiLendReturnSeqNbr]	,	   --TODO
@@ -766,115 +791,39 @@ BEGIN
 			''							AS [@EqlUpdateReasonCode]		,	   --TODO
 			''							AS [@EqlNarrative]				,	   --TODO
 			t.ModifiedBy				AS [@ModifiedBy]				,	
-			'RSL'						AS [@TOE]						,	
-			t.SourceId					AS [@SourceId]					,
+			'RSL'						AS [@TOE]						,				
 			'' 							AS [@IsDTC]						,
 			'' 							AS [@SendToWL]					,
+			t.SourceId					AS [@SourceId]					,
 			0 							AS [@RecallID]					,
 			0 							AS [@IsFullReturn]				,
 			t.IsProcessed				AS [@IsProcessed]				,	
 			t.IsCollateral    			AS [@IsCollateral]				,
 			t.BgnRef					AS [@BgnRef]					,	
-			l.ClearAgentNbr				AS [@Depository]				,	--TODO
+			l.ClearAgentNbr				AS [@Depository]				,	  --TODO
 			'Y'							AS [@GPTransmit]				,	
 			'0'							AS [@IsPSLRSLReq]				,	
-			''							AS  [@IsSuppressed]				,
-			''							AS  [@OverrideSwitchRules]		,	
-			''							AS  [@RRLinkRefNbr]				,     --TODO
-			''							AS  [@IsSelectedByUser]			,	  --TODO
-			''							AS  [@PirumPirumReturnRef]		,	  --TODO
-			''							AS  [@AllocationChangeReason]	,	  --TODO
-			''							AS  [@ACAPEligibleManualInput]		  --TODO
+			''							AS [@IsSuppressed]				,
+			''							AS [@OverrideSwitchRules]		,	
+			''							AS [@RRLinkRefNbr]				,     --TODO
+			''							AS [@IsSelectedByUser]			,	  --TODO
+			''							AS [@PirumPirumReturnRef]		,	  --TODO
+			''							AS [@AllocationChangeReason]	,	  --TODO
+			''							AS [@ACAPEligibleManualInput]		  --TODO
 		FROM @TempXMLTable t
-		INNER JOIN @TempLoansandCollaterals l --TODO
-		ON t.BGNREF = l.BGNREF
-		--WHERE ISNULL(t.IsEqlLoan, 0) = 0
+		INNER JOIN @TempLoansandCollaterals l
+			ON t.BGNREF = l.BGNREF
 		FOR XML PATH('FieldName'), ROOT('ReturnLoan')
-	);
-	
-
-	--SELECT @PSLReturnLoanXML	, @RSLReturnLoanXML	
-
-	--RETURN
+	);	
 
 	IF (NULLIF(@PSLReturnLoanXML,'') IS NOT NULL) AND (NULLIF(@RSLReturnLoanXML,'') IS NOT NULL)
 	BEGIN
 		exec p_ETIUploadReturn_Test @SQL_IDENTIFIER=N'LAVA',@SQL_CONDITION1 = @PSLReturnLoanXML
 		exec p_ETIUploadReturn_Test @SQL_IDENTIFIER=N'LAVA',@SQL_CONDITION1 = @RSLReturnLoanXML
 	END
-
-	--RETURN
-	
-	--SELECT @RETURN_XML_EQUI = 
-	--(
-	--	SELECT 
-	--		t.RowID						,
-	--		t.TxnRefNbr					,
-	--		t.AsOfDate					,
-	--		t.SettlementDate			,	
-	--		t.SecCode					,	
-	--		t.SecType					,	
-	--		t.BrkCrGrpID				,	
-	--		t.BrkGrpID					,
-	--		t.BrkID						,
-	--		t.BrkNbr					,	
-	--		t.AcctNbr					,	
-	--		t.ReturnQty					,
-	--		t.ReturnQtyFromAlloc		,	
-	--		t.TradePrice				,	
-	--		t.RecordTypeID				,
-	--		t.BatchDate					,
-	--		t.TransmitFlg				,	
-	--		t.EqlCtpyOrgId				,
-	--		t.EqlCtpyLegalEntityID		,
-	--		t.EqlSTBUSAOrgId			,	
-	--		t.EqlSTBUSALegalEntityID	,	
-	--		t.EqlEquiLendReturnSeqNbr	,	
-	--		t.EqlInternalRefID			,
-	--		t.EqlEquilendId				,
-	--		t.EqlEquiLendReturnID		,	
-	--		t.EqlReturnType				,
-	--		t.EqlBorrSettlementInstrID 	,
-	--		t.EqlCtpySubAcctID			,
-	--		t.EqlEquiLendRecallID		,	
-	--		t.EqlSTBUSASubAcctID		,	
-	--		t.RecordCreatedBy			,	
-	--		t.RecordReceivedDate		,	
-	--		t.EqlUpdateReasonCode		,	
-	--		t.EqlNarrative				,
-	--		t.ModifiedBy				,	
-	--		t.TOE						,	
-	--		t.SourceId					,
-	--		t.IsDTC						,
-	--		t.SendToWL					,
-	--		t.RecallID					,
-	--		t.IsFullReturn				,
-	--		t.IsProcessed				,	
-	--		t.IsCollateral    			,
-	--		t.BgnRef					,	
-	--		t.Depository				,	
-	--		t.GPTransmit				,	
-	--		t.IsPSLRSLReq				,	
-	--		t.IsSuppressed				,
-	--		t.OverrideSwitchRules		,	
-	--		t.RRLinkRefNbr				,
-	--		t.IsSelectedByUser			,
-	--		t.PirumPirumReturnRef		,	
-	--		t.AllocationChangeReason	,	
-	--		t.ACAPEligibleManualInput		
-	--	FROM @TempXMLTable t
-	--	WHERE t.IsEqlLoan = 1
-	--	FOR XML PATH('FieldName'), ROOT('ReturnLoan'), TYPE
-	--);
-	
-	--IF (NULLIF(@RETURN_XML_EQUI,'') IS NOT NULL)
-	--BEGIN
-	--	exec p_ETIUploadReturn @SQL_IDENTIFIER=N'EquiLend',@SQL_CONDITION1 = @RETURN_XML_EQUI
-	--END
 	
 	
-	/* Now book all closed loans*/	
-	--SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
+	/* Now book all closed loans*/		
 	IF EXISTS (SELECT 1 FROM @TempXMLTable WHERE IsCollateral = 0)
 	BEGIN
 		SET @RecordTypeID = 1
@@ -922,9 +871,7 @@ BEGIN
 			Acc.AcctNbr = TempLoan.AcctNbr
 		WHERE
 			IsStreetside = 0 AND
-			ISNULL(IsCollateral, 0) = 0
-
-			--select * from #AllocationTbl
+			ISNULL(IsCollateral, 0) = 0			
 
 		UPDATE 
 			@TempXMLTable
@@ -949,7 +896,7 @@ BEGIN
 			DISTINCT 0,
 			@BrkCrGrpID,
 			@BrkGrpID,
-			@BrkID,--b.BrkId,
+			@BrkID,
 			@RecordTypeID,
 			@FileName,
 			@BatchDate,
@@ -1054,8 +1001,8 @@ BEGIN
 				temp.BrkNbr,
 				temp.ClearAgentNbr,
 				bs.LoanType,
-				NULL,--temp.Disclosure, --need to check
-				temp.RepoRate, -- need to check
+				NULL, --DisclosureType
+				temp.RepoRate, 
 				@BatchDate,
 				temp.AsOfDate,
 				1, -- IsValid
@@ -1134,7 +1081,7 @@ BEGIN
 					acc.AcctId,
 					acc.AcctNbr,
 					(@RecordTypeID + 1),
-					NULL,
+					NULL, --SecLocID
 					rd.SecCode,
 					temp.FaceAmount,
 					CASE WHEN rd.PriceOverride IS NOT NULL THEN rd.PriceOverride ELSE rd.Price END,
@@ -1147,7 +1094,7 @@ BEGIN
 					temp.ClearAgentNbr,
 					rd.LoanType,
 					rd.RebateRate,
-					0,--a.TxnRefNbr,
+					0,--TxnRefNbr,
 					999--dbo.f_GetETIProcessFlowStatus (@RecordTypeID, 'Verified') --TODO
 			FROM 
 				@TempLoansandCollaterals temp 		
@@ -1170,8 +1117,7 @@ BEGIN
 			INNER JOIN 
 				@HistLogTbl hist 
 			ON 
-				hist.SourceID = rd.SourceID /*AND
-				hist.BrkId = rd.BrkId*/
+				hist.SourceID = rd.SourceID
 			WHERE 
 				temp.FaceAmount > 0 --insert only account allocated records
 
@@ -1196,8 +1142,7 @@ BEGIN
 				RebateRate,
 				SecLocCode,
 				SecID,
-				BrkID,
-		--			TxnRefNbr,
+				BrkID,		
 				RecordTypeID,
 				BatchDate,
 				AsOfDate,
@@ -1220,11 +1165,10 @@ BEGIN
 				STTDivRate,
 				BulkNbr,
 				ScripEndDate,
-				ProductCategoryLoanType,	--LoanType
+				ProductCategoryLoanType,	
 				ProductCategoryLoanDuration,
 				LoanCategory,
-				BasketNbr,
-		--LIBOR AND Goto Columns
+				BasketNbr,				
 				LIBORRate,			  
 				ResetDate,			
 				GotoRepoRate,	
@@ -1272,8 +1216,7 @@ BEGIN
 				a.RebateRate,
 				a.SecLocCode,
 				a.SecID,
-				a.BrkID,
-		--			a.TxnRefNbr,
+				a.BrkID,		
 				a.RecordTypeID,
 				a.BatchDate,
 				a.AsOfDate,
@@ -1282,8 +1225,8 @@ BEGIN
 				a.FinderNbr,
 				a.PoolNbr,
 				a.Comments,
-				a.SettlementInstr, --a.SettlementInstr, -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
-				null,			 --a.SettlementCCY,   -- M466 – "FI loan booking for cross-currency (European clearing through CEDEL) doesn't work"  --> Pass 2 char SettlementCCY in 'SettlementInstr' Column and NULL in 'SettlementCCY'
+				a.SettlementInstr, 
+				NULL, --SettlementCCY
 				a.CleanUpFlg,
 				a.TransmitFlg,
 				a.DisclosureType,
@@ -1300,16 +1243,15 @@ BEGIN
 				a.ProductCategoryLoanDuration,
 				a.LoanCategory,
 				CASE LEN(a.BasketNbr) WHEN 0 THEN NULL ELSE a.BasketNbr END,	    
-		--LIBOR AND Goto Columns
 				CASE LEN(a.LIBORRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,10),a.LIBORRate) END,	    
 				a.ResetDate,			
 				CASE LEN(a.GotoRepoRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(20,7),a.GotoRepoRate) END,	    
 				a.GotoTermDate,
 				a.GotoRemarks,		  		
-				NULL, -- CASE LEN(a.GotoSTTLevel) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(5,2),a.GotoSTTLevel) END,
-				NULL, -- CASE LEN(a.GotoSTTDivRate) WHEN 0 THEN NULL ELSE CONVERT(DECIMAL(13,6),a.GotoSTTDivRate) END,  		  
-				NULL, -- a.GotoSTTEndDate,
-				NULL, -- a.GotoScripEndDate,
+				NULL, --GotoSTTLevel
+				NULL, --GotoSTTDivRate		  
+				NULL, --GotoSTTEndDate
+				NULL, --GotoScripEndDate
 				a.GotoProductCategory,
 				a.GotoProductCategoryLoanType, 
 				a.GotoProductCategoryLoanDuration,
@@ -1355,26 +1297,26 @@ BEGIN
 						TxnRefNbr		= rd.TxnRefNbr,
 						BatchDate		= rd.BatchDate,
 						AsOfDate		= rd.AsOfDate,
-						CollateralDate	= temp.SettleDate,--CASE temp.CollateralDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.CollateralDate END, --need to confirm
-						GoodFundsDate	= temp.SettleDate,--CASE temp.GoodFundDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GoodFundDate END,
+						CollateralDate	= temp.SettleDate,
+						GoodFundsDate	= temp.SettleDate,
 						FinderNbr		= temp.FinderNbr,
-						PoolNbr			= NULL,--temp.CMPool, -- need to confirm
+						PoolNbr			= NULL,
 						Comments		= tempxml.Comments,
-						SettlementInstr = temp.SMODE, -- need to confirm
-						SettlementCCY	= NULL,--temp.CCYCode, -- need to confirm
-						CleanUpFlg		= NULL,--temp.CleanUpFlg,
+						SettlementInstr = temp.SMODE, 
+						SettlementCCY	= NULL,
+						CleanUpFlg		= NULL,
 						TransmitFlg		= rd.TransmitFlg,
 						DisclosureType	= rd.DisclosureType,
 						TriPartyGrpID	= temp.TriPartyGrpID,
 						CollSchedID		= temp.CollSchedID,
-						ProductCategory	= temp.ProductCategory	,
-						LowDivRate		= NULL,--temp.LowDivRate,
+						ProductCategory	= temp.ProductCategory,
+						LowDivRate		= NULL,
 						STTLevel	= temp.STTLevel,
 						STTEndDate	= temp.STTEndDate,
 						STTDivRate	= temp.STTDivRate,
 						BulkNbr			= rd.BulkNbr,
 						ScripEndDate	= temp.ScripEndDate,
-						ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+						ProductCategoryLoanType = temp.ProductCategoryLoanType,
 						ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
 						LoanCategory					= temp.LoanCategory,
 						BasketNbr					    = rd.BasketNbr,		
@@ -1383,10 +1325,10 @@ BEGIN
 						GotoRepoRate					= temp.GotoRepoRate,	
 						GotoTermDate					= temp.GotoTermDate,		
 						GotoRemarks						= temp.GotoRemarks,		  		
-						GotoSTTLevel				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
-						GotoSTTDivRate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
-						GotoSTTEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
-						GotoScripEndDate				= NULL, --CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+						GotoSTTLevel					= NULL, 
+						GotoSTTDivRate					= NULL, 	  
+						GotoSTTEndDate					= NULL, 
+						GotoScripEndDate				= NULL, 
 						GotoProductCategory				= temp.GotoProductCategory,
 						GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
 						GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
@@ -1463,23 +1405,23 @@ BEGIN
 						CollateralDate	= temp.SettleDate,
 						GoodFundsDate	= temp.SettleDate,
 						FinderNbr		= temp.FinderNbr,
-						PoolNbr			= NULL,--temp.CMPool,
+						PoolNbr			= NULL,
 						Comments		= tempxml.Comments,
 						SettlementInstr = temp.SMODE,
-						SettlementCCY	= NULL,--temp.CCYCode,
-						CleanUpFlg		= NULL,--temp.CleanUpFlg,	
+						SettlementCCY	= NULL,
+						CleanUpFlg		= NULL,
 						TransmitFlg		= rd.TransmitFlg,
 						DisclosureType	= rd.DisclosureType,
 						TriPartyGrpID	= temp.TriPartyGrpID,
 						CollSchedID		= temp.CollSchedID,
 						ProductCategory	= temp.ProductCategory,
-						LowDivRate		= NULL,--temp.LowDivRate,
+						LowDivRate		= NULL,
 						STTLevel	= temp.STTLevel,
 						STTEndDate	= temp.STTEndDate,
 						STTDivRate	= temp.STTDivRate,
 						BulkNbr			= rd.BulkNbr,
 						ScripEndDate	= temp.ScripEndDate,
-						ProductCategoryLoanType = temp.ProductCategoryLoanType,	--LoanType
+						ProductCategoryLoanType = temp.ProductCategoryLoanType,	
 						ProductCategoryLoanDuration = temp.ProductCategoryLoanDuration,
 						LoanCategory					= temp.LoanCategory,
 						BasketNbr						= rd.BasketNbr,
@@ -1488,14 +1430,14 @@ BEGIN
 						GotoRepoRate					= temp.GotoRepoRate,	
 						GotoTermDate					= temp.GotoTermDate,		
 						GotoRemarks						= temp.GotoRemarks,		  		
-						GotoSTTLevel				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTLevel ELSE NULL END,
-						GotoSTTDivRate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN (CASE temp.GotoSTTEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoSTTEndDate END) ELSE NULL END,  		  
-						GotoSTTEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'DA' THEN temp.GotoSTTDivRate ELSE NULL END,
-						GotoScripEndDate				= NULL,--CASE temp.GotoProductCategory WHEN 'ST' THEN (CASE temp.GotoScripEndDate WHEN '1900-01-01 00:00:00.000' THEN NULL ELSE temp.GotoScripEndDate END) ELSE NULL END,
+						GotoSTTLevel					= NULL,
+						GotoSTTDivRate					= NULL,	  
+						GotoSTTEndDate					= NULL,
+						GotoScripEndDate				= NULL,
 						GotoProductCategory				= temp.GotoProductCategory,
 						GotoProductCategoryLoanType		= temp.GotoProductCategoryLoanType, 
 						GotoProductCategoryLoanDuration = temp.GotoProductCategoryLoanDuration,
-						DesiredSTTLevel				= temp.DesiredSTTLevel,
+						DesiredSTTLevel					= temp.DesiredSTTLevel,
 						IsProjectedDividend				= temp.IsProjectedDividend,
 						ProjectedDividendAmount			= temp.ProjectedDividendAmount,
 						BgnRef							= temp.BgnRef,  
@@ -1507,7 +1449,7 @@ BEGIN
 						GCIAutoAuthorised				= GCIParam.GCIAutoAuthorised,
 						GPTransmit						= NULL,
 						SFTRCancelledLoanRefNbr			= NULL,													
-						ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()        -----------If Settlement Date changes then generate new timestamp
+						ExecutionTimestamp				=  CASE WHEN tempxml.SettlementDate <> tempxml.LoanSettlementDate THEN GETDATE()				-----------If Settlement Date changes then generate new timestamp
 																WHEN tempxml.TransmitFlg <> tempxml.GPTransmit THEN temp.CreatedDate					-----------If Transmit changes then use the same timestamp as Closed loan
 																ELSE temp.CreatedDate END,																-----------If None of the above condiitons then use the same timestamp as Closed loan
 						IsPrePay						= temp.IsPrePay,
@@ -1550,15 +1492,6 @@ BEGIN
 						temp.FaceAmount > 0 --insert only account allocated records.
 				) a
 
-			-- Update ExternalRefNbr
-			--UPDATE 
-			--	@ETIDetailRecordNewLoan
-			--SET 
-			--	-- Format: yymmddxxxxxx
-			--	ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
-			--FROM
-			--	@ETIDetailRecordNewLoan detail
-
 			-- Update ExternalRefNbr with Closed Loan
 			UPDATE 
 				@ETIDetailRecordNewLoan
@@ -1566,8 +1499,7 @@ BEGIN
 				ExternalRefNbr =  @BGNREF
 			WHERE 
 				RawDataID = @RawDataID	
-
-			-- Update NetDividendPercentage for REcordTypeId = 1
+			
 			UPDATE 
 				@ETIDetailRecordNewLoan
 			SET 		
@@ -1608,8 +1540,6 @@ BEGIN
 
 		END
 
-		--select * from @ETIDetailRecordNewLoan
-			-- Get BatchNbr
 		SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
 
 		INSERT INTO dbo.ETIDetailRecord 
@@ -1679,8 +1609,7 @@ BEGIN
 			[ScripEndDate],
 			[ProductCategoryLoanType],
 			[ProductCategoryLoanDuration],
-			[BasketNbr],
-			--LIBOR AND Goto Columns
+			[BasketNbr],			
 			[LIBORRate],			  
 			[ResetDate],			
 			[GotoRepoRate],	
@@ -1731,9 +1660,9 @@ BEGIN
 		)	
 		SELECT	DISTINCT
 			RawDataID,
-			NULL,
-			NULL,
-			'DTL',
+			NULL, --EqlEquilendID
+			NULL, --EqlEquiLendReturnID
+			'DTL', --RecordIndicator
 			ExternalRefNbr,
 			@TOE,
 			LoanType,
@@ -1749,9 +1678,9 @@ BEGIN
 			Principal,
 			CollCCYCode,
 			RebateRate,
-			NULL,
-			NULL,
-			NULL,
+			NULL, --RebatePaid				  				  
+			NULL, --AcctNbrRealloc
+			NULL, --ExternalRefNbrRealloc
 			SettlementCCY,
 			BatchDate,
 			AsOfDate,
@@ -1762,26 +1691,26 @@ BEGIN
 			NULL,--PoolNbr,
 			Comments,
 			CleanUpFlg,
-			SettlementInstr,
-			NULL,
-			NULL,
-			NULL,
+			SettlementInstr, --BrkStandingInstruct1 
+			NULL, --BrkStandingInstruct2
+			NULL, --BrkStandingInstruct3
+			NULL, --BrkStandingInstruct4
 			SecLocCode,
 			TransmitFlg,
-			NULL,
+			NULL, --CollateralNbr
 			BulkNbr,
-			'W',
+			'W', --XRefWlIndicator
 			DisclosureType,
-			@G1UserCode,
-			NULL,
+			@G1UserCode, --UserID
+			NULL, --Filter
 			SecID,
 			BrkID,
-			0,--TxnRefNbr,
-			0,
+			0, --TxnRefNbr,
+			0, --TxnRefNbrNew
 			RecordTypeID,
-			0,
-			0,
-			1,
+			0, --SubRecordID	
+			0, --IsIncludedInFile
+			1, --isPending
 			TriPartyGrpID,
 			CollSchedID,
 			ProductCategory,
@@ -1791,12 +1720,11 @@ BEGIN
 			STTDivRate,
 			@StatusId,
 			@ModifiedBy,
-			NULL,
+			NULL, --ModifiedDate
 			ScripEndDate,
 			ProductCategoryLoanType,
 			ProductCategoryLoanDuration,
 			BasketNbr,	
---LI	BOR AND Goto Columns
 			LIBORRate,			  
 			ResetDate,			
 			GotoRepoRate,	
@@ -1833,13 +1761,13 @@ BEGIN
 			dbo.f_GetGCIPercentage('D'),
 			GPTransmit,
 			dbo.f_GetDVP(LoanCategory),--DVP
-			CollCCYCode,--CashWashCurr,
-			dbo.f_GetCashWashValue(LoanType,SecLocCode,Principal),--CashWashValue,
-			dbo.f_GetMatchedInvVehType(LoanCategory),--MatchedInvVehType,
-			dbo.f_GetInvVehRes(LoanCategory,CollCCYCode),--InvVehRes,
-			dbo.f_GetInvalidVehFlag(LoanCategory),--InvalidVehFlag,
+			CollCCYCode,--CashWashCurr
+			dbo.f_GetCashWashValue(LoanType,SecLocCode,Principal),--CashWashValue
+			dbo.f_GetMatchedInvVehType(LoanCategory),--MatchedInvVehType
+			dbo.f_GetInvVehRes(LoanCategory,CollCCYCode),--InvVehRes
+			dbo.f_GetInvalidVehFlag(LoanCategory),--InvalidVehFlag
 			dbo.f_GetCollLOCCode(RecordTypeID,WLDepository),--CollLOCCode
-			dbo.f_GetTriPartyInd(LoanType), --TriPartyInd,
+			dbo.f_GetTriPartyInd(LoanType), --TriPartyInd
 			CASE WHEN (LoanCategory = 'CR' AND LoanType = 'C') THEN 1 ELSE 0 END,
 			SFTRCancelledLoanRefNbr,
 			IsPrePay,
@@ -1898,8 +1826,10 @@ BEGIN
 		    t.IsCollateral		AS [@IsCollateral]			,
 		    t.GPTransmit		AS [@GPTransmit]			,					
 		    0					AS [@CollateralType]		,	--TODO
-		    ''					AS [@RepoTicketID]			,	--TODO
-		    '' 					AS [@RRLinkRefNbr]				--TODO
+		    ''					AS [@RRLinkRefNbr]			,	--TODO 
+		    '' 					AS [@RepoTicketID]			,	--TODO
+			t.BGNREF 			AS [@BgnRef]				,	--TODO
+			t.BGNREF 			AS [@ExternalRefNbr]			--TODO
 		FROM @TempXMLTable t
 		INNER JOIN @TempLoansandCollaterals l --TODO
 			ON t.BGNREF = l.BGNREF
@@ -1908,11 +1838,6 @@ BEGIN
 		WHERE t.IsCollateral = 1
 		FOR XML PATH('FieldName'), ROOT('NewCollateral')
 	);
-	
-
-	--SELECT @NewCollateralXML
-
-	--RETURN
 
 	IF (NULLIF(@NewCollateralXML,'') IS NOT NULL)
 	BEGIN
