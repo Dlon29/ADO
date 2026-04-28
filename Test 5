@@ -1,3 +1,5 @@
+
+
 CREATE PROCEDURE [dbo].[p_ETIBookNewCollateral_Test]
 (
 	@SQL_IDENTIFIER		VARCHAR(10),
@@ -80,10 +82,12 @@ BEGIN
 			EquilendId  BIGINT,
 			CollType CHAR(1),
 			IsCollateral INT,
-			GPTransmit	VARCHAR(1),
+			GPTransmit	VARCHAR(1),			
 			CollateralType VARCHAR(2),
 			RepoTicketID INT,
-			RRLinkRefNbr VARCHAR(8)
+			RRLinkRefNbr VARCHAR(8),
+			BgnRef VARCHAR(12),
+			ExternalRefNbr VARCHAR(12)
 	 )  
 
 	  DECLARE @TempXMLSecBrkTable TABLE   
@@ -132,6 +136,7 @@ BEGIN
 		  TriPartyGrpID INT,   
 		  CollSchedID  INT,  		
 		  EquilendId  BIGINT NULL,
+		  BgnRef VARCHAR(12),
 		  GCIRecordType	VARCHAR(1),
 		  GCIStatus		VARCHAR(1),
 	      GCITransactionType	VARCHAR(1),
@@ -231,11 +236,13 @@ BEGIN
 		  CollSchedID,  		   
 		  IsProcessed,  
 		  EquilendId,
-		  CollType,
+		  CollType,		  
 		  GPTransmit,
 		  CollateralType,
 		  RRLinkRefNbr,
-		  RepoTicketID
+		  RepoTicketID,
+		  BgnRef,
+		  ExternalRefNbr
 	 )  
 	 SELECT
 		  AsOfDate,  
@@ -271,11 +278,13 @@ BEGIN
 		  CollSchedID,  		  
 		  0,  
 		  EquilendId,
-		  CollType,
+		  CollType,		  
 		  GPTransmit,
 		  CollateralType,
 		  CASE WHEN RRLinkRefNbr = '' THEN NULL ELSE RRLinkRefNbr END,
-		  RepoTicketID
+		  RepoTicketID,
+		  BgnRef,
+		  ExternalRefNbr
 	 FROM   
 	 OPENXML(@hdoc, '/NewCollateral/FieldName', 1)  
 	 WITH  
@@ -312,19 +321,22 @@ BEGIN
 			  TriPartyGrpID  INT,   
 			  CollSchedID   INT,  			
 			  EquilendId    INT ,
-			  CollType      CHAR(1),
+			  CollType      CHAR(1),			  
 			  GPTransmit	VARCHAR(1),
 			  CollateralType VARCHAR(2),
 			  RRLinkRefNbr VARCHAR(8),
-			  RepoTicketID INT
+			  RepoTicketID INT,
+			  BgnRef	 VARCHAR(12),
+			  ExternalRefNbr VARCHAR(12)
 		 )  
 
 	  
 	 EXEC SP_XML_REMOVEDOCUMENT @hdoc  	 
 
-	 SELECT * FROM @TempXMLTable
+	 --TODO
+	 --SELECT * FROM @TempXMLTable
 
-	 RETURN
+	 --RETURN
 	
 	 --Batch date from LAVA single loan request/Bulk loan screen may be incorrect. So use it from G1  
 	 /** Get G1 batch date **/  
@@ -818,7 +830,7 @@ BEGIN
 		--SELECT * FROM @TempXMLTable
 			
 
-		--	 RETURN
+		-- RETURN
 	   
 			 /***** 2nd step : Insert into dbo.ETIRawData table ****/  
 			  INSERT INTO dbo.ETIRawData  
@@ -1032,6 +1044,7 @@ BEGIN
 				  TriPartyGrpID,  
 				  CollSchedID,
 				  CollateralNbr,
+				  BgnRef,
 				  GCIRecordType,
 				  GCIStatus,
 				  GCITransactionType,
@@ -1076,6 +1089,7 @@ BEGIN
 				  a.TriPartyGrpID,  
 				  a.CollSchedID,
 				  a.CollateralNo,
+				  a.BgnRef,
 				  a.GCIRecordType,
 				  a.GCIStatus,
 				  a.GCITransactionType,
@@ -1089,7 +1103,7 @@ BEGIN
 				   SELECT   
 						DISTINCT RawDataID = rd.[ID],  				
 						EquilendId = rd.EqlEquiLendID,
-						ExternalRefNbr = NULL,  				
+						ExternalRefNbr = temp.ExternalRefNbr,  				
 						RecordTypeID = rd.RecordTypeID,  
 						BrkId   = rd.BrkID,  
 						SecID   = rd.SecID,  
@@ -1122,6 +1136,7 @@ BEGIN
 						TriPartyGrpID = temp.TriPartyGrpID,  
 						CollSchedID  = temp.CollSchedID,
 						CollateralNo = temp.CollateralNo  ,
+						BgnRef		 = temp.BgnRef,
 						GCIParam.GCIRecordType,
 						GCIParam.GCIStatus,
 						GCIParam.GCITransactionType,
@@ -1156,7 +1171,7 @@ BEGIN
 					   SELECT   
 							DISTINCT RawDataID = rd.[ID],  
 							EquilendId = rd.EqlEquiLendID,
-							ExternalRefNbr = NULL,  
+							ExternalRefNbr = temp.ExternalRefNbr,  
 							RecordTypeID = alloc.RecordTypeID,  
 							BrkId   = alloc.BrkID,  
 							SecID   = alloc.SecID,  
@@ -1189,6 +1204,7 @@ BEGIN
 							TriPartyGrpID = temp.TriPartyGrpID,  					
 							CollSchedID  = temp.CollSchedID,
 							CollateralNo = temp.CollateralNo,
+							BgnRef		 = temp.BgnRef,
 							GCIParam.GCIRecordType,
 							GCIParam.GCIStatus,
 							GCIParam.GCITransactionType,
@@ -1226,13 +1242,13 @@ BEGIN
 			  
 			  ) a  
 	  
-			UPDATE 
-				@ETIDetailRecord
-			SET 
-				-- Format: yymmddxxxxxx
-				ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
-			FROM
-				@ETIDetailRecord detail
+			--UPDATE 
+			--	@ETIDetailRecord
+			--SET 
+			--	-- Format: yymmddxxxxxx
+			--	ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
+			--FROM
+			--	@ETIDetailRecord detail
 
 			 SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
 
@@ -1323,6 +1339,7 @@ BEGIN
 				  [Coll_Grp],
 				  [BatchNbr],
 				  [CreatedDate],
+				  [BgnRef],
 				  GCIRecordType,
 				  GCIStatus,
 				  GCITransactionType,
@@ -1410,6 +1427,7 @@ BEGIN
 				  dbo.f_GetCollGroup(LoanType), -- CollGroup
 				  @BatchNbr,
 				  GETDATE(),
+				  BgnRef,
 				  GCIRecordType,
 				  GCIStatus,
 				  GCITransactionType,
@@ -1467,6 +1485,8 @@ BEGIN
 
 				IF @FaceAmount > 0
 				BEGIN
+
+
 					
 					INSERT INTO dbo.ETIRawData
 					(
@@ -1722,6 +1742,7 @@ BEGIN
 				TriPartyGrpID,
 				CollSchedID,			
 				CollateralNbr,
+				BgnRef,
 				GCIRecordType,
 				GCIStatus,
 				GCITransactionType,
@@ -1766,6 +1787,7 @@ BEGIN
 				a.TriPartyGrpID,  
 				a.CollSchedID,
 				a.CollateralNo,
+				a.BgnRef,
 				a.GCIRecordType,
 				a.GCIStatus,
 				a.GCITransactionType,
@@ -1779,7 +1801,7 @@ BEGIN
 					SELECT 
 						DISTINCT RawDataID	= rd.[ID],
 						EquilendId = rd.EqlEquiLendID,
-						ExternalRefNbr	= NULL,
+						ExternalRefNbr	= temp.ExternalRefNbr,
 						RecordTypeID	= rd.RecordTypeID,
 						BrkId			= rd.BrkID,
 						SecID			= rd.SecID,
@@ -1812,6 +1834,7 @@ BEGIN
 						TriPartyGrpID	= temp.TriPartyGrpID,				
 						CollSchedID		= temp.CollSchedID,
 						CollateralNo	= temp.CollateralNo,
+						BgnRef			= temp.BgnRef,
 						GCIParam.GCIRecordType,
 						GCIParam.GCIStatus,
 						GCIParam.GCITransactionType,
@@ -1844,7 +1867,7 @@ BEGIN
 					SELECT 
 						DISTINCT RawDataID	= rd.[ID],
 						EquilendId = rd.EqlEquiLendID,
-						ExternalRefNbr	= NULL,
+						ExternalRefNbr	= temp.ExternalRefNbr,
 						RecordTypeID	= alloc.RecordTypeID,
 						BrkId			= alloc.BrkID,
 						SecID			= alloc.SecID,
@@ -1877,6 +1900,7 @@ BEGIN
 						TriPartyGrpID	= temp.TriPartyGrpID,
 						CollSchedID  = temp.CollSchedID,
 						CollateralNo = temp.CollateralNo,
+						BgnRef		 = temp.BgnRef,
 						GCIParam.GCIRecordType,
 						GCIParam.GCIStatus,
 						GCIParam.GCITransactionType,
@@ -1912,13 +1936,13 @@ BEGIN
 						((@IsRevRepoLoan = 0) OR (@IsRevRepoLoan = 1 AND rd.ID = @RawDataID)) 	
 				) a
 
-			UPDATE 
-				@ETIDetailRecord
-			SET 
-				-- Format: yymmddxxxxxx
-				ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
-			FROM
-				@ETIDetailRecord detail		
+			--UPDATE 
+			--	@ETIDetailRecord
+			--SET 
+			--	-- Format: yymmddxxxxxx
+			--	ExternalRefNbr =  dbo.f_GetExternalRefNbr(RawDataID)
+			--FROM
+			--	@ETIDetailRecord detail		
 
 			SET @BatchNbr = (SELECT ISNULL(MAX(BatchNbr),0) + 1 FROM ETIDetailRecord)
 
@@ -2006,6 +2030,7 @@ BEGIN
 				[Coll_Grp],	
 				[BatchNbr],
 				[CreatedDate],
+				[BgnRef],
 				GCIRecordType,
 				GCIStatus,
 				GCITransactionType,
@@ -2093,6 +2118,7 @@ BEGIN
 				dbo.f_GetCollGroup(LoanType), -- CollGroup			
 				@BatchNbr,
 				GETDATE(),
+				BgnRef,
 				GCIRecordType,
 				GCIStatus,
 				GCITransactionType,
