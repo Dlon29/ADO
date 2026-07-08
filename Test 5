@@ -167,27 +167,26 @@ BEGIN
 		REFERENCE.DBO.StgLocation
 
 		--=============================DUPLICATE ACCOUNTID CHECK =============================
-		--Flag rows where AccountIDAtDepot is not unique within this staging load.
-		--All rows sharing a duplicated AccountIDAtDepot are quarantined together;
-		--we deliberately do not guess which copy is "correct".
+		--Where AccountIDAtDepot is not unique within this staging load, keep the most
+		--recently modified copy (BaNCSModifiedOn desc, then BaNCSCreatedOn desc as a
+		--tiebreak) and flag every other copy in that group as a duplicate.
 		--Code 202 is > @ErrorCodeMaxForOptionalField, so - same as @ErrorCodeLocDesc -
 		--it is protected from being overwritten by the LocDesc/LocCode/CountryID checks
 		--below, and flows into the shared error insert/delete at the end of this block
 		--without any separate insert/delete of its own.
-		UPDATE T
-		SET
-			ErrorCode = @ErrorCodeDuplicateAccountID
-		FROM
-			#tmpLocation T
-		INNER JOIN
+		;WITH DupRanked AS
 		(
-			SELECT AccountIDAtDepot
+			SELECT
+				*,
+				ROW_NUMBER() OVER (PARTITION BY AccountIDAtDepot ORDER BY BaNCSModifiedOn DESC, BaNCSCreatedOn DESC) AS DupRowNum
 			FROM #tmpLocation
 			WHERE AccountIDAtDepot IS NOT NULL
-			GROUP BY AccountIDAtDepot
-			HAVING COUNT(*) > 1
-		) D
-			ON T.AccountIDAtDepot = D.AccountIDAtDepot
+		)
+		UPDATE DupRanked
+		SET
+			ErrorCode = @ErrorCodeDuplicateAccountID
+		WHERE
+			DupRowNum > 1
 		--=============================DUPLICATE ACCOUNTID CHECK END =============================
 
 		UPDATE 
@@ -297,7 +296,7 @@ BEGIN
 			ErrorInfo = CASE ErrorCode WHEN @ErrorCodeLocDesc THEN 'Could not derive LocDesc from BaNCSLocDesc'
 										WHEN @ErrorCodeLocCode THEN 'Could not derive LocCode from BaNCSLocCode'
 										WHEN @ErrorCodeCountryID THEN 'Could not find CountryID using BaNCSCountryID from Reference.dbo.Country'
-										WHEN @ErrorCodeDuplicateAccountID THEN 'Duplicate AccountIDAtDepot found in StgLocation for this batch; record excluded pending resolution'
+										WHEN @ErrorCodeDuplicateAccountID THEN 'Duplicate AccountIDAtDepot found in StgLocation for this batch; a more recently modified record was retained instead'
 							END,
 			--ErrorRow,
 			ErrorDate=@time,
