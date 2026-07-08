@@ -95,7 +95,7 @@ BEGIN
 		DECLARE @ErrorCodeLocDesc INT = 201
 		DECLARE @ErrorCodeLocCode INT = 1
 		DECLARE @ErrorCodeCountryID INT = 2
-		DECLARE @ErrorCodeDuplicateAccountID INT = 3
+		DECLARE @ErrorCodeDuplicateAccountID INT = 202
 		DECLARE @ErrorCount  INT = 0
 		DECLARE @ErrorCountAll INT = 0
 		DECLARE @RecordCountTotal INT = 0
@@ -170,6 +170,10 @@ BEGIN
 		--Flag rows where AccountIDAtDepot is not unique within this staging load.
 		--All rows sharing a duplicated AccountIDAtDepot are quarantined together;
 		--we deliberately do not guess which copy is "correct".
+		--Code 202 is > @ErrorCodeMaxForOptionalField, so - same as @ErrorCodeLocDesc -
+		--it is protected from being overwritten by the LocDesc/LocCode/CountryID checks
+		--below, and flows into the shared error insert/delete at the end of this block
+		--without any separate insert/delete of its own.
 		UPDATE T
 		SET
 			ErrorCode = @ErrorCodeDuplicateAccountID
@@ -184,74 +188,6 @@ BEGIN
 			HAVING COUNT(*) > 1
 		) D
 			ON T.AccountIDAtDepot = D.AccountIDAtDepot
-
-		--Copy duplicate rows to the error table
-		INSERT INTO StgLocationError
-		(
-			ErrorCode,
-			ErrorColumn,
-			ErrorInfo,
-			ErrorDate,
-			CSDR,
-			BaNCSCountryId,
-			DepotID,
-			AccountIDAtDepot,
-			SubCustodianBPID,
-			BaNCSLocDesc,
-			BaNCSLocCode,
-			BaNCSLocId,
-			MarketPSETBIC,
-			BaNCSCreatedBy,
-			BaNCSCreatedOn,
-			BaNCSModifiedBy,
-			BaNCSModifiedOn,
-			BusinessDate,
-			FileGenerationDate,
-			BaNCSBusinessDate,
-			FileHeaderDate,
-			CreatedBy,
-			CreatedDate,
-			ModifiedBy,
-			ModifiedDate,
-			AsOfDate,
-			BatchID
-		)
-		SELECT
-			ErrorCode   = @ErrorCodeDuplicateAccountID,
-			ErrorColumn = 'TransformationSP.AccountIDAtDepot',
-			ErrorInfo   = 'Duplicate AccountIDAtDepot found in StgLocation for this batch; record excluded pending resolution',
-			ErrorDate   = @time,
-			CSDR,
-			BaNCSCountryId,
-			DepotID,
-			AccountIDAtDepot,
-			SubCustodianBPID,
-			BaNCSLocDesc,
-			BaNCSLocCode,
-			BaNCSLocId,
-			MarketPSETBIC,
-			BaNCSCreatedBy,
-			BaNCSCreatedOn,
-			BaNCSModifiedBy,
-			BaNCSModifiedOn,
-			BusinessDate,
-			FileGenerationDate,
-			BaNCSBusinessDate,
-			FileHeaderDate,
-			CreatedBy,
-			CreatedDate,
-			ModifiedBy,
-			ModifiedDate,
-			AsOfDate,
-			BatchID = @BatchID
-		FROM
-			#tmpLocation
-		WHERE
-			ErrorCode = @ErrorCodeDuplicateAccountID
-
-		--Remove duplicate rows from the working set - they must not reach validation or load
-		DELETE FROM #tmpLocation
-		WHERE ErrorCode = @ErrorCodeDuplicateAccountID
 		--=============================DUPLICATE ACCOUNTID CHECK END =============================
 
 		UPDATE 
@@ -356,10 +292,12 @@ BEGIN
 			ErrorColumn = CASE ErrorCode WHEN @ErrorCodeLocDesc THEN 'TransformationSP.LocDesc'
 										WHEN @ErrorCodeLocCode THEN 'TransformationSP.LocCode'
 										WHEN @ErrorCodeCountryID THEN 'TransformationSP.CountryID'
+										WHEN @ErrorCodeDuplicateAccountID THEN 'TransformationSP.AccountIDAtDepot'
 							END,
 			ErrorInfo = CASE ErrorCode WHEN @ErrorCodeLocDesc THEN 'Could not derive LocDesc from BaNCSLocDesc'
 										WHEN @ErrorCodeLocCode THEN 'Could not derive LocCode from BaNCSLocCode'
 										WHEN @ErrorCodeCountryID THEN 'Could not find CountryID using BaNCSCountryID from Reference.dbo.Country'
+										WHEN @ErrorCodeDuplicateAccountID THEN 'Duplicate AccountIDAtDepot found in StgLocation for this batch; record excluded pending resolution'
 							END,
 			--ErrorRow,
 			ErrorDate=@time,
