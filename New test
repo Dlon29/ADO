@@ -1,1 +1,465 @@
 
+USE [REFERENCE]
+GO
+
+IF EXISTS ( SELECT  *
+            FROM    sys.objects
+            WHERE   object_id = OBJECT_ID(N'[dbo].[op_TransferLocation]')
+                    AND type IN ( N'P', N'PC' ) ) 
+    DROP PROCEDURE [dbo].[op_TransferLocation]
+GO
+
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROC [dbo].[op_TransferLocation] AS
+BEGIN
+	
+	DECLARE @doneFilePath VARCHAR(200),
+            @doneFileName VARCHAR(200),
+			@AsOfDate DATETIME,
+			@BatchID INT = NULL,
+            @StatusSuccessfullyUpload INT = 150;
+
+    SELECT @doneFilePath = CONVERT(VARCHAR(200), ev.value)
+    FROM SSISDB.catalog.folders AS f
+        INNER JOIN SSISDB.catalog.environments AS e
+            ON f.folder_id = e.folder_id
+        INNER JOIN SSISDB.internal.environment_variables AS ev
+            ON e.environment_id = ev.environment_id
+    WHERE f.name = 'REFERENCE'
+          AND e.name = 'REF.Bancs.Configuration'
+          AND ev.name = 'FILE_PATH_INBOX_LOCATION';
+
+    SELECT @doneFileName = CONVERT(VARCHAR, ev.value)
+    FROM SSISDB.catalog.folders AS f
+        INNER JOIN SSISDB.catalog.environments AS e
+            ON f.folder_id = e.folder_id
+        INNER JOIN SSISDB.internal.environment_variables AS ev
+            ON e.environment_id = ev.environment_id
+    WHERE f.name = 'REFERENCE'
+          AND e.name = 'REF.Bancs.Configuration'
+          AND ev.name = 'FILE_NAME_LOCATION_TRIGGER';
+
+		 
+    IF NOT EXISTS
+    (
+        SELECT *
+        FROM dbo.opsCDSUploadInfo
+        WHERE FileName = @doneFileName
+              AND FilePath = @doneFilePath
+              AND StatusID = @StatusSuccessfullyUpload
+    )
+    BEGIN
+        RAISERROR('No new Location data in table', 16, 1);
+	RETURN
+    END
+
+	SELECT 
+		@AsOfDate = AsOfDate ,
+		@BatchID = MAX(BatchID)
+	FROM 
+		dbo.opsCDSUploadInfo
+	WHERE 
+		FileName = @doneFileName
+        AND FilePath = @doneFilePath
+        AND StatusID = @StatusSuccessfullyUpload
+	GROUP BY AsOfDate
+
+
+	IF NOT EXISTS (SELECT * FROM dbo.StgLocation) AND NOT EXISTS (SELECT * FROM dbo.StgLocationError WHERE AsOfDate = @AsOfDate AND BatchID = @BatchID)
+    BEGIN
+        RETURN;
+    END;
+
+	BEGIN TRY
+		DECLARE @user VARCHAR(50) = SUSER_SNAME();
+        DECLARE @time DATETIME = GETDATE();
+
+		--Table to hold staging data along with derived columns and Error info
+		IF OBJECT_ID('tempdb..#tmpLocation', 'U') IS NOT NULL
+		BEGIN
+			DROP TABLE #tmpLocation
+		END
+		
+		SELECT * INTO #tmpLocation FROM DBO.f_CreateLocationTransferSchema()
+
+		--ALTER TABLE #tmpLocation ADD ErrorColumn [varchar](500) NULL
+		--ALTER TABLE #tm#tmpLocation ADD ErrorInfo [varchar] (100) NULL
+
+		--Error Codes
+		DECLARE @ErrorCodeMaxForOptionalField INT = 200
+		DECLARE @ErrorCodeLocDesc INT = 201
+		DECLARE @ErrorCodeLocCode INT = 1
+		DECLARE @ErrorCodeCountryID INT = 2
+		DECLARE @ErrorCount  INT = 0
+		DECLARE @ErrorCountAll INT = 0
+		DECLARE @RecordCountTotal INT = 0
+
+
+		SELECT 
+			--@AsOfDate = MAX(BaNCSBusinessDate) , 
+			@RecordCountTotal = COUNT(1)
+		FROM 
+			DBO.StgLocation
+
+		SELECT 
+			@RecordCountTotal = @RecordCountTotal + COUNT(1)
+		FROM 
+			DBO.StgLocationError
+		WHERE
+			AsOfDate = @AsOfDate AND
+			BatchId = @BatchId
+
+		INSERT INTO #tmpLocation
+		(
+			AsOfDate,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			BusinessDate,
+			FileGenerationDate,
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy,
+			CreatedDate,
+			ModifiedBy,
+			ModifiedDate
+		)
+		SELECT 
+			@AsOfDate,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			BusinessDate,
+			FileGenerationDate,
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy,
+			CreatedDate,
+			@user,
+			@time
+		FROM 
+		REFERENCE.DBO.StgLocation
+
+
+		UPDATE 
+			TREFLOC 
+		SET  
+			LocID = TSTGLOC.LocID
+		FROM 
+			#tmpLocation TREFLOC 
+			INNER JOIN dbo.Location AS TSTGLOC  
+			ON ( TSTGLOC.AccountIDAtDepot = TREFLOC.AccountIDAtDepot )
+        --=============================VALIDATION AND DERIVED COLUMN LOGIC =============================
+		--Derive LocDesc from BaNCSLocDesc
+		UPDATE T
+		SET
+			LocDesc = CASE WHEN LEN(ISNULL(BaNCSLocDesc,'')) = 0 THEN NULL
+						ELSE SUBSTRING(BaNCSLocDesc,1,40)
+					END
+		FROM
+			#tmpLocation T 
+		WHERE
+			ISNULL(T.ErrorCode,0) <= @ErrorCodeMaxForOptionalField
+
+		UPDATE #tmpLocation
+		SET
+			ErrorCode =  @ErrorCodeLocDesc
+		WHERE
+			ISNULL(ErrorCode,0) <= @ErrorCodeMaxForOptionalField AND
+			LocDesc IS NULL
+
+		--Derive LocCode from BaNCSLocCode 
+		UPDATE T
+		SET
+			LocCode = CASE WHEN LEN(ISNULL(BaNCSLocCode ,'')) = 0 THEN NULL
+						ELSE SUBSTRING(BaNCSLocCode ,1,20)
+					END
+		FROM
+			#tmpLocation T 
+		WHERE
+			ISNULL(T.ErrorCode,0) <= @ErrorCodeMaxForOptionalField
+
+		UPDATE #tmpLocation
+		SET
+			ErrorCode =  @ErrorCodeLocCode
+		WHERE
+			ISNULL(ErrorCode,0) <= @ErrorCodeMaxForOptionalField AND
+			LocCode IS NULL
+
+		--Derive CountryID from BaNCSCountryId 
+		UPDATE T
+		SET
+			CountryId = C.CountryId
+		FROM
+			#tmpLocation T 
+		INNER JOIN 
+			REFERENCE.DBO.Country C
+		ON
+			T.BaNCSCountryId = C.ISOCountry
+		WHERE
+			ISNULL(T.ErrorCode,0) <= @ErrorCodeMaxForOptionalField
+
+		UPDATE #tmpLocation
+		SET
+			ErrorCode =  @ErrorCodeCountryID
+		WHERE
+			ISNULL(ErrorCode,0) <= @ErrorCodeMaxForOptionalField AND
+			CountryId IS NULL
+
+		--Copying Error records to error table
+		INSERT INTO StgLocationError
+		(
+			ErrorCode,
+			ErrorColumn,
+			ErrorInfo,
+			--ErrorRow,
+			ErrorDate,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			BusinessDate,
+			FileGenerationDate,
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy,
+			CreatedDate,
+			ModifiedBy,
+			ModifiedDate,
+			AsOfDate,
+			BatchID
+		)
+		SELECT 
+			ErrorCode ,
+			ErrorColumn = CASE ErrorCode WHEN @ErrorCodeLocDesc THEN 'TransformationSP.LocDesc'
+										WHEN @ErrorCodeLocCode THEN 'TransformationSP.LocCode'
+										WHEN @ErrorCodeCountryID THEN 'TransformationSP.CountryID'
+							END,
+			ErrorInfo = CASE ErrorCode WHEN @ErrorCodeLocDesc THEN 'Could not derive LocDesc from BaNCSLocDesc'
+										WHEN @ErrorCodeLocCode THEN 'Could not derive LocCode from BaNCSLocCode'
+										WHEN @ErrorCodeCountryID THEN 'Could not find CountryID using BaNCSCountryID from Reference.dbo.Country'
+							END,
+			--ErrorRow,
+			ErrorDate=@time,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			BusinessDate,
+			FileGenerationDate,
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy,
+			CreatedDate,
+			ModifiedBy,
+			ModifiedDate,
+			AsOfDate,
+			BatchID = @BatchID
+		FROM
+			#tmpLocation
+		WHERE 
+			--ErrorCode IS NOT NULL
+			ISNULL(ErrorCode,0) NOT IN (0,@ErrorCodeCountryID)
+
+		
+		SET @ErrorCount =  (SELECT COUNT(*) FROM #tmpLocation WHERE ErrorCode IS NOT NULL)
+
+		--Remove error records from TEMP table
+		DELETE FROM #tmpLocation 
+		WHERE 
+			--ErrorCode IS NOT NULL  
+			ISNULL(ErrorCode,0) NOT IN (0,@ErrorCodeCountryID)
+			--AND ErrorCode NOT IN (@ErrorCodeLocCode,@ErrorCodeCountryID) -- Excluding the NULLABLE fields so that the record will be processed.
+
+		--=============================VALIDATION AND DERIVED COLUMN LOGIC END =============================
+
+		BEGIN TRANSACTION TxnLocation;
+
+		UPDATE 
+			TREFLOC 
+		SET  
+			LocDesc = TSTGLOC.LocDesc,
+			LocCode = TSTGLOC.LocCode,
+			CountryID = TSTGLOC.CountryID,
+			CSDR	  = CASE ISNULL(TSTGLOC.CSDR,'') WHEN '' THEN '' ELSE TSTGLOC.CSDR END,
+
+			BaNCSCountryId = TSTGLOC.BaNCSCountryId,
+			DepotID = TSTGLOC.DepotID,
+			AccountIDAtDepot = TSTGLOC.AccountIDAtDepot,
+			SubCustodianBPID = TSTGLOC.SubCustodianBPID,
+			BaNCSLocDesc = TSTGLOC.BaNCSLocDesc,
+			BaNCSLocCode = TSTGLOC.BaNCSLocCode,
+			BaNCSModifiedBy = TSTGLOC.BaNCSModifiedBy,
+			BaNCSModifiedOn = TSTGLOC.BaNCSModifiedOn,
+			BaNCSCreatedBy = TSTGLOC.BaNCSCreatedBy,
+			BaNCSCreatedOn = TSTGLOC.BaNCSCreatedOn,
+			BaNCSLocId = TSTGLOC.BaNCSLocId,
+			MarketPSETBIC  = TSTGLOC.MarketPSETBIC,
+			BaNCSBusinessDate = TSTGLOC.BaNCSBusinessDate,
+            FileHeaderDate = TSTGLOC.FileHeaderDate,
+			IsDeleted = 0,
+			ModifiedBy = @user,
+			ModifiedDate = @time
+		FROM 
+			Reference.dbo.Location TREFLOC 
+			INNER JOIN #tmpLocation AS TSTGLOC  
+			ON ( TSTGLOC.LocID = TREFLOC.LocID ) 
+		--WHERE 
+		--	( TSTGLOC.LocDesc <> TREFLOC.LocDesc ) OR 
+		--	( TSTGLOC.LocCode <> TREFLOC.LocCode ) OR 
+		--	( TSTGLOC.CountryID <> TREFLOC.CountryID ) OR
+		--	( TSTGLOC.CSDR <> TREFLOC.CSDR )
+
+		INSERT INTO Reference.dbo.Location
+		( 
+			LocID,
+			CountryID,
+			LocCode,
+			LocDesc,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			IsDeleted,
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy,
+			CreatedDate,
+			ModifiedBy,
+			ModifiedDate
+		)
+		SELECT DISTINCT 
+			LocID =
+            (
+                SELECT ISNULL(MAX(LocID), 0)FROM dbo.Location
+            ) + ROW_NUMBER() OVER (ORDER BY AccountIDAtDepot),
+			CountryID,
+			LocCode,
+			LocDesc,
+			CSDR,
+			BaNCSCountryId,
+			DepotID,
+			AccountIDAtDepot,
+			SubCustodianBPID,
+			BaNCSLocDesc,
+			BaNCSLocCode,
+			BaNCSLocId,
+			MarketPSETBIC,
+			BaNCSCreatedBy,
+			BaNCSCreatedOn,
+			BaNCSModifiedBy,
+			BaNCSModifiedOn,
+			IsDeleted = 0, 
+			BaNCSBusinessDate,
+			FileHeaderDate,
+			CreatedBy = @user,
+            CreatedDate = @time,
+            ModifiedBy = @user,
+            ModifiedDate = @time
+		FROM #tmpLocation AS TSTGLOC
+		WHERE TSTGLOC.LocID IS NULL 
+
+		COMMIT TRANSACTION TxnLocation;
+
+		SELECT @ErrorCountAll = COUNT(1) 
+		FROM
+			dbo.StgLocationError
+		WHERE
+			AsOfDate = @AsOfDate AND
+			BatchId = @BatchId
+
+		IF @ErrorCountAll > 0
+		BEGIN
+			IF @ErrorCountAll < @RecordCountTotal
+			BEGIN
+				EXEC dbo.op_SendAlertForCDSFiles 
+						@Extract ='LOCATION',
+						@Identifier1 = 'DATA_ISSUE',
+						@Identifier2 = 'Partial_UnProcessed'
+			END
+			ELSE
+			BEGIN
+				EXEC dbo.op_SendAlertForCDSFiles 
+						@Extract ='LOCATION',
+						@Identifier1 = 'DATA_ISSUE',
+						@Identifier2 = 'All_Unprocessed'
+				--RAISERROR('Could not process any record out of  %i records',16,1,@RecordCountTotal)
+			END
+		END
+
+	END TRY
+	BEGIN CATCH
+		IF @@TRANCOUNT > 0
+        BEGIN
+            ROLLBACK TRANSACTION TxnLocation;
+        END;
+
+		DECLARE @ErrMsg VARCHAR(MAX) = ERROR_MESSAGE()
+		BEGIN
+			--exec dbo. op_SendMail @pSubject = 'Error! REF_CDS_Location_Upload job', @pMessage = 'REF_CDS_Location_Upload job Step 2 failed! Could not transform Location extract.', @pApp = 'REFERENCE', @pAlertSupport = 1, @pAlert = 0 
+			SET @ErrMsg =  'Could not transform Location. Error : '+ @ErrMsg
+			EXEC dbo.op_SendAlertForCDSFiles 
+						@Extract ='LOCATION',
+						@Identifier1 = 'EXCEPTION',
+						@Identifier2 = @ErrMsg
+			--RAISERROR('Could not transform Location. Error : %s',16,1,@ErrMsg)
+		END
+	END CATCH
+	
+
+END
+GO
+
