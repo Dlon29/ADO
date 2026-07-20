@@ -1,4 +1,186 @@
-if (pageTemplate.RoleName == "CustodyUser") 
+protected string _MiscSectionRoleName = "";
+protected string _MiscSectionDataJson = "{}";
+
+
+
+protected void Page_Load(object sender, System.EventArgs e)
 {
-    Console.Write("Hello");
+    pageTemplate = new SwitchHeaderFooter(_ModuleName);
+    AddJsAttributes();
+
+    if (pageTemplate.RoleName == "CustodyUser")
+    {
+        GetMiscSectionData();
+    }
+
+    _SelectedImgButtonId = Request["_selectedImgButtonId"];
+    ...
+
+
+
+
+
+private void GetMiscSectionData()
+{
+    Database db = new Database();
+    DataReader dbRdr = new DataReader();
+    SqlDataReader sqlRdr = null;
+
+    try
+    {
+        if (db.Open() == false)
+            return;
+
+        dbRdr.Connection = db.Connection;
+        dbRdr.StoredProcedure = SqlObjectsStaticClass.p_GetData_Maintenance;
+        dbRdr.SqlIdentifier = "MISC_DATA";
+
+        if (dbRdr.GetData(ref sqlRdr, new string[0]) == false)
+            return;
+
+        StringBuilder sb = new StringBuilder();
+        sb.Append("{");
+        bool isFirst = true;
+
+        while (sqlRdr.Read())
+        {
+            string sectionKey = Convert.ToString(sqlRdr["ValueDesc"]).Trim();
+            string sectionValue = Convert.ToString(sqlRdr["Value"]).Trim();
+
+            if (!isFirst) sb.Append(",");
+            sb.Append("\"").Append(sectionKey).Append("\":\"").Append(sectionValue).Append("\"");
+            isFirst = false;
+        }
+        sb.Append("}");
+
+        _MiscSectionDataJson = sb.ToString();
+        _MiscSectionRoleName = pageTemplate.RoleName;
+    }
+    catch (Exception Exc)
+    {
+        Information clsInfo = new Information();
+        clsInfo.ErrNum = 5000;
+        clsInfo.ErrStr = Exc.Message;
+        clsInfo.ErrStack = Exc.StackTrace;
+        // Deliberately not Server.Transfer-ing here: a failure to fetch
+        // section-visibility data shouldn't take down the whole page —
+        // worst case, no sections get hidden for this request.
+    }
+    finally
+    {
+        if (sqlRdr != null && !sqlRdr.IsClosed)
+            sqlRdr.Close();
+
+        dbRdr.Dispose();
+        db.Dispose();
+    }
+}
+
+
+
+
+
+
+
+
+<input type="hidden" name="hdnMiscSectionRoleName" id="hdnMiscSectionRoleName" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionRoleName, true) %>'>
+<input type="hidden" name="hdnMiscSectionData" id="hdnMiscSectionData" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionDataJson, true) %>'>
+
+
+
+
+
+
+
+<!-- section1: Pension Top Five Borrowers -->
+<tr class="ReportsLineHeader" id="PensionTop5BorrowerTitleRow" data-section="section1">
+<tr bgcolor="#eef7d2" id="pension_top_five_borrowers" data-section="section1" style="display: '<%IsSectionSelected("PensionTop5Borrowers", "SECTION");%>'">
+
+<!-- section2: Reconciliation Status -->
+<tr class="ReportsLineHeader" id="recon_error_report_header" data-section="section2">
+<tr bgcolor="#eef7d2" id="extract_recon_errors" data-section="section2" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
+
+<!-- section3: Report Reconciliation Errors -->
+<tr class="ReportsLineHeader" id="report_recon_header" data-section="section3">
+<tr id="report_recon" data-section="section3" style="display: '<%IsSectionSelected("Report2","SECTION");%>'">
+
+<!-- section4: Lending Earnings -->
+<tr class="ReportsLineHeader" id="lending_earnins_extract_header" data-section="section4">
+<tr id="lending_earnins_extract" data-section="section4" style="display: '<%IsSectionSelected("Report3","SECTION");%>'">
+
+<!-- section5: Security On Loan (header currently has no id — that's fine, data-section doesn't need one) -->
+<tr class="ReportsLineHeader" data-section="section5">
+<tr bgcolor="#eef7d2" id="sec_onloan_header" data-section="section5" style="display: '<%IsSectionSelected("Report4","SECTION");%>'">
+
+<!-- section6: Percent On Loan -->
+<tr class="ReportsLineHeader" data-section="section6">
+<tr bgcolor="#eef7d2" id="percent_onloan_header" data-section="section6" style="display: '<%IsSectionSelected("Report5","SECTION");%>'">
+
+<!-- section7: BOJ Report -->
+<tr class="ReportsLineHeader" data-section="section7">
+<tr bgcolor="#eef7d2" id="boj_report" data-section="section7" style="display: '<%IsSectionSelected("Report6","SECTION");%>'">
+
+<!-- section8: Security Lending Performance -->
+<tr class="ReportsLineHeader" id="sec_lending_performance_header" data-section="section8">
+<tr id="sec_lending_performance" data-section="section8" style="display: '<%IsSectionSelected("Report7","SECTION");%>'">
+
+<!-- section9: Indemnity Report -->
+<tr class="ReportsLineHeader" id="indemnity_report_header" data-section="section9">
+<tr id="indemnity_report" data-section="section9" style="display: '<%IsSectionSelected("Report8","SECTION");%>'">
+
+<!-- section10: On Loan Term Trades -->
+<tr class="ReportsLineHeader" id="on_loan_term_trades_header" data-section="section10">
+<tr id="on_loan_term_trades" data-section="section10" style="display: '<%IsSectionSelected("Report9","SECTION");%>'">
+
+<!-- section11: Custody Reports -->
+<tr class="ReportsLineHeader" id="custody_report_header" data-section="section11">
+<tr bgcolor="#eef7d2" id="extract_custody_errors" data-section="section11" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
+
+
+
+
+
+
+
+function Init_Form() {
+
+    // on pressing the print button, the report will be openned if there is any url to the PDF file
+    var printUrl = document.Reports.hdnPrintUrl.value;
+
+    var lbUnreportedAccounts = document.getElementById('lbUnreportedAccounts');
+    var lbReportedAccounts = document.getElementById('lbReportedAccounts');        
+    var chkSecurityClass = document.getElementById('chkSecurityClass');
+    unselectAll(lbUnreportedAccounts);
+    unselectAll(lbReportedAccounts);
+
+    if (printUrl.length > 0) {
+        document.Reports.hdnPrintUrl.value = "";
+        PopUpWindow(printUrl, '', 'width=screen.width,height=screen.height, scrollbars=no, resizable=yes, alwaysRaised, titlebar=no');
+    }
+    chkSecurityClass.disabled = true;
+    InitializeIndemnityReportSection();
+    ApplyCustodyUserSectionVisibility();
+    return;
+}
+
+function ApplyCustodyUserSectionVisibility() {
+
+    var roleName = document.getElementById('hdnMiscSectionRoleName').value;
+    if (roleName !== 'CustodyUser') {
+        return;
+    }
+
+    var sectionData = {};
+    try {
+        sectionData = JSON.parse(document.getElementById('hdnMiscSectionData').value);
+    } catch (e) {
+        return; // malformed/missing data - fail safe, hide nothing
+    }
+
+    var sectionRows = document.querySelectorAll('[data-section]');
+    for (var i = 0; i < sectionRows.length; i++) {
+        var row = sectionRows[i];
+        var key = row.getAttribute('data-section');
+        row.style.display = (sectionData[key] === 'Y') ? '' : 'none';
+    }
 }
