@@ -1,0 +1,4 @@
+if (pageTemplate.RoleName == "CustodyUser") 
+{
+    Console.Write("Hello");
+}
