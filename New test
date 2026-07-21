@@ -19,6 +19,8 @@
 <input type="hidden" name="_selectedImgButtonId" value="">
 <!-- print information as hidden values -->
 <input type="hidden" name="hdnPrintUrl" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_PrintUrl, true) %>'>
+<input type="hidden" name="hdnMiscSectionRoleName" id="hdnMiscSectionRoleName" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionRoleName, true) %>'>
+<input type="hidden" name="hdnMiscSectionData" id="hdnMiscSectionData" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionData, true) %>'>
 <table border="0" width="700" cellpadding="0" cellspacing="0">
     <!--Row for the Tab Header table-->
     <%
@@ -68,7 +70,7 @@
                 <!--=====================================================================================================================================================================================-->
                 <!--Start of Pension Top 5 Borrowers-->
                 <!--=====================================================================================================================================================================================-->
-                <tr class="ReportsLineHeader" id="PensionTop5BorrowerTitleRow">
+                <tr class="ReportsLineHeader" id="PensionTop5BorrowerTitleRow" data-section="section1">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -84,7 +86,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr bgcolor="#eef7d2" id="pension_top_five_borrowers" style="display: '<%IsSectionSelected("PensionTop5Borrowers","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="pension_top_five_borrowers" data-section="section1" style="display: '<%IsSectionSelected("PensionTop5Borrowers","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr><td height="10" /></tr>
@@ -113,7 +115,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr><td class="SectionSpacer" /></tr>
+                <tr  data-section="section1"><td class="SectionSpacer" /></tr>
                 <!--=====================================================================================================================================================================================-->
                 <!--End of Pension Top 5 Borrowers-->
                 <!--=====================================================================================================================================================================================-->
@@ -121,7 +123,7 @@
                 <!--=====================================================================================================================================================================================-->
                 <!--Start of Reconciliation Status-->
                 <!--=====================================================================================================================================================================================-->
-                <tr class="ReportsLineHeader" id="recon_error_report_header">
+                <tr class="ReportsLineHeader" id="recon_error_report_header" data-section="section2">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -138,7 +140,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr bgcolor="#eef7d2" id="extract_recon_errors" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="extract_recon_errors" data-section="section2" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -172,7 +174,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr>
+                <tr data-section="section2">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
@@ -183,7 +185,7 @@
 
 
                 <!--Row 2: 'Report Reconciliation Errors' Section Header-->
-                <tr class="ReportsLineHeader" id="report_recon_header">
+                <tr class="ReportsLineHeader" id="report_recon_header" data-section="section3">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -201,7 +203,7 @@
                     </td>
                 </tr>
                 <!--Section 2: 'Report Reconciliation Errors' Section-->
-                <tr id="report_recon" style="display: '<%IsSectionSelected("Report2","SECTION");%>'">
+                <tr id="report_recon" data-section="section3" style="display: '<%IsSectionSelected("Report2","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -247,14 +249,14 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Report Reconciliation Errors' section ends here-->
-                <tr>
+                <tr data-section="section3">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 3: 'Security Lending Earnings Extract' Section Header-->
-                <tr class="ReportsLineHeader" id="lending_earnins_extract_header">
+                <tr class="ReportsLineHeader" id="lending_earnins_extract_header" data-section="section4">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -272,7 +274,7 @@
                     </td>
                 </tr>
                 <!--Section 3: 'Report Reconciliation Errors' Section-->
-                <tr id="lending_earnins_extract" style="display: '<%IsSectionSelected("Report3","SECTION");%>'">
+                <tr id="lending_earnins_extract" data-section="section4" style="display: '<%IsSectionSelected("Report3","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
@@ -441,14 +443,14 @@
                     </td>
                 </tr>
                 <!--Section 3: 'Report Reconciliation Errors' section ends here-->
-                <tr>
+                <tr data-section="section4">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 1: Recon Error Section Header-->
-                <tr class="ReportsLineHeader">
+                <tr class="ReportsLineHeader" data-section="section5">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -466,7 +468,7 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Extract Recon Errors' Section-->
-                <tr bgcolor="#eef7d2" id="sec_onloan_header" style="display: '<%IsSectionSelected("Report4","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="sec_onloan_header" data-section="section5" style="display: '<%IsSectionSelected("Report4","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%" border="0">
                             <tr>
@@ -532,14 +534,14 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Extract Recon Error' section ends here-->
-                <tr>
+                <tr data-section="section5">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 1: Recon Error Section Header-->
-                <tr class="ReportsLineHeader">
+                <tr class="ReportsLineHeader" data-section="section6">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -557,7 +559,7 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Extract Recon Errors' Section-->
-                <tr bgcolor="#eef7d2" id="percent_onloan_header" style="display: '<%IsSectionSelected("Report5","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="percent_onloan_header" data-section="section6" style="display: '<%IsSectionSelected("Report5","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%" border="0">
                             <tr>
@@ -649,14 +651,14 @@
                         </table>
                     </td>
                 </tr>
-                <tr>
+                <tr data-section="section6">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 1: Recon Error Section Header-->
-                <tr class="ReportsLineHeader">
+                <tr class="ReportsLineHeader" data-section="section7">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -674,7 +676,7 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Extract Recon Errors' Section-->
-                <tr bgcolor="#eef7d2" id="boj_report" style="display: '<%IsSectionSelected("Report6","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="boj_report" data-section="section7" style="display: '<%IsSectionSelected("Report6","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%" border="0">
                             <tr>
@@ -791,14 +793,14 @@
                     </td>
                 </tr>
                 <!--Section 1: 'Extract Recon Error' section ends here-->
-                <tr>
+                <tr data-section="section7">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 3: 'Security Lending Earnings Extract' Section Header-->
-                <tr class="ReportsLineHeader" id="sec_lending_performance_header">
+                <tr class="ReportsLineHeader" id="sec_lending_performance_header" data-section="section8">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -816,7 +818,7 @@
                     </td>
                 </tr>
                 <!--Section 3: 'Report Reconciliation Errors' Section-->
-                <tr id="sec_lending_performance" style="display: '<%IsSectionSelected("Report7","SECTION");%>'">
+                <tr id="sec_lending_performance" data-section="section8" style="display: '<%IsSectionSelected("Report7","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
@@ -1036,14 +1038,14 @@
                 <!--Section 3: 'Report Reconciliation Errors' section ends here-->
 
 
-                <tr>
+                <tr data-section="section8">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
 
                 <!--Indemnity Report Header-->
-                <tr class="ReportsLineHeader" id="indemnity_report_header">
+                <tr class="ReportsLineHeader" id="indemnity_report_header" data-section="section9">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -1063,7 +1065,7 @@
                 <!--End of Indemnity Report Header-->
 
                 <!--Indemnity Report Section-->
-                <tr id="indemnity_report" style="display: '<%IsSectionSelected("Report8","SECTION");%>'">
+                <tr id="indemnity_report" data-section="section9" style="display: '<%IsSectionSelected("Report8","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
@@ -1256,14 +1258,14 @@
                     </td>
                 </tr>
                 <!--End of Indemnity Report Section-->
-                <tr>
+                <tr data-section="section9">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
                 </tr>
                 <!--spacer ends here-->
                 <!--Row 2: 'Report Reconciliation Errors' Section Header-->
-                <tr class="ReportsLineHeader" id="on_loan_term_trades_header">
+                <tr class="ReportsLineHeader" id="on_loan_term_trades_header" data-section="section10">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -1281,7 +1283,7 @@
                     </td>
                 </tr>
                 <!--Section 2: 'Report Reconciliation Errors' Section-->
-                <tr id="on_loan_term_trades" style="display: '<%IsSectionSelected("Report9","SECTION");%>'">
+                <tr id="on_loan_term_trades" data-section="section10" style="display: '<%IsSectionSelected("Report9","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -1325,7 +1327,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr>
+                <tr data-section="section10">
                     <!--Spacer between two sections-->
                     <td class="SectionSpacer">
                     </td>
@@ -1333,13 +1335,13 @@
                 <!--=====================================================================================================================================================================================-->
                 <!--Start of Custody Reports-->
                 <!--=====================================================================================================================================================================================-->
-                <tr class="ReportsLineHeader" id="custody_report_header">
+                <tr class="ReportsLineHeader" id="custody_report_header" data-section="section11">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
                                 <td width="30">
                                     <a href="#" onclick="HideShow2(extract_custody_errors, img_extract_custody_errors)">
-                                        <img border="0" name="img_extract_custody_errors" src='<%IsSectionSelected("Report1", "SRC");%>'>
+                                        <img border="0" name="img_extract_custody_errors" src='<%IsSectionSelected("Report10", "SRC");%>'>
                                     </a>
                                 </td>
                                 <td>
@@ -1350,7 +1352,7 @@
                         </table>
                     </td>
                 </tr>
-                <tr bgcolor="#eef7d2" id="extract_custody_errors" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
+                <tr bgcolor="#eef7d2" id="extract_custody_errors" data-section="section11" style="display: '<%IsSectionSelected("Report10","SECTION");%>'">
                     <td colspan="3">
                         <table cellpadding="0" cellspacing="0" width="100%">
                             <tr>
@@ -1372,7 +1374,7 @@
                                 </td>
                                 <td colspan="2" align="right">
                                     <asp:imagebutton id="imgReport10" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
-                                        runat="server" commandname="Report1" commandargument="Report1" oncommand="Button_Click" />
+                                        runat="server" commandname="Report10" commandargument="Report10" oncommand="Button_Click"/>
                                     &nbsp;&nbsp;                                    
                                 </td>
                             </tr>
@@ -1416,12 +1418,38 @@
             PopUpWindow(printUrl, '', 'width=screen.width,height=screen.height, scrollbars=no, resizable=yes, alwaysRaised, titlebar=no');
         }
         chkSecurityClass.disabled = true;
-        InitializeIndemnityReportSection();
+        InitializeIndemnityReportSection();        
+        ApplyCustodyUserSectionVisibility();
         return;
     }
 
     function InitializeIndemnityReportSection() {
         RefreshIndemnityReportSection();
+    }
+
+    function ApplyCustodyUserSectionVisibility() {        
+        var roleName = document.getElementById('hdnMiscSectionRoleName').value;
+        var rawData = document.getElementById('hdnMiscSectionData').value;
+        var sectionData = {};
+
+        if (roleName == 'CustodyUser') {          
+            var pairs = rawData.split(';');
+            for (var p = 0; p < pairs.length; p++) {
+                var pair = pairs[p].split('=');
+                if (pair.length === 2) {
+                    sectionData[pair[0]] = pair[1];
+                }
+            }
+
+            var sectionRows = document.getElementsByTagName('tr');
+            for (var i = 0; i < sectionRows.length; i++) {
+                var row = sectionRows[i];
+                var key = row.getAttribute('data-section');
+                if (key) {
+                    row.style.display = (sectionData[key] === 'Y') ? '' : 'none';
+                }
+            }
+        }        
     }
 
     function OnIndemnityReportSelectionChange() {
@@ -1514,6 +1542,8 @@
         });
 
     });
+
+   
 
 </script>
 <!--Close table here -->
