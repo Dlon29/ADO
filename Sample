@@ -184,3 +184,11 @@ function ApplyCustodyUserSectionVisibility() {
         row.style.display = (sectionData[key] === 'Y') ? '' : 'none';
     }
 }
+
+
+
+
+<a href="#" onclick="HideShow2(extract_custody_errors, img_extract_custody_errors)">
+    <img border="0" name="img_extract_custody_errors"
+         src='<%if (pageTemplate.RoleName == "CustodyUser") { Response.Write("/MoBetter/images/arrow-down.gif"); } else { IsSectionSelected("Report10", "SRC"); }%>'>
+</a>
