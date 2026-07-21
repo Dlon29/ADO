@@ -1905,3 +1905,107 @@ namespace MOBETTER
 
     }
 }
+
+
+
+
+
+/******************************************************
+Method	: GetData (Overload 2)
+Desc	: Read record and give output as datareader
+******************************************************/
+public bool GetData(ref SqlDataReader oRs, params string[] pSqlCondition)
+{
+    // check the SqlIdentifier value for null
+    if (SqlIdentifier == null || pSqlCondition.Length == 0)
+    {
+        mErrNum = 5000;
+        mErrStr = "Parameter is missing: SqlIdentifier";
+        _logger.Warn(mErrStr);
+        RaiseError(mErrNum, mErrStr, "", "", true);
+        return false;
+    }
+
+
+    var sqlParams = pSqlCondition.ToList().Aggregate((seed, acc) => string.Format("{0}, {1}", seed, acc ?? "NULL"));
+
+    int nReturnValue = 0;
+    SqlCommand CommObj = new SqlCommand();
+
+    try
+    {
+        // calling stored procedure for reading records.
+        CommObj.Connection = Connection;
+        SetCommandText(ref CommObj, _StoredProcedure);
+        
+        CommObj.CommandType = CommandType.StoredProcedure;
+        CommObj.CommandTimeout = 0;
+
+        // return parameter
+        int x = 0;
+        SqlParameter pReturn = new SqlParameter("RETURN", x);
+        pReturn.Direction = ParameterDirection.ReturnValue;
+        CommObj.Parameters.Add(pReturn);
+
+        // input parameters
+        // supply SqlIdentifier
+        CommObj.Parameters.AddWithValue("@SQL_IDENTIFIER", SqlIdentifier);
+        int nColumnCount = 1;
+
+        // supply SqlCondition parameter dynamically
+        foreach (string sSqlCond in pSqlCondition)
+        {
+            CommObj.Parameters.AddWithValue("@SQL_CONDITION" + nColumnCount,
+                sSqlCond.ToString());
+
+            nColumnCount++;
+        }
+        oRs = CommObj.ExecuteReader();
+        if (CommObj.Parameters["RETURN"].Value != null)
+            nReturnValue = (int)CommObj.Parameters["RETURN"].Value;
+        else
+        {
+            nReturnValue = 0;
+        }
+    }
+    // error handler
+    catch (SqlException SqlExc)
+    {
+        mErrNum = 5000;
+        mErrStr = SqlExc.ToString();
+        _logger.Error(mErrStr);
+        RaiseError(mErrNum, mErrStr, SqlExc.Source, SqlExc.HelpLink, true);
+
+        switch (nReturnValue)
+        {
+            case 1:
+                mErrNum = 5000;
+                mErrStr = "Stored Procedure error.";
+                _logger.Error(mErrStr);
+                RaiseError(mErrNum, mErrStr, "", "", true);
+                return false;
+            case 2:
+                mErrNum = 5000;
+                mErrStr = "Stored Procedure '" + _StoredProcedure + "' does not contain SQL IDENTIFIER '" + SqlIdentifier + "'";
+                _logger.Warn(mErrStr);
+                RaiseError(mErrNum, mErrStr, "", "", true);
+                return false;
+        }
+        return false;
+    }
+    catch (Exception Exc)
+    {
+        mErrNum = 5000;
+        mErrStr = Exc.ToString();
+        _logger.Error(mErrStr);
+        RaiseError(mErrNum, mErrStr, Exc.Source, Exc.HelpLink, true);
+        return false;
+    }
+    finally
+    {
+        CommObj.Dispose();
+        CommObj = null;
+    }
+    return true;
+
+}
