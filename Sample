@@ -1,194 +1,1621 @@
-protected string _MiscSectionRoleName = "";
-protected string _MiscSectionDataJson = "{}";
+<%@ Page Language="c#" CodeBehind="MiscReports.aspx.cs" AutoEventWireup="True" Inherits="MOBETTER.MiscReports" %>
 
-
-
-protected void Page_Load(object sender, System.EventArgs e)
-{
-    pageTemplate = new SwitchHeaderFooter(_ModuleName);
-    AddJsAttributes();
-
-    if (pageTemplate.RoleName == "CustodyUser")
+<%
+    if (IsUI)
     {
-        GetMiscSectionData();
-    }
-
-    _SelectedImgButtonId = Request["_selectedImgButtonId"];
-    ...
-
-
-
-
-
-private void GetMiscSectionData()
-{
-    Database db = new Database();
-    DataReader dbRdr = new DataReader();
-    SqlDataReader sqlRdr = null;
-
-    try
-    {
-        if (db.Open() == false)
-            return;
-
-        dbRdr.Connection = db.Connection;
-        dbRdr.StoredProcedure = SqlObjectsStaticClass.p_GetData_Maintenance;
-        dbRdr.SqlIdentifier = "MISC_DATA";
-
-        if (dbRdr.GetData(ref sqlRdr, new string[0]) == false)
-            return;
-
-        StringBuilder sb = new StringBuilder();
-        sb.Append("{");
-        bool isFirst = true;
-
-        while (sqlRdr.Read())
+        string Section = "Reports";
+        string Page = "Misc Reports";
+        MOBETTER.SwitchHeaderFooter.WriteIncFiles(Section, Page);
+        Response.Write(pageTemplate.BuildHeaderNew(Section, Page).ToString());
+%>
+<!--Enter table for this page here -->
+<form name="Reports" id="Reports" runat="server" method="post">
+<input type="hidden" name="_ReportsTab">
+<input type="hidden" name="_PkgSelected">
+<input type="hidden" name="_IsExtract" value="false">
+<input type="hidden" name="_reportType">
+<input type="hidden" name="_reportId" value="0">
+<input type="hidden" name="_reportTitle" value="">
+<input type="hidden" name="_selectedImgButtonId" value="">
+<!-- print information as hidden values -->
+<input type="hidden" name="hdnPrintUrl" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_PrintUrl, true) %>'>
+<input type="hidden" name="hdnUserAppRole" id="hdnUserAppRole" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_UserAppRole, true) %>'>
+<input type="hidden" name="hdnMiscSectionData" id="hdnMiscSectionData" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionData, true) %>'>
+<table border="0" width="700" cellpadding="0" cellspacing="0">
+    <!--Row for the Tab Header table-->
+    <%
+        string tabPage = "MiscReports";
+        Response.Write(MOBETTER.SwitchHeaderFooter.WriteTabHeader(tabPage).ToString());
+        if (pageTemplate.AccessTypeCode == "N")
         {
-            string sectionKey = Convert.ToString(sqlRdr["ValueDesc"]).Trim();
-            string sectionValue = Convert.ToString(sqlRdr["Value"]).Trim();
+            Response.Redirect(string.Format("~/Error/PageDenied.aspx?{0}&{1}", "AuthorizationFail", tabPage));
+        } 		    
+    %>
+    <!--Row for tab header table ends here....-->
+    <!-- Error TR -->
+    <tr id="error_row" style="display: '<%=_show_error_row%>'">
+        <td>
+            <table id="tblError" width="100%" cellpadding="0" cellspacing="0">
+                <tr class="ReportsLineHeader">
+                    <td width="30">
+                    </td>
+                    <td>
+                        <font class="ErrorMsgHeader">Error Messages</font>
+                    </td>
+                </tr>
+                <tr>
+                    <td height="10" colspan="2">
+                    </td>
+                </tr>
+                <tr>
+                    <td width="30">
+                    </td>
+                    <td>
+                        <font class="ErrorMsg">
+                            <%=_ErrorString%></font>
+                    </td>
+                </tr>
+                <tr>
+                    <td height="10" colspan="2">
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <tr id="tblProcReports">
+        <!--Row for 3rd tab table starts here-->
+        <td>
+            <table class="ReportsTabTable" cellpadding="0" cellspacing="0" width="100%">
 
-            if (!isFirst) sb.Append(",");
-            sb.Append("\"").Append(sectionKey).Append("\":\"").Append(sectionValue).Append("\"");
-            isFirst = false;
+                <!--=====================================================================================================================================================================================-->
+                <!--Start of Pension Top 5 Borrowers-->
+                <!--=====================================================================================================================================================================================-->
+                <tr class="ReportsLineHeader" id="PensionTop5BorrowerTitleRow" data-section="section1">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(pension_top_five_borrowers, img_toggle_pension_top_five_borrowers)">
+                                        <img border="0" name="img_toggle_pension_top_five_borrowers" src='<%IsSectionSelected("PensionTop5Borrowers", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(pension_top_five_borrowers, img_toggle_pension_top_five_borrowers)"><font class="ReportsLineHeader">Pension Top Five Borrowers</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr bgcolor="#eef7d2" id="pension_top_five_borrowers" data-section="section1" style="display: '<%IsSectionSelected("PensionTop5Borrowers","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr><td height="10" /></tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="150">
+                                    <asp:textbox id="txtPensionTop5BorrowersBatchRunDate" autopostback="False" columns="10" maxlength="10" runat="server" />
+                                    <a href="javascript:OpenCalendar('txtPensionTop5BorrowersBatchRunDate', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0">
+                                    </a> 
+                                    <font color="red" size="2">*</font>
+                                </td>
+                                <td colspan="2" align="right">
+                                    <asp:imagebutton id="imgShowReportPensionTop5Borrowers" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                        runat="server" commandname="PENSION_TOP_FIVE_BORROWERS" commandargument="PENSION_TOP_FIVE_BORROWERS" oncommand="Button_Click" />
+                                    &nbsp;&nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10" />
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr  data-section="section1"><td class="SectionSpacer" /></tr>
+                <!--=====================================================================================================================================================================================-->
+                <!--End of Pension Top 5 Borrowers-->
+                <!--=====================================================================================================================================================================================-->
+
+                <!--=====================================================================================================================================================================================-->
+                <!--Start of Reconciliation Status-->
+                <!--=====================================================================================================================================================================================-->
+                <tr class="ReportsLineHeader" id="recon_error_report_header" data-section="section2">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(extract_recon_errors, img_extract_recon_errors)">
+                                        <img border="0" name="img_extract_recon_errors" src='<%IsSectionSelected("Report1", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(extract_recon_errors, img_extract_recon_errors)"><font
+                                        class="ReportsLineHeader">Reconciliation Status</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr bgcolor="#eef7d2" id="extract_recon_errors" data-section="section2" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="150">
+                                    <asp:textbox id="txtBatchRunDate1" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate1', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td colspan="2" align="right">
+                                    <asp:imagebutton id="imgReport1" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                        runat="server" commandname="Report1" commandargument="Report1" oncommand="Button_Click" />
+                                    &nbsp;&nbsp;
+                                    <!--img src="/MoBetter/images/ShowReport.gif" border="0" onClick = "ShowReport_0nClick('ShowReport1','MiscReports')" onMouseDown = "ShowReport_onMouseDown(this)" onMouseUp = "ShowReport_onMouseUp(this)"-->
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr data-section="section2">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--=====================================================================================================================================================================================-->
+                <!--End of Reconciliation Status-->
+                <!--=====================================================================================================================================================================================-->
+
+
+                <!--Row 2: 'Report Reconciliation Errors' Section Header-->
+                <tr class="ReportsLineHeader" id="report_recon_header" data-section="section3">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#report_recon_header" onclick="HideShow2(report_recon, img_report_recon)">
+                                        <img border="0" name="img_report_recon" src='<%IsSectionSelected("Report2", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#report_recon_header" onclick="HideShow2(report_recon, img_report_recon)"><font
+                                        class="ReportsLineHeader">Report Reconciliation Errors</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 2: 'Report Reconciliation Errors' Section-->
+                <tr id="report_recon" data-section="section3" style="display: '<%IsSectionSelected("Report2","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Select a report:</font>
+                                </td>
+                                <td colspan="3" align="left" width="100">
+                                    <asp:dropdownlist id="cboNamedReports2" runat="server" enableviewstate="True">
+                                        </asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="150">
+                                    <asp:textbox id="txtBatchRunDate2" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate2', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td colspan="2" align="right">
+                                    <asp:imagebutton id="imgReport2" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                        runat="server" commandname="Report2" commandargument="Report2" oncommand="Button_Click" />
+                                    &nbsp;&nbsp;
+                                    <!--img src="/MoBetter/images/ShowReport.gif" border="0" onClick = "ShowReport_0nClick('ShowReport2', 'MiscReports')" onMouseDown = "ShowReport_onMouseDown(this)" onMouseUp = "ShowReport_onMouseUp(this)"-->
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Report Reconciliation Errors' section ends here-->
+                <tr data-section="section3">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 3: 'Security Lending Earnings Extract' Section Header-->
+                <tr class="ReportsLineHeader" id="lending_earnins_extract_header" data-section="section4">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#lending_earnins_extract_header" onclick="HideShow2(lending_earnins_extract, img_lending_earnins)">
+                                        <img border="0" name="img_lending_earnins" src='<%IsSectionSelected("Report3", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#lending_earnins_extract_header" onclick="HideShow2(lending_earnins_extract, img_lending_earnins)">
+                                        <font class="ReportsLineHeader">Lending Earnings</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 3: 'Report Reconciliation Errors' Section-->
+                <tr id="lending_earnins_extract" data-section="section4" style="display: '<%IsSectionSelected("Report3","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Start Date</font>
+                                </td>
+                                <td width="200">
+                                    <asp:textbox id="txtStartDate3" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <!--<Input Type = "text" Name = "txtStartDate3" size = "10" value = '<%// Response.Write(_batchRunDate2); %>'>-->
+                                    <a href="javascript:OpenCalendar('txtStartDate3', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">End Date</font>
+                                </td>
+                                <td width="175">
+                                    <asp:textbox id="txtEndDate3" autopostback="False" columns="10" maxlength="10" runat="server" />
+                                    <!--<Input Type = "text" Name = "txtEndDate3" size = "10" value = '<%// Response.Write(_batchRunDate2); %>'>-->
+                                    <a href="javascript:OpenCalendar('txtEndDate3', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font> &nbsp;
+                                    <asp:imagebutton id="imgRefresh3" imageurl="/Mobetter/Images/iconRefresh.gif" commandname="Refresh3"
+                                        commandargument="Report3" oncommand="Button_Click" runat="server" />
+                                </td>
+                                <td width="415">
+                                    <font class="ReportSection">Show FICC As Broker:</font>&nbsp;<asp:checkbox id="chkShowFICCAsBroker" autopostback="false" text="" runat="server" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Account Group:</font>
+                                </td>
+                                <td colspan="3" align="left" width="100">
+                                    <asp:dropdownlist id="cboAcctGrpLE" runat="server"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="4">
+                                    <table cellpadding="0" cellspacing="0" border="0" width="100%" id="tblReportAccounts">
+                                        <tr>
+                                            <td width="10">
+                                                &nbsp;&nbsp;
+                                            </td>
+                                            <td>
+                                                <font class="ReportSection">Unreported Accounts </font>
+                                                <br>
+                                                <asp:listbox id="lbUnreportedAccounts" datatextfield="AcctDesc" datavaluefield="AcctID"
+                                                    autopostback="False" rows="10" width="300" selectionmode="Multiple" enableviewstate="true"
+                                                    runat="server" />
+                                            </td>
+                                            <td valign="middle" align="center" width="100">
+                                                <br>
+                                                <img name="btnAllTo" id="btnAllTo" src="/MoBetter/images/AllToList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo, document.forms[0].btnTo, document.forms[0].btnAllFr, document.forms[0].btnFr, document.forms[0].lbUnreportedAccounts, document.forms[0].lbReportedAccounts );" /><br>
+                                                <img name="btnTo" id="btnTo" src="/MoBetter/images/ToList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo, document.forms[0].btnTo, document.forms[0].btnAllFr, document.forms[0].btnFr, document.forms[0].lbUnreportedAccounts, document.forms[0].lbReportedAccounts );" />
+                                                <p />
+                                                <img name="btnFr" id="btnFr" src="/MoBetter/images/FrList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo, document.forms[0].btnTo, document.forms[0].btnAllFr, document.forms[0].btnFr, document.forms[0].lbUnreportedAccounts, document.forms[0].lbReportedAccounts );" /><br>
+                                                <img name="btnAllFr" id="btnAllFr" src="/MoBetter/images/AllFrList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo, document.forms[0].btnTo, document.forms[0].btnAllFr, document.forms[0].btnFr, document.forms[0].lbUnreportedAccounts, document.forms[0].lbReportedAccounts );" />
+                                            </td>
+                                            <td width="500">
+                                                <font class="ReportSection">Reported Accounts </font>
+                                                <asp:listbox id="lbReportedAccounts" autopostback="False" rows="10" width="300" selectionmode="Multiple"
+                                                    enableviewstate="true" runat="server" />
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Report Type:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboRepType3" tabindex="2" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Term Repo:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboTermRepo" tabindex="2" runat="server" enableviewstate="True">
+                                            <asp:ListItem Value="1" Text="Include Term Repo and Own Repo" Selected></asp:ListItem>
+                                            <asp:ListItem Value="2" Text="Include Term Repo Only"></asp:ListItem>        
+                                            <asp:ListItem Value="3" Text="Include Own Repo Only"></asp:ListItem>              
+                                            <asp:ListItem Value="4" Text="Exclude Term Repo and Own Repo"></asp:ListItem>              
+                                            <asp:ListItem Value="5" Text="Term Repo Only"></asp:ListItem>              
+                                            <asp:ListItem Value="6" Text="Own Repo Only"></asp:ListItem>                                                     
+                                        </asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="4">
+                                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                <asp:radiobutton id="rbPDF3" autopostback="False" checked="False" groupname="ExportType3"
+                                                    runat="server" onclick="javascript:diableTermRepo(this);" />
+                                                <font class="ReportSection">Report</font> &nbsp;
+                                                <asp:radiobutton id="rbCSV3_1" autopostback="False" checked="True" groupname="ExportType3"
+                                                    runat="server" onclick="javascript:diableTermRepo(this);" />
+                                                <font class="ReportSection">Extract</font> &nbsp;
+                                                <asp:radiobutton id="rbCSV3_2" autopostback="False" checked="False" groupname="ExportType3"
+                                                    runat="server" onclick="javascript:diableTermRepo(this);" />
+                                                <font class="ReportSection">Client Extract</font> &nbsp;
+                                            </td>
+                                            <td align="right" width="120">
+                                                <asp:imagebutton id="imgReport3" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandname="Report3" commandargument="Report3" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                                <!--img id = "imgGetExtract" src="/MoBetter/images/ShowReport.gif" border="0" onClick = "ShowReport_0nClick('ShowReport3','MiscReports')" onMouseDown = "ShowReport_onMouseDown(this)" onMouseUp = "ShowReport_onMouseUp(this)" -->
+                                                <!-- onClick = "ShowReport_0nClick('ShowReport3','MiscReports')" -->
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 3: 'Report Reconciliation Errors' section ends here-->
+                <tr data-section="section4">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 1: Recon Error Section Header-->
+                <tr class="ReportsLineHeader" data-section="section5">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(sec_onloan_header, img_sec_onloan_header)">
+                                        <img border="0" name="img_sec_onloan_header" src='<%IsSectionSelected("Report4", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(sec_onloan_header, img_sec_onloan_header)"><font class="ReportsLineHeader">
+                                        Security On Loan</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Extract Recon Errors' Section-->
+                <tr bgcolor="#eef7d2" id="sec_onloan_header" data-section="section5" style="display: '<%IsSectionSelected("Report4","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%" border="0">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="575">
+                                    <asp:textbox id="txtBatchRunDate4" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate4', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Account Nbr:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboAcctNbr4" tabindex="2" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td colspan="2">
+                                    <table align="right" cellpadding="0" cellspacing="0" width="100%" border="0">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                <asp:radiobutton id="rbPDF4" autopostback="False" checked="True" groupname="ExportType4"
+                                                    runat="server" />
+                                                <font class="ReportSection">Report</font> &nbsp;
+                                                <asp:radiobutton id="rbCSV4" autopostback="False" checked="False" groupname="ExportType4"
+                                                    runat="server" />
+                                                <font class="ReportSection">Extract</font>
+                                            </td>
+                                            <td align="right" width="150" colspan="2">
+                                                <asp:imagebutton id="imgReport4" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandargument="Report4" commandname="Report4" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5" colspan="3">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Extract Recon Error' section ends here-->
+                <tr data-section="section5">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 1: Recon Error Section Header-->
+                <tr class="ReportsLineHeader" data-section="section6">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(percent_onloan_header, img_percent_onloan_header)">
+                                        <img border="0" name="img_percent_onloan_header" src='<%IsSectionSelected("Report5", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(percent_onloan_header, img_percent_onloan_header)"><font
+                                        class="ReportsLineHeader">Percent On Loan</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Extract Recon Errors' Section-->
+                <tr bgcolor="#eef7d2" id="percent_onloan_header" data-section="section6" style="display: '<%IsSectionSelected("Report5","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%" border="0">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="575">
+                                    <asp:textbox id="txtBatchRunDate5" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate5', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Account Nbr:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboAcctNbr5" tabindex="2" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Security Type:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboSecType5" tabindex="2" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr style="display: 'NONE'">
+                                <td width="10">
+                                </td>
+                                <td >
+                                    <font class="ReportSection">Exclusive:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:checkbox id="chkIsExclusive5" tabindex="3" runat="server" enableviewstate="True" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td colspan="2">
+                                    <table align="right" cellpadding="0" cellspacing="0" width="100%" border="0">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                <asp:radiobutton id="rbPDF5" autopostback="False" checked="False" groupname="ExportType5" runat="server" style="display: 'NONE'"/>
+                                                <font class="ReportSection" style="display: 'NONE'">Report</font> &nbsp;
+                                                
+                                                <asp:radiobutton id="rbCSV5" autopostback="False" checked="True" groupname="ExportType5" runat="server" />
+                                                <font class="ReportSection">Extract</font>
+                                            </td>
+                                            <td align="right" width="150" colspan="2">
+                                                <asp:imagebutton id="ImgReport5" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandname="Report5" commandargument="Report5" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5" colspan="3">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr data-section="section6">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 1: Recon Error Section Header-->
+                <tr class="ReportsLineHeader" data-section="section7">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(boj_report, img_boj_report)">
+                                        <img border="0" name="img_boj_report" src='<%IsSectionSelected("Report6", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(boj_report, img_boj_report)"><font class="ReportsLineHeader">
+                                        BOJ Report</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Extract Recon Errors' Section-->
+                <tr bgcolor="#eef7d2" id="boj_report" data-section="section7" style="display: '<%IsSectionSelected("Report6","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%" border="0">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Start Date:</font>
+                                </td>
+                                <td width="575">
+                                    <asp:textbox id="txtStartDate6" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtStartDate6', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">End Date:</font>
+                                </td>
+                                <td width="575">
+                                    <asp:textbox id="txtEndDate6" autopostback="False" columns="10" maxlength="10" runat="server" />
+                                    <a href="javascript:OpenCalendar('txtEndDate6', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font> &nbsp;
+                                    <asp:imagebutton id="imgRefresh6" imageurl="/Mobetter/Images/iconRefresh.gif" commandname="Refresh6"
+                                        commandargument="Report6" oncommand="Button_Click" runat="server" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Account Nbr:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboAcctNbr6" tabindex="2" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Account Type:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:dropdownlist id="cboAcctType6" tabindex="2" runat="server" enableviewstate="True">
+											<asp:ListItem value="-1">-- Select --</asp:ListItem>
+											<asp:ListItem value="00">STB Tokyo</asp:ListItem>
+											<asp:ListItem value="10">CBJ Trust</asp:ListItem>
+										</asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Reconcile:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:checkbox id="chkReconcile6" tabindex="2" runat="server" enableviewstate="True" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td colspan="2">
+                                    <table align="right" cellpadding="0" cellspacing="0" width="100%" border="0">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                <asp:radiobutton id="rbPDF6" autopostback="False" checked="True" groupname="ExportType6"
+                                                    runat="server" />
+                                                <font class="ReportSection">Hardcopy</font> &nbsp;
+                                                <asp:radiobutton id="rbCSV6" autopostback="False" checked="False" groupname="ExportType6"
+                                                    runat="server" />
+                                                <font class="ReportSection">E-file</font>
+                                            </td>
+                                            <td align="right" width="150" colspan="2">
+                                                <asp:imagebutton id="imgReport6" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandname="Report6" commandargument="Report6" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5" colspan="3">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 1: 'Extract Recon Error' section ends here-->
+                <tr data-section="section7">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 3: 'Security Lending Earnings Extract' Section Header-->
+                <tr class="ReportsLineHeader" id="sec_lending_performance_header" data-section="section8">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#sec_lending_performance_header" onclick="HideShow2(sec_lending_performance, img_sec_lending_performance)">
+                                        <img border="0" name="img_sec_lending_performance" src='<%IsSectionSelected("Report7", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#sec_lending_performance_header" onclick="HideShow2(sec_lending_performance, img_sec_lending_performance)">
+                                        <font class="ReportsLineHeader">Security Lending Performance</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 3: 'Report Reconciliation Errors' Section-->
+                <tr id="sec_lending_performance" data-section="section8" style="display: '<%IsSectionSelected("Report7","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Report Type</font>
+                                </td>
+                                <td width="150">
+                                    <asp:dropdownlist id="cboRepType7" runat="server" width="100" enableviewstate="true">
+											<asp:ListItem value="ByAcct">By Account</asp:ListItem>
+											<asp:ListItem value="ByBrk">By Borrower</asp:ListItem>
+										</asp:dropdownlist>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Start Date</font>
+                                </td>
+                                <td width="200">
+                                    <asp:textbox id="txtStartDate7" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <!--<Input Type = "text" Name = "txtStartDate3" size = "10" value = '<%// Response.Write(_batchRunDate2); %>'>-->
+                                    <a href="javascript:OpenCalendar('txtStartDate7', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">End Date</font>
+                                </td>
+                                <td width="155">
+                                    <asp:textbox id="txtEndDate7" autopostback="False" columns="10" maxlength="10" runat="server" />
+                                    <!--<Input Type = "text" Name = "txtEndDate3" size = "10" value = '<%// Response.Write(_batchRunDate2); %>'>-->
+                                    <a href="javascript:OpenCalendar('txtEndDate7', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>&nbsp;<asp:imagebutton id="imgRefresh7" imageurl="/Mobetter/Images/iconRefresh.gif"
+                                                commandname="Refresh7" commandargument="Report7" oncommand="Button_Click" runat="server" />
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Security Type</font>
+                                </td>
+                                <td width="150">
+                                    <asp:dropdownlist id="cboSecType7" runat="server" width="100" enableviewstate="true">
+											<asp:ListItem value="BOTH">--Both--</asp:ListItem>
+											<asp:ListItem value="EQ">Equity</asp:ListItem>
+											<asp:ListItem value="FI">Fixed Income</asp:ListItem>
+										</asp:dropdownlist>
+                                    <font color="red" size="2">*</font>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td>
+                                    <font class="ReportSection">Exclusive Only:</font>
+                                </td>
+                                <td align="left">
+                                    <asp:checkbox id="chkIsExclusive7" tabindex="3" runat="server" enableviewstate="True" />
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Exclusive Relation:</font>
+                                </td>
+                                <td colspan="2">
+                                    <asp:dropdownlist id="cboExclusiveCode7" runat="server" enableviewstate="true">
+										</asp:dropdownlist>
+                                    <font color="red" size="2">*</font>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td >                                
+                                    <font class="ReportSection">Position Detail:</font>
+                                </td>
+                                <td align="left" width="155">
+                                    <asp:checkbox id="chkIsPositionDetail7" tabindex="3" runat="server" enableviewstate="True"  OnClick="javascript:ShowSecurityClassification();"/>
+                                </td>
+                                <td width="415" align="left">
+                                   <font class="ReportSection">Show Security Classification:</font> &nbsp;
+                                    <asp:checkbox id="chkSecurityClass" tabindex="3" runat="server" enableviewstate="True" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Account Group:</font>
+                                </td>
+                                <td colspan="3" align="left" width="100">
+                                    <asp:dropdownlist id="cboAcctGrpSLP" runat="server"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="4">
+                                    <table cellpadding="0" cellspacing="0" border="0" width="100%" id="tblReportAccounts7">
+                                        <tr>
+                                            <td width="10">
+                                                &nbsp;&nbsp;
+                                            </td>
+                                            <td>
+                                                <font class="ReportSection">Unreported Accounts </font>
+                                                <br>
+                                                <asp:listbox id="lbUnreportedAccounts7" datatextfield="AcctDesc" datavaluefield="AcctID"
+                                                    autopostback="False" rows="10" width="300" selectionmode="Multiple" enableviewstate="true"
+                                                    runat="server" />
+                                            </td>
+                                            <td valign="middle" align="center" width="100">
+                                                <br>
+                                                <img name="btnAllTo7" id="btnAllTo7" src="/MoBetter/images/AllToList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo7, document.forms[0].btnTo7, document.forms[0].btnAllFr7, document.forms[0].btnFr7, document.forms[0].lbUnreportedAccounts7, document.forms[0].lbReportedAccounts7 );" /><br>
+                                                <img name="btnTo7" id="btnTo7" src="/MoBetter/images/ToList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo7, document.forms[0].btnTo7, document.forms[0].btnAllFr7, document.forms[0].btnFr7, document.forms[0].lbUnreportedAccounts7, document.forms[0].lbReportedAccounts7 );" />
+                                                <p />
+                                                <img name="btnFr7" id="btnFr7" src="/MoBetter/images/FrList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo7, document.forms[0].btnTo7, document.forms[0].btnAllFr7, document.forms[0].btnFr7, document.forms[0].lbUnreportedAccounts7, document.forms[0].lbReportedAccounts7 );" /><br>
+                                                <img name="btnAllFr7" id="btnAllFr7" src="/MoBetter/images/AllFrList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnAllTo7, document.forms[0].btnTo7, document.forms[0].btnAllFr7, document.forms[0].btnFr7, document.forms[0].lbUnreportedAccounts7, document.forms[0].lbReportedAccounts7 );" />
+                                            </td>
+                                            <td width="500">
+                                                <font class="ReportSection">Reported Accounts </font>
+                                                <asp:listbox id="lbReportedAccounts7" autopostback="False" rows="10" width="300"
+                                                    selectionmode="Multiple" enableviewstate="true" runat="server" />
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10" colspan="3">
+                                </td>
+                                <td>
+                                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                &nbsp;
+                                            </td>
+                                            <td align="right" width="120">
+                                                <asp:imagebutton id="imgReport7" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandname="Report7" commandargument="Report7" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 3: 'Report Reconciliation Errors' section ends here-->
+
+
+                <tr data-section="section8">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+
+                <!--Indemnity Report Header-->
+                <tr class="ReportsLineHeader" id="indemnity_report_header" data-section="section9">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#indemnity_report_header" onclick="HideShow2(indemnity_report, img_indemnity_report)">
+                                        <img border="0" name="img_indemnity_report" src='<%IsSectionSelected("Report8", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#sec_indemnity_report" onclick="HideShow2(indemnity_report, img_indemnity_report)">
+                                        <font class="ReportsLineHeader">Indemnity Report</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--End of Indemnity Report Header-->
+
+                <!--Indemnity Report Section-->
+                <tr id="indemnity_report" data-section="section9" style="display: '<%IsSectionSelected("Report8","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Select a report:</font>
+                                </td>
+                                <td width="200" align="left">
+                                    <asp:dropdownlist id="cboIndemnityReports" runat="server" enableviewstate="true"  onChange="javascript: OnIndemnityReportSelectionChange();" />
+                                </td>
+                                <td colspan="2" align="right">
+                                    &nbsp;
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Range Type</font>
+                                </td>
+                                <td width="200" align="left">
+                                    <asp:dropdownlist id="cboDateRange8" runat="server" enableviewstate="true">
+										<asp:ListItem value = "d" selected = true> As-Of-Date </asp:ListItem>
+										<asp:ListItem value = "r"> Quarterly </asp:ListItem>
+                                    </asp:dropdownlist>
+                                </td>
+                                <td colspan="2" align="right">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr id="RowQuarterlyDate8" style="display: 'NONE';">
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Quarter End Date:</font>
+                                </td>
+                                <td width="200">
+                                    <asp:dropdownlist id="ddlAsofDate" width="90px" tabindex="12" runat="server" enableviewstate="True">						    				
+	                                    </asp:dropdownlist>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr id="RowBusinessDate8" style="display: '';">
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="200">
+                                    <asp:textbox id="txtBatchRunDate8" autopostback="False" columns="10" maxlength="10" runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate8', false)"> 
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td width="415">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            
+                            <tr>
+                                <td height="10" />
+                            </tr>
+
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Report Type</font>
+                                </td>
+                                <td width="200" align="left">
+                                    <asp:dropdownlist id="cboReportType8" runat="server" enableviewstate="true">
+										<asp:ListItem value = "EXTERNAL" selected = true> External </asp:ListItem>
+                                        <asp:ListItem value = "INTERNAL"> Internal </asp:ListItem>
+                                    </asp:dropdownlist>
+                                </td>
+                                <td colspan="2" align="right">
+                                    &nbsp;
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+
+                            <tr>
+                                <td colspan="4">
+                                    <table id="tbIndemnityReportSMTBUSAFilter" cellpadding="0" cellspacing="0" border="0" width="100%">
+                                        <tr>
+                                            <td width="10">
+                                                &nbsp;&nbsp;
+                                            </td>
+                                            <td>
+                                                <font class="ReportSection">Unreported Accounts </font>
+                                                <br>
+                                                <asp:listbox id="lbIndemnityReportSMTBUSAAccounts" datatextfield="AcctDesc" datavaluefield="AcctID" 
+                                                    autopostback="False" rows="10" width="300" selectionmode="Multiple" enableviewstate="true"
+                                                    runat="server" />
+                                            </td>
+
+
+                                            <td valign="middle" align="center" width="100">
+                                                <br>
+                                                <img name="btnSelectAllSMTBUSAIndemnifiedAccounts" id="Img81" src="/MoBetter/images/AllToList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnTo8, document.forms[0].btnUnselectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnUnselectSMTBUSAIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBUSAAccounts, document.forms[0].lbIndemnityReportSMTBUSASelectedAccounts );" /><br>
+                                                <img name="btnTo8" id="Img82" src="/MoBetter/images/ToList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnTo8, document.forms[0].btnUnselectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnUnselectSMTBUSAIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBUSAAccounts, document.forms[0].lbIndemnityReportSMTBUSASelectedAccounts );" />
+                                                <p />
+                                                <img name="btnUnselectSMTBUSAIndemnifiedAccount" id="Img83" src="/MoBetter/images/FrList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnTo8, document.forms[0].btnUnselectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnUnselectSMTBUSAIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBUSAAccounts, document.forms[0].lbIndemnityReportSMTBUSASelectedAccounts );" /><br>
+                                                <img name="btnUnselectAllSMTBUSAIndemnifiedAccounts" id="Img84" src="/MoBetter/images/AllFrList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnTo8, document.forms[0].btnUnselectAllSMTBUSAIndemnifiedAccounts, document.forms[0].btnUnselectSMTBUSAIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBUSAAccounts, document.forms[0].lbIndemnityReportSMTBUSASelectedAccounts );" />
+                                            </td>
+                                            <td width="500">
+                                                <font class="ReportSection">Reported Accounts </font>
+                                                <asp:listbox id="lbIndemnityReportSMTBUSASelectedAccounts" autopostback="False" rows="10" width="300"
+                                                    selectionmode="Multiple" enableviewstate="true" runat="server" />
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                   <table id="tbIndemnityReportSMTBTokyoFilter" cellpadding="0" cellspacing="0" border="0" width="100%">
+                                        <tr>
+                                            <td width="10">
+                                                &nbsp;&nbsp;
+                                            </td>
+                                            <td>
+                                                <font class="ReportSection">Unreported Accounts </font>
+                                                <br>
+                                                <asp:listbox id="lbIndemnityReportSMTBTokyoAccounts" datatextfield="AcctDesc" datavaluefield="AcctID" 
+                                                    autopostback="False" rows="10" width="300" selectionmode="Multiple" enableviewstate="true" 
+                                                    runat="server" />
+                                            </td>
+                                            <td valign="middle" align="center" width="100">
+                                                <br>
+                                                <img name="btnSelectAllSMTBTokyoIndemnifiedAccounts" id="Img1" src="/MoBetter/images/AllToList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnSelectSMTBTokyoIndemnifiedAccount, document.forms[0].btnUnselectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnUnselectSMTBTokyoIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBTokyoAccounts, document.forms[0].lbIndemnityReportSMTBTokyoSelectedAccounts );" /><br>
+                                                <img name="btnSelectSMTBTokyoIndemnifiedAccount" id="Img2" src="/MoBetter/images/ToList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnSelectSMTBTokyoIndemnifiedAccount, document.forms[0].btnUnselectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnUnselectSMTBTokyoIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBTokyoAccounts, document.forms[0].lbIndemnityReportSMTBTokyoSelectedAccounts );" />
+                                                <p />
+                                                <img name="btnUnselectSMTBTokyoIndemnifiedAccount" id="Img3" src="/MoBetter/images/FrList.gif" border="0" onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnSelectSMTBTokyoIndemnifiedAccount, document.forms[0].btnUnselectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnUnselectSMTBTokyoIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBTokyoAccounts, document.forms[0].lbIndemnityReportSMTBTokyoSelectedAccounts );" /><br>
+                                                <img name="btnUnselectAllSMTBTokyoIndemnifiedAccounts" id="Img4" src="/MoBetter/images/AllFrList.gif" border="0"
+                                                    onclick="MngAcctList_onClick( this, document.forms[0].btnSelectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnSelectSMTBTokyoIndemnifiedAccount, document.forms[0].btnUnselectAllSMTBTokyoIndemnifiedAccounts, document.forms[0].btnUnselectSMTBTokyoIndemnifiedAccount, document.forms[0].lbIndemnityReportSMTBTokyoAccounts, document.forms[0].lbIndemnityReportSMTBTokyoSelectedAccounts );" />
+                                            </td>
+                                            <td width="500">
+                                                <font class="ReportSection">Reported Accounts </font>
+                                                <asp:listbox id="lbIndemnityReportSMTBTokyoSelectedAccounts" autopostback="False" rows="10" width="300"
+                                                    selectionmode="Multiple" enableviewstate="true" runat="server" />
+                                            </td>
+                                        </tr>
+                                    </table>
+
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10" colspan="3">
+                                </td>
+                                <td>
+                                    <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                                        <tr>
+                                            <td align="right" valign="top">
+                                                &nbsp;
+                                            </td>
+                                            <td align="right" width="120">
+                                                <asp:imagebutton id="imgReport8" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                                    runat="server" commandname="Report8" commandargument="Report8" oncommand="Button_Click" />
+                                                &nbsp;&nbsp;
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--End of Indemnity Report Section-->
+                <tr data-section="section9">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--spacer ends here-->
+                <!--Row 2: 'Report Reconciliation Errors' Section Header-->
+                <tr class="ReportsLineHeader" id="on_loan_term_trades_header" data-section="section10">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#on_loan_term_trades_header" onclick="HideShow2(on_loan_term_trades, img_on_loan_term_trades)">
+                                        <img border="0" name="img_on_loan_term_trades" src='<%IsSectionSelected("Report9", "SRC");%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#on_loan_term_trades_header" onclick="HideShow2(on_loan_term_trades, img_on_loan_term_trades)">
+                                        <font class="ReportsLineHeader">On Loan Term Trades</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <!--Section 2: 'Report Reconciliation Errors' Section-->
+                <tr id="on_loan_term_trades" data-section="section10" style="display: '<%IsSectionSelected("Report9","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Account Group:</font>
+                                </td>
+                                <td colspan="3" align="left" width="100">
+                                    <asp:dropdownlist id="cboNamedReports9" runat="server" enableviewstate="True"></asp:dropdownlist>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="5">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">Business Date:</font>
+                                </td>
+                                <td width="150">
+                                    <asp:textbox id="txtBatchRunDate9" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtBatchRunDate9', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td colspan="2" align="right">
+                                    <asp:imagebutton id="imgReport9" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                        runat="server" commandname="Report9" commandargument="Report9" oncommand="Button_Click" />
+                                    &nbsp;&nbsp;
+                                    <!--img src="/MoBetter/images/ShowReport.gif" border="0" onClick = "ShowReport_0nClick('ShowReport2', 'MiscReports')" onMouseDown = "ShowReport_onMouseDown(this)" onMouseUp = "ShowReport_onMouseUp(this)"-->
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr data-section="section10">
+                    <!--Spacer between two sections-->
+                    <td class="SectionSpacer">
+                    </td>
+                </tr>
+                <!--=====================================================================================================================================================================================-->
+                <!--Start of Custody Reports-->
+                <!--=====================================================================================================================================================================================-->
+                <tr class="ReportsLineHeader" id="custody_report_header" data-section="section11">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td width="30">
+                                    <a href="#" onclick="HideShow2(extract_custody_errors, img_extract_custody_errors)">
+                                        <img border="0" name="img_extract_custody_errors"
+                                             src='<%if (pageTemplate.RoleName == "CustodyUser") { Response.Write("/MoBetter/images/arrow-down.gif"); } else { IsSectionSelected("Report10", "SRC"); }%>'>
+                                    </a>
+                                </td>
+                                <td>
+                                    <a href="#" onclick="HideShow2(extract_custody_errors, img_extract_custody_errors)"><font
+                                        class="ReportsLineHeader">Custody Reports</font> </a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr bgcolor="#eef7d2" id="extract_custody_errors" data-section="section11" style="display: '<%IsSectionSelected("Report10","SECTION");%>'">
+                    <td colspan="3">
+                        <table cellpadding="0" cellspacing="0" width="100%">
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                            <tr>
+                                <td width="10">
+                                </td>
+                                <td width="125">
+                                    <font class="ReportSection">As-Of Date:</font>
+                                </td>
+                                <td width="150">
+                                    <asp:textbox id="txtAsOfDate" autopostback="False" columns="10" maxlength="10"
+                                        runat="server" />
+                                    <a href="javascript:OpenCalendar('txtAsOfDate', false)">
+                                        <img src="/MoBetter/images/calendar.gif" align="absMiddle" border="0"></a> <font
+                                            color="red" size="2">*</font>
+                                </td>
+                                <td colspan="2" align="right">
+                                    <%--<asp:imagebutton id="imgReport10" tabindex="6" alternatetext="Show Report" imageurl="/MoBetter/images/ShowReport.gif"
+                                        runat="server" onClientClick="return ShowReport();"/>--%>
+                                    <input type="button" style="width: 80px;" id="cmdShowReport" tabindex="89" value="Show Report" onclick="ShowReport()" />
+                                    &nbsp;&nbsp;                                    
+                                </td>
+                            </tr>
+                            <tr>
+                                <td height="10">
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>                
+                <!--=====================================================================================================================================================================================-->
+                <!--End of Custody Reports-->
+                <!--=====================================================================================================================================================================================-->
+                <!--Section 1: 'Report Reconciliation Errors' section ends here-->
+            </table>
+        </td>
+    </tr>
+    <!--Row for 3rd tab table ends here-->
+</table>
+</form>
+<script type="text/javascript" src="../Javascript/jquery-1.3.2.js"></script>
+<script type="text/javascript">
+
+    // initialize the form
+    Init_Form();
+
+    // Initialize form
+    function Init_Form() {
+
+        // on pressing the print button, the report will be openned if there is any url to the PDF file
+        var printUrl = document.Reports.hdnPrintUrl.value;
+
+        var lbUnreportedAccounts = document.getElementById('lbUnreportedAccounts');
+        var lbReportedAccounts = document.getElementById('lbReportedAccounts');        
+        var chkSecurityClass = document.getElementById('chkSecurityClass');
+        var roleName = document.getElementById('hdnUserAppRole').value;
+        unselectAll(lbUnreportedAccounts);
+        unselectAll(lbReportedAccounts);
+
+        if (printUrl.length > 0) {
+            document.Reports.hdnPrintUrl.value = "";
+            PopUpWindow(printUrl, '', 'width=screen.width,height=screen.height, scrollbars=no, resizable=yes, alwaysRaised, titlebar=no');
         }
-        sb.Append("}");
-
-        _MiscSectionDataJson = sb.ToString();
-        _MiscSectionRoleName = pageTemplate.RoleName;
-    }
-    catch (Exception Exc)
-    {
-        Information clsInfo = new Information();
-        clsInfo.ErrNum = 5000;
-        clsInfo.ErrStr = Exc.Message;
-        clsInfo.ErrStack = Exc.StackTrace;
-        // Deliberately not Server.Transfer-ing here: a failure to fetch
-        // section-visibility data shouldn't take down the whole page —
-        // worst case, no sections get hidden for this request.
-    }
-    finally
-    {
-        if (sqlRdr != null && !sqlRdr.IsClosed)
-            sqlRdr.Close();
-
-        dbRdr.Dispose();
-        db.Dispose();
-    }
-}
-
-
-
-
-
-
-
-
-<input type="hidden" name="hdnMiscSectionRoleName" id="hdnMiscSectionRoleName" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionRoleName, true) %>'>
-<input type="hidden" name="hdnMiscSectionData" id="hdnMiscSectionData" value='<%= System.Web.Security.AntiXss.AntiXssEncoder.HtmlEncode(_MiscSectionDataJson, true) %>'>
-
-
-
-
-
-
-
-<!-- section1: Pension Top Five Borrowers -->
-<tr class="ReportsLineHeader" id="PensionTop5BorrowerTitleRow" data-section="section1">
-<tr bgcolor="#eef7d2" id="pension_top_five_borrowers" data-section="section1" style="display: '<%IsSectionSelected("PensionTop5Borrowers", "SECTION");%>'">
-
-<!-- section2: Reconciliation Status -->
-<tr class="ReportsLineHeader" id="recon_error_report_header" data-section="section2">
-<tr bgcolor="#eef7d2" id="extract_recon_errors" data-section="section2" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
-
-<!-- section3: Report Reconciliation Errors -->
-<tr class="ReportsLineHeader" id="report_recon_header" data-section="section3">
-<tr id="report_recon" data-section="section3" style="display: '<%IsSectionSelected("Report2","SECTION");%>'">
-
-<!-- section4: Lending Earnings -->
-<tr class="ReportsLineHeader" id="lending_earnins_extract_header" data-section="section4">
-<tr id="lending_earnins_extract" data-section="section4" style="display: '<%IsSectionSelected("Report3","SECTION");%>'">
-
-<!-- section5: Security On Loan (header currently has no id — that's fine, data-section doesn't need one) -->
-<tr class="ReportsLineHeader" data-section="section5">
-<tr bgcolor="#eef7d2" id="sec_onloan_header" data-section="section5" style="display: '<%IsSectionSelected("Report4","SECTION");%>'">
-
-<!-- section6: Percent On Loan -->
-<tr class="ReportsLineHeader" data-section="section6">
-<tr bgcolor="#eef7d2" id="percent_onloan_header" data-section="section6" style="display: '<%IsSectionSelected("Report5","SECTION");%>'">
-
-<!-- section7: BOJ Report -->
-<tr class="ReportsLineHeader" data-section="section7">
-<tr bgcolor="#eef7d2" id="boj_report" data-section="section7" style="display: '<%IsSectionSelected("Report6","SECTION");%>'">
-
-<!-- section8: Security Lending Performance -->
-<tr class="ReportsLineHeader" id="sec_lending_performance_header" data-section="section8">
-<tr id="sec_lending_performance" data-section="section8" style="display: '<%IsSectionSelected("Report7","SECTION");%>'">
-
-<!-- section9: Indemnity Report -->
-<tr class="ReportsLineHeader" id="indemnity_report_header" data-section="section9">
-<tr id="indemnity_report" data-section="section9" style="display: '<%IsSectionSelected("Report8","SECTION");%>'">
-
-<!-- section10: On Loan Term Trades -->
-<tr class="ReportsLineHeader" id="on_loan_term_trades_header" data-section="section10">
-<tr id="on_loan_term_trades" data-section="section10" style="display: '<%IsSectionSelected("Report9","SECTION");%>'">
-
-<!-- section11: Custody Reports -->
-<tr class="ReportsLineHeader" id="custody_report_header" data-section="section11">
-<tr bgcolor="#eef7d2" id="extract_custody_errors" data-section="section11" style="display: '<%IsSectionSelected("Report1","SECTION");%>'">
-
-
-
-
-
-
-
-function Init_Form() {
-
-    // on pressing the print button, the report will be openned if there is any url to the PDF file
-    var printUrl = document.Reports.hdnPrintUrl.value;
-
-    var lbUnreportedAccounts = document.getElementById('lbUnreportedAccounts');
-    var lbReportedAccounts = document.getElementById('lbReportedAccounts');        
-    var chkSecurityClass = document.getElementById('chkSecurityClass');
-    unselectAll(lbUnreportedAccounts);
-    unselectAll(lbReportedAccounts);
-
-    if (printUrl.length > 0) {
-        document.Reports.hdnPrintUrl.value = "";
-        PopUpWindow(printUrl, '', 'width=screen.width,height=screen.height, scrollbars=no, resizable=yes, alwaysRaised, titlebar=no');
-    }
-    chkSecurityClass.disabled = true;
-    InitializeIndemnityReportSection();
-    ApplyCustodyUserSectionVisibility();
-    return;
-}
-
-function ApplyCustodyUserSectionVisibility() {
-
-    var roleName = document.getElementById('hdnMiscSectionRoleName').value;
-    if (roleName !== 'CustodyUser') {
+        chkSecurityClass.disabled = true;
+        InitializeIndemnityReportSection();
+        
+        if (roleName == 'CustodyUser') {
+            ApplyCustodyUserSectionVisibility();
+        }
         return;
     }
 
-    var sectionData = {};
-    try {
-        sectionData = JSON.parse(document.getElementById('hdnMiscSectionData').value);
-    } catch (e) {
-        return; // malformed/missing data - fail safe, hide nothing
+    function InitializeIndemnityReportSection() {
+        RefreshIndemnityReportSection();
     }
 
-    var sectionRows = document.querySelectorAll('[data-section]');
-    for (var i = 0; i < sectionRows.length; i++) {
-        var row = sectionRows[i];
-        var key = row.getAttribute('data-section');
-        row.style.display = (sectionData[key] === 'Y') ? '' : 'none';
+    function ApplyCustodyUserSectionVisibility() {                
+        var rawData = document.getElementById('hdnMiscSectionData').value;
+        var sectionData = {};       
+
+        var pairs = rawData.split(';');
+        for (var p = 0; p < pairs.length; p++) {
+            var pair = pairs[p].split('=');
+            if (pair.length === 2) {
+                sectionData[pair[0]] = pair[1];
+            }
+        }
+
+        //try {
+        //    sectionData = JSON.parse(document.getElementById('hdnMiscSectionData').value);
+        //} catch (e) {
+        //    return;
+        //}
+
+        //var sectionRows = document.querySelectorAll('[data-section]');            
+        var sectionRows = document.getElementsByTagName('tr');
+        for (var i = 0; i < sectionRows.length; i++) {
+            var row = sectionRows[i];
+            var key = row.getAttribute('data-section');
+            if (key) {
+                row.style.display = (sectionData[key] === 'Y') ? '' : 'none';
+            }
+        }                
     }
+
+    function OnIndemnityReportSelectionChange() {
+        RefreshIndemnityReportSection();
+    }
+
+    function ShowSecurityClassification() {        
+        var chkIsPositionDetail = document.getElementById('chkIsPositionDetail7');
+        var chkSecurityClass = document.getElementById('chkSecurityClass');
+        if (!chkIsPositionDetail.checked) {
+            chkSecurityClass.checked = chkIsPositionDetail.checked;         
+        }        
+        chkSecurityClass.disabled = !chkIsPositionDetail.checked;
+    }
+
+    function RefreshIndemnityReportSection() {
+
+        var RPTID_SMTBUSA_INDEMNITY_REPORT = 158;
+        var RPTID_SMTBTOKYO_INDEMNITY_REPORT_SUMMARY = 209;
+        var RPTID_SMTBTOKYO_INDEMNITY_REPORT_DETAILS = 210;
+
+        var cboIndemnityReports = document.getElementById('cboIndemnityReports');
+        var tbIndemnityReportSMTBUSAFilter = document.getElementById('tbIndemnityReportSMTBUSAFilter');
+        var tbIndemnityReportSMTBTokyoFilter = document.getElementById('tbIndemnityReportSMTBTokyoFilter');
+
+        if (cboIndemnityReports.value == RPTID_SMTBUSA_INDEMNITY_REPORT) {
+            tbIndemnityReportSMTBUSAFilter.style.display = '';
+            tbIndemnityReportSMTBTokyoFilter.style.display = 'none';
+            return;
+        }
+        tbIndemnityReportSMTBUSAFilter.style.display = 'none';
+        tbIndemnityReportSMTBTokyoFilter.style.display = '';
+    }
+
+    function diableTermRepo(obj) {
+
+        if (obj != null && obj.id == 'rbCSV3_2') {
+
+            document.forms[0].cboTermRepo.options[3].selected = true;
+            document.forms[0].cboTermRepo.disabled = true;
+        }
+        else {
+            document.forms[0].cboTermRepo.disabled = false;
+            if (obj.id == 'rbCSV3_1')
+                document.forms[0].cboTermRepo.options[0].selected = true;
+            else
+                document.forms[0].cboTermRepo.options[3].selected = true;
+        }
+
+    }
+
+    function getAccounts(startDate, endDate, acctGrpID, listID) {
+        $("#" + listID + " option").remove();
+
+        $.ajax({
+            type: "POST",
+            url: '../Reports/MiscReports.aspx/GetAccounts',
+            data: "{startDate:'" + startDate +"', endDate:'" + endDate + "', acctGrpID:'" + acctGrpID + "'}",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            success: function (msg) {
+                $("#" + listID + " option").remove();
+                
+                $.each(msg.d, function (index, item) {
+                    $("#" + listID).append($('<option>').text(item.AccountName).val(item.AcccountID));
+                });
+            },
+            error: function (xhr, textStatus, errorThrow) {
+                $("#" + listID + " option").remove();
+                alert(xhr.responseText);
+            }
+        });
+    }
+
+
+    $(document).ready(function () {
+
+        //Lending Earnings
+        $("#cboAcctGrpLE").bind("change", function () {
+            var startDate = $.trim($('#txtStartDate3').val());
+            var endDate = $.trim($('#txtEndDate3').val());
+            getAccounts(startDate, endDate, $(this).val(), 'lbUnreportedAccounts');
+        });
+
+        //Security Lending Performance
+        $("#cboAcctGrpSLP").bind("change", function () {
+            var startDate = $.trim($('#txtStartDate7').val());
+            var endDate = $.trim($('#txtEndDate7').val());
+            getAccounts(startDate, endDate, $(this).val(), 'lbUnreportedAccounts7');
+        });
+
+    });
+
+
+    function ShowReport() {
+        debugger;
+        var reportID, businessDate, fileType, reportName, errMsg;
+        var webapirul = '<%=System.Configuration.ConfigurationManager.AppSettings["MoBetterWebApiUrl"].ToString() %>'
+        var token = '<%=System.Configuration.ConfigurationManager.AppSettings["AuthToken"].ToString() %>'
+
+        reportID = 237;
+        businessDate = document.forms[0].txtAsOfDate.value;
+        fileType = "xlsx";
+        reportName = "All_Outstanding";
+
+        error_row.style.display = 'None';
+        //Date Validation
+        if (isDate(businessDate) == false) {
+            errMsg = "Please enter the valid date. The format is mm/dd/yyyy";
+            document.forms[0].txtAsOfDate.focus();
+            error_row.style.display = '';
+            error.innerHTML = errMsg;
+            return false;
+        }
+
+        var jsonParams = "[{\"ParamName\": \"SQL_CONDITION10\", \"ParamValue\": '" + 1 + "', \"ParamType\": \"Int\"}]";
+
+        var params = {
+            ReportID: reportID,
+            BusinessDate: businessDate,
+            Filetype: fileType,
+            ReportName: reportName,
+            AppID: 1,
+            ReportParams: jsonParams
+        };
+
+        var url = webapirul + "v1/GenericReport/GetReport";
+        
+        ajaxCall(url, params, token, function (response) {
+
+            if (response != null || response != undefined) {
+                var parsedData = response;
+
+                if (parsedData.status == "Failure" && parsedData.statusDetails.length > 0) {
+                    errMsg = parsedData.statusDetails;
+                    error_row.style.display = '';
+                    error.innerHTML = errMsg;
+                }
+                else if (parsedData.status == "Success" && parsedData.reportPath.reportFolderPath != null && parsedData.reportPath.reportFolderPath.length > 0) {
+                    //  $("[id$=lblInfoMsg]").text(parsedData.messages[0]);
+                    var confURL = parsedData.reportPath.reportFolderPath + parsedData.reportPath.reportFile;
+                    $("#lnkOpenReport").attr("href", "file:" + confURL);
+                    $('#lnkOpenReport')[0].click();
+                }
+                else {
+                    errMsg = "Please Contact Administrator."
+                    error_row.style.display = '';
+                    error.innerHTML = errMsg;
+                }
+            }
+        });
+    }
+
+</script>
+<!--Close table here -->
+<% 
+Response.Write(MOBETTER.SwitchHeaderFooter.BuildFooter(Section, Page).ToString());
 }
-
-
-
-
-<a href="#" onclick="HideShow2(extract_custody_errors, img_extract_custody_errors)">
-    <img border="0" name="img_extract_custody_errors"
-         src='<%if (pageTemplate.RoleName == "CustodyUser") { Response.Write("/MoBetter/images/arrow-down.gif"); } else { IsSectionSelected("Report10", "SRC"); }%>'>
-</a>
+%>
