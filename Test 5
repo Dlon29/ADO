@@ -1,2504 +1,382 @@
-using System;
-using System.Text;
-using System.Web;
-using System.IO;
-using Common.Logging;
-using System.Collections.Generic;
+<script type="text/javascript" src="../Javascript/jquery-1.3.2.js"></script>
+    <script src="../JavaScript/json2.js" type="text/javascript"></script>
+    <script language="JavaScript">
 
-namespace MOBETTER
+        function OnChange_MTMAsOfDate(sender)
 {
-    /// <summary>
-    /// Summary description for HeaderSwitch.
-    /// </summary>
-    public class SwitchHeaderFooter
+    if ( sender == null )  { return ; }
+    
+    
+        var trf_outsource_reporting_overwrite_param = document.getElementById('trf_outsource_reporting_overwrite_param');
+    if ( trf_outsource_reporting_overwrite_param == null )  { return ; }
+    
+        var parsedAsOfDate =  new Date(Date.parse(sender.value)) ;
+        if ( parsedAsOfDate == 'NaN' )
     {
-        #region Class Documentation
-        /*
-			 * Author		:	Sandeep Aggarwal
-			 * Description	:	This class contains properties & methods for writing headers and footers to all aspx pages
-			 * 
-			 * History		:	05/30/2003	SA: Initial creation.
-								06/20/2003	SA: Modifed BuildHeader
-								07/21/2003	SA: Added funcion WriteTabHeader to write Tab Header for the report screen
-								07/22/2003	SA: Added more tabs to funcion WriteTabHeader
-								07/23/2003	SA: Modified function WriteIncFiles so that it would write out JS and CSS files based on the page & section
-								08/14/2003	SA:	Added CheckLogin function
-								12/16/2003	SA:	Modified tabs and menu for report screens
-			 * Remarks		:	
-			 * 
-			 * 
-			 * 
-		*/
-        #endregion
+            trf_outsource_reporting_overwrite_param.disabled = true;
+        return false;
+    }
 
-        #region Class Level Variables and Constants
+    var currentDate = new Date();
+    trf_outsource_reporting_overwrite_param.disabled = !((parsedAsOfDate.getMonth() == currentDate.getMonth()) &&
+                                                        (parsedAsOfDate.getDate() == currentDate.getDate())   &&
+                                                        (parsedAsOfDate.getFullYear() == currentDate.getFullYear()));
+}
 
-        GlobalVariable clsGV = new GlobalVariable();	// common variables
-        private UserInfo clsUI = new UserInfo();				// User & machine name
 
-        static string _appRoot = GlobalVariable.AppRoot;
-        static string _serverName = GlobalVariable.AppRuntimeServer;
+function OnKeyDown_MTMAsOfDate(sender)
+{
+    if ( sender == null )  { return ; }
+        OnChange_MTMAsOfDate(sender);
+    }
+    
+    
+    function ShowTradeConfirmReport(sender)
+{
+    try
+        { 
+        var reportTitle = 'TRADE CONFIRMATION REPORT';
+        var reportType = 'TradeConfirmationReportSection';
+        var batchRunDate = $("#txtBatchRunDate7").val();
+        var reportID = $("#cboAcctNbr7").val();
+        var acctNbr='';
+        var brkGrpCode = $("#cboBrkGrpCode7").val();
+        //var isExtract =  $("#rbRenderTradeConfirmationAsExtract").attr("checked");
+        var isExtract =  false;
 
-        private string _RoleName = "";
-        private string _AccessTypeCode = "F";
-        private bool _IsSuperUser = false;
-        //private bool _isRightClickEnabled = false;
-        private bool _IsAuthenticated = false;
+        $("input[type=hidden][name$='_reportType']").val(reportType);
 
-        private string _ModuleName = "";
-
-        private static ILog _logger = LogManager.GetLogger(typeof(SwitchHeaderFooter));
-
-        #endregion
-
-        #region Properties
-
-        // Check Authentication -- ReadOnly.
-        public bool IsAuthenticated
+        if (isDate(batchRunDate) == false){
+            alert("Please enter the valid date. The format is mm/dd/yyyy") ;
+        $("#txtBatchRunDate7").focus();
+        return false;
+    }
+    
+    switch (reportID)
         {
-            get
-            {
-                if (HttpContext.Current.Session["IsAuthenticated"] != null)
-                    _IsAuthenticated = (bool)HttpContext.Current.Session["IsAuthenticated"];
-                else
-                {
-                    _IsAuthenticated = false;
-                }
-                return _IsAuthenticated;
-            }
+           
+            case '201':
+            reportTitle = 'TRADE CONFIRMATION REPORT - TRF';
+            break;
+        case '234':
+            reportTitle = 'BP Loan Extract';
+            isExtract = true;
+            break;
+        case '236':
+            reportTitle = 'Trade Confirmation Report – Own Repo';
+            break;
+        case '561':
+            reportID = 561;//Trade Confirmation Report – Reverse  Repo
+            reportTitle = 'Trade Confirmation Report – Reverse  Repo';
+            break;
+        //default:
+        //    reportID = 101;
+        //    break;
+    }
+
+    if (isExtract)
+        {
+            $("input[type=hidden][name$='_IsExtract']").val('true');
+        $("input[type=hidden][name$='_reportId']").val(reportID);
+        $("input[type=hidden][name$='_reportTitle']").val(reportTitle);
+        $("input[type=hidden][name$='_BatchRunDate']").val(batchRunDate);
+        $("input[type=hidden][name$='_AcctNbr']").val(acctNbr);
+        $("input[type=hidden][name$='_BrkGrpCode']").val(brkGrpCode);
+        $("#Reports").submit();
+        return;
+    }
+    else
+        {
+            $("input[type=hidden][name$='_IsExtract']").val('false');
         }
 
-        // Check SuperUser RoleName -- ReadOnly.
-        public bool IsSuperUser
-        {
-            get
-            {
-                if (HttpContext.Current.Session["IsSuperUser"] != null)
-                    _IsSuperUser = (bool)HttpContext.Current.Session["IsSuperUser"];
-                else
-                {
-                    _IsSuperUser = false;
-                }
-
-                return _IsSuperUser;
-            }
-        }
-
-        // Gets Role Name -- ReadOnly.
-        public string RoleName
-        {
-            get
-            {
-                if (HttpContext.Current.Session["RoleName"] != null)
-                    _RoleName = HttpContext.Current.Session["RoleName"].ToString();
-                else
-                {
-                    _RoleName = "";
-                }
-                _RoleName = _RoleName.Replace(" ", "");
-
-                return _RoleName;
-            }
-        }
-
-        // Gets AccessTypeCode
-        public string AccessTypeCode
-        {
-            get
-            {
-                return _AccessTypeCode;
-            }
-        }
-
-
-        #endregion
-
-        #region Constructor
-        public SwitchHeaderFooter()
-        {
-        }
-
-        public SwitchHeaderFooter(string moduleName)
-        {
-            this._ModuleName = moduleName;
-            if (!CheckAuthentication(moduleName))         // Check LDAP Authentication and retrieve Roles.            
-            {
-                _AccessTypeCode = "N";
-            }
-            else
-            {
-                if ((IsSuperUser) || (!clsUI.IsSecurityEnabled))
-                {
-                    _AccessTypeCode = "F";
-                }
-                else
-                {
-                    getAccessTypeCode();
-                }
-            }
-
-        }
-        #endregion
-
-
-        #region Methods
-
-        static void CheckLogin()
-        {
-            //check for the login status
-            string loginPage = @"/" + GlobalVariable.AppRoot + @"/Login.aspx";
-            string IsAuthenticated;
-
-            //FormsAuthentication.GetRedirectUrl
-            //			if (FormsAuthentication.GetAuthCookie(_NTUserName,false))
-            //			{
-            //
-            //			}
-
-            if (HttpContext.Current.Session["IsAuthenticated"] != null)
-                IsAuthenticated = HttpContext.Current.Session["IsAuthenticated"].ToString();
-            else
-                IsAuthenticated = "false";
-
-            if (IsAuthenticated.ToString() == "false")
-                HttpContext.Current.Response.Redirect(loginPage);
-        }
-
-        public void getAccessTypeCode()
-        {
-            _AccessTypeCode = Common.getAccessTypeCode(_ModuleName);
-        }
-
-        public Dictionary<string, string> GetUserModuleRights()
-        {
-            Dictionary<string, string> moduleRights = new Dictionary<string, string>();
-
-            _logger.Info("Preparing to retrieve module role rights");
-            try
-            {
-                moduleRights = Common.GetUserModuleRights();
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex);
-                throw ex;
-            }
-
-            return moduleRights;
-        }
-
-        public bool CheckAuthentication(string ModuleName)
-        {
-            try
-            {
-                //Bypass Active Directory and Database roles.
-                if (!clsUI.IsSecurityEnabled)
-                    return true;
-
-                if (!IsAuthenticated)
-                {
-                    //Check LDAP GroupNames.
-                    clsUI.checkADGroupUser(ModuleName);
-
-                    _IsSuperUser = clsUI.IsSuperUser;
-                    _RoleName = clsUI.RoleName.Replace(" ", "");
-                    // _ReadWriteAccess = clsUI.ReadWriteAccess;
-
-                    HttpContext.Current.Session["IsAuthenticated"] = true;
-                    HttpContext.Current.Session["IsSuperUser"] = _IsSuperUser;
-                    HttpContext.Current.Session["RoleName"] = _RoleName;
-                }
-                else
-                {
-                    _IsSuperUser = (bool)HttpContext.Current.Session["IsSuperUser"];
-                    _RoleName = HttpContext.Current.Session["RoleName"].ToString();
-                    _RoleName = _RoleName.Replace(" ", "");
-                }
-
-                if (_RoleName.ToLower().Equals("superuser"))  // Debug-Test SuperUser role.
-                    _IsSuperUser = true;
-
-                // store in session
-                HttpContext.Current.Session["IsSuperUser"] = _IsSuperUser;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error(ex);
-                return false;
-            }
-
-            return true;
-        }
-
-        private string checkSuperUser(string Section, string Page)
-        {
-            StringBuilder sbResult = new StringBuilder();
-            //bool IsSuperUser = false;
-            string HomePage = @"/" + GlobalVariable.AppRoot + @"/Default.aspx";
-
-            //if (HttpContext.Current.Session["IsSuperUser"] != null)
-            //    IsSuperUser = (bool)HttpContext.Current.Session["IsSuperUser"];
-            //else
-            //    HttpContext.Current.Response.Redirect(HomePage);
-
-            if (IsSuperUser)
-            {
-                sbResult.Append("\t\t\t\t\t<td align=\"left\" width=\"15%\" >\n");
-                sbResult.Append("\t\t\t\t\t<a id=\"lnkSuperUser\" href = \"#\">\n");
-                if (Section == "Portal" || Page.Contains("Equity Movement"))
-                    sbResult.Append("\t\t\t\t\t<img  id=\"imgSuperUser\" src = \"/Mobetter/images/superuser.gif\" border = \"0\" alt = \"Super User\" />\n");
-                else
-                    sbResult.Append("\t\t\t\t\t<img  align=\"right\" id=\"imgSuperUser\" src = \"/Mobetter/images/superuser.gif\" border = \"0\" alt = \"Super User\" />\n");
-                sbResult.Append("\t\t\t\t\t</a></td>\n");
-            }
-            else
-            {
-                sbResult.Append("\t\t\t\t\t<td width=\"20%\">&nbsp;</td>\n");
-            }
-
-            return sbResult.ToString();
-
-        }
-        private static string Disclaimer()
-        {
-            string sDisclaimer = null;
-            sDisclaimer = GlobalVariable.AppDisclaimer;
-            return sDisclaimer;
-        }
-        public static StringBuilder BuildHeader(string Section, string Page)
-        {
-            //Do the login thing....
-
-            if (!GlobalVariable.AuthenticationType.Equals("None"))
-            {
-                //Just set the user name
-                CheckLogin();
-            }
-
-
-            StringBuilder sb = new StringBuilder("");
-            sb.Length = 0;
-            sb.Append("\n<HTML>\n");
-            //HEAD Tag and it's content
-            sb.Append("\t<HEAD>\n");
-            sb.Append("\t\t<meta http-equiv=\"pragma\" content=\"no-cache\">\n");
-
-            //Title tag
-            sb.Append("\t\t<title>\n");
-
-            if (Section.Length > 0)
-                sb.Append("\t\t\tMoBetter | " + Section + " | " + Page + "\n");
-            else
-                sb.Append("\t\t\tMoBetter | " + Page + "\n");
-
-            sb.Append("\t\t</title>\n\n");
-
-            sb.Append("\t\t<script language = \"JavaScript\">\n");
-            sb.Append("\t\t\t var _gc_js_AppRoot = '" + _appRoot + "';\n");
-
-            //Set the report tab that should be loaded when the page comes up
-            string CurrReportsTab = "";
-            if ((HttpContext.Current.Request["_ReportsTab"] != null) && (HttpContext.Current.Request["_ReportsTab"] != ""))
-            {
-                CurrReportsTab = HttpContext.Current.Request["_ReportsTab"];
-            }
-            else
-            {
-                if (GlobalVariable._gsReportsTab != "")
-                {
-                    CurrReportsTab = GlobalVariable._gsReportsTab;
-                }
-            }
-
-            sb.Append("\t\t\t var reportsTab = '';\n");
-            sb.Append("\t\t\t if (reportsTab.length == 0){\n");
-            sb.Append("\t\t\t\t reportsTab = '" + CurrReportsTab + "';}\n");
-            sb.Append("\t\t</script>\n");
-
-            //Divisions for left menu
-            //MAINTENANCE MENU
-            sb.Append("\t\t<!--DIVISIONS FOR LEFT MENU-->\n");
-            sb.Append("\t\t<div id=\"divMaintenance\" style=\"position:absolute; left:110px; top:138px; width:112px; height:138px; z-index:1; border: 1px none #000000; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divMaintenance','','show')\" onMouseOut=\"MM_showHideLayers('divMaintenance','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_01.gif\" width=\"110\" height=\"18\" name=\"accounts\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('accounts','','/" + _appRoot + "/images/Menu-Maintenance_01r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/AccountGroup.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_02.gif\" width=\"110\" height=\"6\" name=\"white_accts\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_03.gif\" width=\"110\" height=\"18\" name=\"brokers\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('brokers','','/" + _appRoot + "/images/Menu-Maintenance_03r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/BrokerCreditGroup.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_04.gif\" width=\"110\" height=\"6\" name=\"white_brokers\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_05.gif\" width=\"110\" height=\"18\" name=\"securities\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('securities','','/" + _appRoot + "/images/Menu-Maintenance_05r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/SecuritySpecial.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_secs\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_07.gif\" width=\"110\" height=\"18\" name=\"fx_rates\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('fx_rates','','/" + _appRoot + "/images/Menu-Maintenance_07r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/LendLimitFxRate.aspx'\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_08.gif\" width=\"110\" height=\"6\" name=\"white_fx_rates\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_09.gif\" width=\"110\" height=\"18\" name=\"credit_lines\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('credit_lines','','/" + _appRoot + "/images/Menu-Maintenance_09r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/LOCGroup.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_08.gif\" width=\"110\" height=\"6\" name=\"spacer_maint\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_10.gif\" width=\"110\" height=\"18\" name=\"lending_limits\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('lending_limits','','/" + _appRoot + "/images/Menu-Maintenance_10r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/LendLimit.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_08.gif\" width=\"110\" height=\"6\" name=\"spacer_maint\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_14.gif\" width=\"110\" height=\"18\" name=\"mtm_maint_menu\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('mtm_maint_menu','','/" + _appRoot + "/images/Menu-Maintenance_14r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/JPClientExRate.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_secs\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_13.gif\" width=\"110\" height=\"6\" name=\"white_accts\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_15.gif\" width=\"110\" height=\"18\" name=\"col_cov_menu\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('col_cov_menu','','/" + _appRoot + "/images/Menu-Maintenance_15r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/CollateralSchedule.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_secs\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_16.gif\" width=\"110\" height=\"18\" name=\"security_Main\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('security_Main','','/" + _appRoot + "/images/Menu-Maintenance_16r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/SecurityDefault.aspx?TabPage=SecurityDefault'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_secs\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_01.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports1\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports1','','/" + _appRoot + "/images/Menu-Reports_01r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=Main'\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_secs\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            //sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_06.gif\" width=\"110\" height=\"6\" name=\"white_security_Main\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgSecMain','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Maintenance_11.gif\" width=\"110\" height=\"18\" name=\"misc_maint_menu\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('misc_maint_menu','','/" + _appRoot + "/images/Menu-Maintenance_11r.gif','imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/TriPartyBank.aspx'\">\n");
-            sb.Append("\t\t</div>\n");
-
-            //MANUAL ENTRY
-            sb.Append("\t\t<div id=\"divManualEntry\" style=\"position:absolute; left:110px; top:161px; width:112px; height:66px; z-index:3; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divManualEntry','','show')\" onMouseOut=\"MM_showHideLayers('divManualEntry','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu_mnl_entry_01.gif\" width=\"110\" height=\"18\" name=\"actv_mnl_entry\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('actv_mnl_entry','','/" + _appRoot + "/images/Menu_mnl_entry_rollover_03.gif','imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/ActivityManualEntry.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity2\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu_mnl_entry_03.gif\" width=\"110\" height=\"18\" name=\"future_stl_mnl_entry\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('future_stl_mnl_entry','','/" + _appRoot + "/images/Menu_mnl_entry_rollover_07.gif','imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/FutureSettlementManualEntry.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity3\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu_mnl_entry_13.gif\" width=\"110\" height=\"18\" name=\"coll_cov_mnl_entry\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('coll_cov_mnl_entry','','/" + _appRoot + "/images/Menu_mnl_entry_15.gif','imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\" onClick=\"location='/" + _appRoot + "/Maintenance/CollateralCoverageUpload.aspx'\">\n");
-            sb.Append("\t\t</div>\n");
-
-            //PROCESSED DATA MENU
-            sb.Append("\t\t<div id=\"divProcData\" style=\"position:absolute; left:110px; top:184px; width:112px; height:68px; z-index:3; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divMaintenance','','hide','divConfiguration','','hide','divProcData','','show')\" onMouseOut=\"MM_showHideLayers('divProcData','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_01.gif\" width=\"110\" height=\"18\" name=\"activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('activity','','/" + _appRoot + "/images/Menu-Proc-Data_01r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/ProcessedActivity.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_03.gif\" width=\"110\" height=\"18\" name=\"loans\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('loans','','/" + _appRoot + "/images/Menu-Proc-Data_03r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/ProcessedLoans.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_05.gif\" width=\"110\" height=\"18\" name=\"collateral\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('collateral','','/" + _appRoot + "/images/Menu-Proc-Data_05r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/Collateral.aspx'\"><br>\n");
-            //			sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            //			sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_07.gif\" width=\"110\" height=\"18\" name=\"gp_availability\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('gp_availability','','/" + _appRoot + "/images/Menu-Proc-Data_07r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/gpAvailability.aspx'\">\n");
-            sb.Append("\t\t</div>\n");
-
-
-
-            //REPORTS' MENU
-            sb.Append("\t\t<div id=\"divReports\" style=\"position:absolute; left:110px; top:205px; width:112px; height:90px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divReports','','show')\" onMouseOut=\"MM_showHideLayers('divReports','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_01.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports1\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports1','','/" + _appRoot + "/images/Menu-Reports_01r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=Reports'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Loan-Reports_02\" width=\"110\" height=\"6\" border=\"0\" name=\"white_space\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_03.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports2\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports2','','/" + _appRoot + "/images/Menu-Reports_03r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/BusReports.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Loan-Reports_02\" width=\"110\" height=\"6\" border=\"0\" name=\"white_space\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_05.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports3\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports3','','/" + _appRoot + "/images/Menu-Reports_05r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/CustReports.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Loan-Reports_02\" width=\"110\" height=\"6\" border=\"0\" name=\"white_space\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_07.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports4\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports4','','/" + _appRoot + "/images/Menu-Reports_07r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/MgmtReports.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Loan-Reports_02\" width=\"110\" height=\"6\" border=\"0\" name=\"white_space\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Reports_09.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Reports5\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Reports5','','/" + _appRoot + "/images/Menu-Reports_09r.gif','imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\" onClick=\"location='/" + _appRoot + "/Reports/MiscReports.aspx'\"><br>\n");
-            sb.Append("\t\t</div>\n");
-
-            sb.Append("\t</HEAD>\n\n");
-
-            //Put in the appropriate body tag
-            switch (Section)
-            {
-                case "Section1":
-                case "Administration":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"init('','');\">\n");
-                    break;
-                case "Maintenance":
-                case "Processed Data":
-                case "Manual Entry":
-                case "Portal":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"Init_Form();\">\n");
-                    break;
-                case "Reports":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"init('Reports','');\">\n");
-                    break;
-                default:
-                    sb.Append("\n\t<Body class=\"Default\" onLoad= \"init('','');\">\n");
-                    break;
-            }
-
-            //			//Put in the proper table class
-            //			switch (Page)
-            //			{
-            //				case "Netting":
-            //					sb.Append("\t\t\t\t\t<Table Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-            //					break;
-            //				default:
-            //					sb.Append("\t\t\t\t\t<Table Class = \"TopHeader\" cellpadding=\"0\" cellspacing=\"0\">\n");
-            //					break;					
-            //			}
-
-            //Put in the proper table class
-            switch (Page)
-            {
-                case "Collateral Allocation1":
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"OuterLandscape\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-
-                    //print button
-                    sb.Append("\t\t\t\t\t\t<td height = \"25\" align=right><a href = \"Javascript: window.print()\"><font class = \"PopUpWindowHeader\">Print&nbsp;&nbsp;</font></a>\n");
-
-                    //close button
-                    sb.Append("\t\t\t\t\t\t<a href = \"Javascript: alert('step1') ; document.Collateral.cmdSearch.form.submit() ; alert('step2') ; CloseWindow()\"><font class = \"PopUpWindowHeader\">Close&nbsp;&nbsp;</font></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-                    break;
-
-                case "Activity Details":
-                case "About":
-                case "Batch Process":
-                case "BusReports_PopUp":
-                case "Collateral Allocation":
-                case "Collateral Info":
-                case "Future Info":
-                case "Loan History":
-                case "Reference History":
-                case "Indemnity Security Index":
-                case "Special Processing":
-                case "Netting":
-                case "Popup Error":
-                case "Validation Details":
-                case "Availability":
-                case "Fee Split":
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"OuterLandscape\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-
-                    //print button
-                    sb.Append("\t\t\t\t\t\t<td height = \"25\" align=right><a href = \"Javascript: window.print()\"><font class = \"PopUpWindowHeader\">Print&nbsp;&nbsp;</font></a>\n");
-
-                    //close button
-                    sb.Append("\t\t\t\t\t\t<a href = \"Javascript: CloseWindow()\"><font class = \"PopUpWindowHeader\">Close&nbsp;&nbsp;</font></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-                    break;
-
-                case "Report Parameters":
-                    sb.Append("\t\t<table border=\"0\" width=\"750\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\"  class = \"Outer1\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" width=\"750\" class = \"ReportsTabTable\" cellpadding=\"0\" cellspacing=\"0\" >\n");
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-
-                    break;
-
-                default:
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"Outer1\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeader\" cellpadding=\"0\" cellspacing=\"0\">\n");
-                    sb.Append("\t\t\t\t\t\t<tr height = \"60%\">\n");
-
-                    sb.Append("\t\t\t\t\t\t\t<td colspan = \"2\">\n");
-                    sb.Append("\t\t\t\t\t\t\t&nbsp;\n");
-                    sb.Append("\t\t\t\t\t\t\t</td>\n");
-
-                    sb.Append("\t\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t<td align = \"left\" width = \"15%\" valign = \"middle\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"/" + _appRoot + "\"><img src = \"/" + _appRoot + "/images/home2.gif\" border = \"0\" alt = \"Home\" onClick = \"location = '/" + _appRoot + "/';\" ></a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //
-                    //					string userName = HttpContext.Current.Session["UserName"].ToString();	//clsUI.NTUserName
-                    //					if (clsUI.AuthenticationType != "None")
-                    //					{
-                    //						sb.Append("\t\t\t\t\t\t\t\t<td align = \"center\"  width = \"20%\" valign = \"middle\">\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t<a href = /" + _appRoot + "/Login.aspx?_auth=logoff><font class = \"lnkLogOff\">Log off: " + userName + "</font></a>\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //					}
-                    //					else
-                    //					{
-                    //						sb.Append("\t\t\t\t\t\t\t\t<td align = \"center\"  width = \"20%\" valign = \"middle\">\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t<font class = \"lnkLogOff\">Current User: " + userName + "</font>\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //					}
-
-                    //take this out after fixing the above "if" block
-
-                    sb.Append("\t\t\t\t\t\t\t\t<td align = \"center\"  width = \"20%\" valign = \"middle\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-
-
-                    sb.Append("\t\t\t\t\t\t\t<td align = \"center\" valign = \"middle\">\n");
-
-                    //Ist toolbar item -- Batch Processing
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/BatchProcess.aspx', '', 'Height = 275, Width = 850, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/BatchProcessing.jpg\" border = \"0\" alt = \"Batch Processing\"></a>\n");
-
-                    //2nd toolbar item -- Activity Special Processing
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/ProcessedData/SplProcessing.aspx', '', 'Height = 500, Width = 950, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/toolbar7.jpg\" border = \"0\" alt = \"Activity Special Processing\"></a>\n");
-
-                    //3rd toolbar item -- Netting screen
-                    //sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/ProcessedData/Netting.aspx', '', 'Height = 500, Width = 950, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/toolbar3.jpg\" border = \"0\" alt = \"Netting\"></a>\n");
-
-                    //4th toolbar item -- To Be Decided
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"#\"><img src = \"/" + _appRoot + "/images/toolbar4.jpg\" border = \"0\" alt = \"Help & Support\"></a>\n");
-
-                    //5th toolbar item -- About Screen
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/About.aspx', '', 'Height = 175, Width = 400 ')\"><img src = \"/" + _appRoot + "/images/toolbar6.jpg\" border = \"0\" alt = \"Environment Information\"></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t</td>\n");
-
-
-                    sb.Append("\t\t\t\t\t\t</tr>\n");
-                    sb.Append("\t\t\t\t\t</table>\n");
-                    sb.Append("\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-                    sb.Append("\t\t\t\t\t\t\t<table Class = \"Outer2\" align =left cellpadding=0 cellspacing=0>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t<table Class = \"Inner1\" align =\"left\" cellpadding=0 cellspacing=0 border = 0>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t<td width=\"150\" nowrap valign = top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t<Table border = 0 cellpadding=0 cellspacing=0 valign = top>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR> \n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top> \n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Maintenance/AccountGroup.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgMaintMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_03.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divMaintenance','','show')\" onMouseOut=\"MM_showHideLayers('divMaintenance','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Maintenance/ActivityManualEntry.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgManualEntryMenu\" border=\"0\" src=\"/" + _appRoot + "/images/manual_entry_03.gif\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divManualEntry','','show')\" onMouseOut=\"MM_showHideLayers('divManualEntry','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n"); 
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Admin/cnfg_busLogic.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgConfigMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_06r.jpg',1)\">\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgConfigMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_06.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divConfiguration','','show')\" onMouseOut=\"MM_showHideLayers('divConfiguration','','hide')\">\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/ProcessedData/ProcessedActivity.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgProcDataMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_08.jpg\" width=\"110\" height=\"19\" onMouseOver=\"MM_showHideLayers('divMaintenance','','hide','divConfiguration','','hide','divProcData','','show')\" onMouseOut=\"MM_showHideLayers('divProcData','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=a\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgReportsMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041803_06.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divReports','','show')\" onMouseOut=\"MM_showHideLayers('divReports','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<!-- Portal -->\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=\"left\" VALIGN=\"top\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Portal/OnLoanReconPortal.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgPortalMenu','','/" + _appRoot + "/images/Portal_N.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgPortalMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Portal_M.gif\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divPortal','','show')\" onMouseOut=\"MM_showHideLayers('divPortal','','hide')\" />\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t</TABLE>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t</td>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t<td align =\"middle\" valign = \"top\">\n");
-                    break;
-            }
-
-            return (sb);
-
-        }
-
-        public StringBuilder BuildHeaderNew(string Section, string Page)
-        {
-            //Do the login thing....
-
-            if (!GlobalVariable.AuthenticationType.Equals("None"))
-            {
-                //Just set the user name
-                CheckLogin();
-            }
-
-            StringBuilder sb = new StringBuilder("");
-            sb.Length = 0;
-            sb.Append("\n<HTML>\n");
-            //HEAD Tag and it's content
-            sb.Append("\t<HEAD>\n");
-            sb.Append("\t\t<meta http-equiv=\"pragma\" content=\"no-cache\">\n");
-
-            //Title tag
-            sb.Append("\t\t<title>\n");
-
-            if (Section.Length > 0)
-                sb.Append("\t\t\tMoBetter | " + Section + " | " + Page + "\n");
-            else
-                sb.Append("\t\t\tMoBetter | " + Page + "\n");
-
-            sb.Append("\t\t</title>\n\n");
-
-            sb.Append("\t\t<script language = \"JavaScript\">\n");
-            sb.Append("\t\t\t var _gc_js_AppRoot = '" + _appRoot + "';\n");
-
-            //Set the report tab that should be loaded when the page comes up
-            string CurrReportsTab = "";
-            if ((HttpContext.Current.Request["_ReportsTab"] != null) && (HttpContext.Current.Request["_ReportsTab"] != ""))
-            {
-                CurrReportsTab = HttpContext.Current.Request["_ReportsTab"];
-            }
-            else
-            {
-                if (GlobalVariable._gsReportsTab != "")
-                {
-                    CurrReportsTab = GlobalVariable._gsReportsTab;
-                }
-            }
-
-            sb.Append("\t\t\t var reportsTab = '';\n");
-            sb.Append("\t\t\t if (reportsTab.length == 0){\n");
-            sb.Append("\t\t\t\t reportsTab = '" + CurrReportsTab + "';}\n");
-            sb.Append("\t\t</script>\n");
-
-            //Divisions for left menu
-
-            //MAINTENANCE MENU
-            sb.Append("<div id=\"divMaintenance\" style=\"position:absolute; left:110px; top:138px; width:112px; height:66px; z-index:3; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divMaintenance','','show')\" onMouseOut=\"MM_showHideLayers('divMaintenance','','hide')\">\n");
-            sb.Append("<ul id=\"qm0\" class=\"qmmc\" >");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/AccountGroup.aspx'\">Accounts</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/BrokerCreditGroup.aspx'\">Brokers</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/SecuritySpecial.aspx'\">Securities</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/LOCGroup.aspx'\">LOC Credit Lines</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/LendLimit.aspx'\">Lending Limits</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/ReportProfiles.aspx'\">Customer Reporting</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/JPClientExRate.aspx'\">JPY Client Lending</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/CollateralSchedule.aspx'\">Coll Type Schedule</a></li>");
-
-            //P1293 : Temporarily disabled until business requirements have been finalized
-            //sb.Append("<li><a href='/" + _appRoot + "/Maintenance/SecurityDefault.aspx?TabPage=SecurityDefault'\">Indemnity</a></li>");
-
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/TriPartyBank.aspx'\">Miscellaneous</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/RWATradedReportRiskWeight.aspx'\">Risk Management</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/CountryRatings.aspx'\">Country Ratings</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/EquiLendLegalEntitySetup.aspx'\">Equi Lend Legal Entity</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/SFTRRegulatoryReporting.aspx'\">Regulatory Reporting</a></li>");
-            sb.Append("</ul>");
-            sb.Append("</div>");
-
-            //MANUAL ENTRY
-            sb.Append("<div id=\"divManualEntry\" style=\"position:absolute; left:110px; top:161px; width:112px; height:66px; z-index:3; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divManualEntry','','show')\" onMouseOut=\"MM_showHideLayers('divManualEntry','','hide')\">\n");
-            sb.Append("<ul id=\"qm0\" class=\"qmmc\" >");
-
-            /******** P2422: Removed "Manual Entry=> Activities,Future Settlementc" menus.
-            //sb.Append("<li><a href='/" + _appRoot + "/Maintenance/ActivityManualEntry.aspx'\">Activities</a></li>");
-            //sb.Append("<li><a href='/" + _appRoot + "/Maintenance/FutureSettlementManualEntry.aspx'\">Future Settlement</a></li>"); */
-
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/CollateralCoverageUpload.aspx'\">Coll. Coverage</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/RWAActualCapitalBalanceManualEntry.aspx'\">Risk Weight Asset Reporting</a></li>");
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/TermRepoFundingRestrictions.aspx'\">TRF Restrictions</a></li>");
-
-            /******** P2422: Removed "Manual Entry=> Import Securitiesd, Counterparty & Upload" menus.
-            //sb.Append("<li><a href='/" + _appRoot + "/Maintenance/SecurityTickerUpload.aspx'\">Import Securities</a></li>");
-            //sb.Append("<li><a href='/" + _appRoot + "/Maintenance/CounterPartyCode.aspx'\">Counterparty & Upload</a></li>"); */
-
-            /******** P2422 Addendum Section 16.12 : Added "Manual Entry=>  Counterparty & Upload" menus. */
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/CounterPartyCode.aspx'\">Counterparty & Upload</a></li>");
-
-            sb.Append("<li><a href='/" + _appRoot + "/Maintenance/TRFMTMFXRateManualEntry.aspx'\">TRF MTM Manual Entry</a></li>");
-            sb.Append("</ul>");
-            sb.Append("</div>");
-
-
-            //PROCESSED DATA MENU
-            /****** P2422: Removed All Processed Data entire menus.
-            sb.Append("\t\t<div id=\"divProcData\" style=\"position:absolute; left:110px; top:184px; width:112px; height:68px; z-index:3; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divMaintenance','','hide','divConfiguration','','hide','divProcData','','show')\" onMouseOut=\"MM_showHideLayers('divProcData','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_01.gif\" width=\"110\" height=\"18\" name=\"activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('activity','','/" + _appRoot + "/images/Menu-Proc-Data_01r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/ProcessedActivity.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_03.gif\" width=\"110\" height=\"18\" name=\"loans\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('loans','','/" + _appRoot + "/images/Menu-Proc-Data_03r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/ProcessedLoans.aspx'\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_05.gif\" width=\"110\" height=\"18\" name=\"collateral\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('collateral','','/" + _appRoot + "/images/Menu-Proc-Data_05r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/Collateral.aspx'\"><br>\n");
-            //			sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_02.gif\" width=\"110\" height=\"6\" name=\"white_activity\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\"><br>\n");
-            //			sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu-Proc-Data_07.gif\" width=\"110\" height=\"18\" name=\"gp_availability\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('gp_availability','','/" + _appRoot + "/images/Menu-Proc-Data_07r.gif','imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\" onClick=\"location='/" + _appRoot + "/ProcessedData/gpAvailability.aspx'\">\n");
-            sb.Append("\t\t</div>\n"); */
-
-
-            //REPORT MENU
-            //<!-- QuickMenu Structure [Menu 0] -->
-            //            sb.Append("\t\t<div id=\"divReports\" style=\"position:absolute; left:110px; top:205px; width:112px; height:90px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divReports','','show')\" onMouseOut=\"MM_showHideLayers('divReports','','hide')\">\n");
-            sb.Append("\t\t<div id=\"divReports\" style=\"position:absolute; left:110px; top:184px; width:112px; height:90px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divReports','','show')\" onMouseOut=\"MM_showHideLayers('divReports','','hide')\">\n");
-            sb.Append("<ul id=\"qm0\" class=\"qmmc\" >\n");
-
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=Reports'\">Packages</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/BusReports.aspx'\">Business Reports</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/CustReports.aspx'\">Customer Reports (Legacy)</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/CustReportsNew.aspx'\">Customer Reports</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/MgmtReports.aspx'\">Mgmt Reports</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/MiscReports.aspx'\">Misc Reports</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Reports/EquityMovement.aspx'\">Equity Movement</a></li>\n");
-
-            sb.Append("</ul>\n");
-            //sb.Append("</li></ul>\n");
-            sb.Append("</div>\n");
-
-
-            //PORTAL MENU
-            //<!-- QuickMenu Structure [Menu 0] -->
-            //sb.Append("<div id=\"divPortal\" style=\"position:absolute;left:110px; top:226px; width:112px; height:90px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divPortal','','show')\" onMouseOut=\"MM_showHideLayers('divPortal','','hide')\">\n");
-            sb.Append("<div id=\"divPortal\" style=\"position:absolute;left:110px; top:205px; width:112px; height:90px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divPortal','','show')\" onMouseOut=\"MM_showHideLayers('divPortal','','hide')\">\n");
-            sb.Append("<ul id=\"qm0\" class=\"qmmc\" >\n");
-            //sb.Append("<li><a class=\"qmparent\" href='/" + _appRoot + "/Portal/OnLoanReconPortal.aspx'\">Portal</a>\n");
-            //sb.Append("<ul>\n");
-
-            sb.Append("<li><a href='/" + _appRoot + "/Portal/OnLoanEarningsReconPortal.aspx?screenType=LendingRecon'\">On Loan and Earnings Recon</a></li>\n");
-            //sb.Append("<li><a href='/" + _appRoot + "/Portal/OnLoanReconPortal.aspx?screenType=LendingRecon'\">OnLoan Recon</a></li>\n");
-            //sb.Append("<li><a href='/" + _appRoot + "/Portal/EarningsReconPortal.aspx'\">Earnings Recon</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Portal/OnLoanReconPortal.aspx?screenType=Reporting'\">MoveData to Reporting</a></li>\n");
-            sb.Append("<li><a href='/" + _appRoot + "/Portal/MultiDayMovePortal.aspx'\">Multi Day Move</a></li>\n");
-
-            sb.Append("</ul>\n");
-            //sb.Append("</li></ul>\n");
-            sb.Append("</div>\n");
-
-            //ADMIN
-            sb.Append("\t\t<div id=\"divAdmin\" style=\"position:absolute; left:110px; top:247px; width:112px; height:10px; z-index:4; visibility: hidden; background-color:WhiteSmoke;\" onMouseOver=\"MM_showHideLayers('divAdmin','','show')\" onMouseOut=\"MM_showHideLayers('divAdmin','','hide')\">\n");
-            sb.Append("\t\t\t<img src=\"/" + _appRoot + "/images/Menu_WorldLend_01.gif\" width=\"110\" height=\"18\" border=\"0\" name=\"Menu-Admin\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('Menu-Admin','','/" + _appRoot + "/images/Menu_WorldLend_04.gif','imgAdminMenu','','/" + _appRoot + "/images/MainMenu_33.gif',1)\" onClick=\"location='/" + _appRoot + "/Administration/UserMaster.aspx'\"><br>\n");
-            sb.Append("\t\t</div>\n");
-
-            sb.Append("\t</HEAD>\n\n");
-
-            //Put in the appropriate body tag
-            switch (Section)
-            {
-                case "Section1":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"init('','');\">\n");
-                    break;
-                case "Maintenance":
-                case "Processed Data":
-                case "Manual Entry":
-                case "Administration":
-                case "Portal":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"Init_Form();\">\n");
-                    break;
-                case "Reports":
-                    sb.Append("\n\t<Body class=\"LargeDisplay\" onLoad= \"init('Reports','');\">\n");
-                    break;
-                default:
-                    sb.Append("\n\t<Body class=\"Default\" onLoad= \"init('','');\">\n");
-                    break;
-            }
-
-            //			//Put in the proper table class
-            //			switch (Page)
-            //			{
-            //				case "Netting":
-            //					sb.Append("\t\t\t\t\t<Table Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-            //					break;
-            //				default:
-            //					sb.Append("\t\t\t\t\t<Table Class = \"TopHeader\" cellpadding=\"0\" cellspacing=\"0\">\n");
-            //					break;					
-            //			}
-
-            //Put in the proper table class
-            switch (Page)
-            {
-                case "Collateral Allocation1":
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"OuterLandscape\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-
-                    //print button
-                    sb.Append("\t\t\t\t\t\t<td height = \"25\" align=right><a href = \"Javascript: window.print()\"><font class = \"PopUpWindowHeader\">Print&nbsp;&nbsp;</font></a>\n");
-
-                    //close button
-                    sb.Append("\t\t\t\t\t\t<a href = \"Javascript: alert('step1') ; document.Collateral.cmdSearch.form.submit() ; alert('step2') ; CloseWindow()\"><font class = \"PopUpWindowHeader\">Close&nbsp;&nbsp;</font></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-                    break;
-
-                case "Activity Details":
-                case "About":
-                case "Batch Process":
-                case "BusReports_PopUp":
-                case "Collateral Allocation":
-                case "Collateral Info":
-                case "Future Info":
-                case "Loan History":
-                case "Reference History":
-                case "Indemnity Security Index":
-                case "Special Processing":
-                case "Netting":
-                case "Popup Error":
-                case "Validation Details":
-                case "Availability":
-                case "Fee Split":
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"OuterLandscape\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeaderLandscape\" cellpadding=\"0\" cellspacing=\"0\">\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-
-                    //print button
-                    sb.Append("\t\t\t\t\t\t<td height = \"25\" align=right><a href = \"Javascript: window.print()\"><font class = \"PopUpWindowHeader\">Print&nbsp;&nbsp;</font></a>\n");
-
-                    //close button
-                    sb.Append("\t\t\t\t\t\t<a href = \"Javascript: CloseWindow()\"><font class = \"PopUpWindowHeader\">Close&nbsp;&nbsp;</font></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-                    break;
-
-                case "Report Parameters":
-                    sb.Append("\t\t<table border=\"0\" width=\"750\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\"  class = \"Outer1\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" width=\"750\" class = \"ReportsTabTable\" cellpadding=\"0\" cellspacing=\"0\" >\n");
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-
-
-                    break;
-
-                default:
-                    sb.Append("\t\t<table border=\"0\" align =\"left\" cellpadding=\"0\" cellspacing=\"0\" class = \"Outer1\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t<Table border=\"0\" Class = \"TopHeader\" cellpadding=\"0\" cellspacing=\"0\">\n");
-                    sb.Append("\t\t\t\t\t\t<tr height = \"60%\">\n");
-
-                    sb.Append("\t\t\t\t\t\t\t<td colspan = \"2\">\n");
-                    sb.Append("\t\t\t\t\t\t\t&nbsp;\n");
-                    sb.Append("\t\t\t\t\t\t\t</td>\n");
-
-                    sb.Append("\t\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t<td align = \"left\" width = \"15%\" valign = \"middle\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"/" + _appRoot + "\"><img src = \"/" + _appRoot + "/images/home2.gif\" border = \"0\" alt = \"Home\" onClick = \"location = '/" + _appRoot + "/';\" ></a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //
-                    //					string userName = HttpContext.Current.Session["UserName"].ToString();	//clsUI.NTUserName
-                    //					if (clsUI.AuthenticationType != "None")
-                    //					{
-                    //						sb.Append("\t\t\t\t\t\t\t\t<td align = \"center\"  width = \"20%\" valign = \"middle\">\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t<a href = /" + _appRoot + "/Login.aspx?_auth=logoff><font class = \"lnkLogOff\">Log off: " + userName + "</font></a>\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //					}
-                    //					else
-                    //					{
-                    //						sb.Append("\t\t\t\t\t\t\t\t<td align = \"center\"  width = \"20%\" valign = \"middle\">\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t<font class = \"lnkLogOff\">Current User: " + userName + "</font>\n");
-                    //						sb.Append("\t\t\t\t\t\t\t\t</td>\n");
-                    //					}
-
-                    //take this out after fixing the above "if" block
-
-
-                    sb.Append("\t\t\t\t\t\t\t<td align = \"Center\"  width = \"35%\" valign = \"middle\">\n");
-
-                    string environment = GlobalVariable.Environment;
-                    if (!string.IsNullOrEmpty(environment))
-                    {
-                        sb.Append("<font class=\"ENVHeader\" COLOR=\"<!--EnvironmentTitleForecolor-->\"><!--EnvironmentTitle--></font>"
-                                        .Replace("<!--EnvironmentTitleForecolor-->", GlobalVariable.EnvironmentKeyColor.ToString())
-                                        .Replace("<!--EnvironmentTitle-->", GlobalVariable.Environment.ToString()));
-                    }
-                    sb.Append("\t\t\t\t\t\t\t</td>\n");
-
-                    if (Section != "Portal")
-                    {
-                        if (Page.Contains("Equity Movement"))
-                            sb.Append("\t\t\t\t\t\t\t<td align = \"left\" width = \"35%\" valign = \"middle\">\n");
-                        else
-                            sb.Append("\t\t\t\t\t\t\t<td align = \"center\" width = \"35%\" valign = \"middle\">\n");
-
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t\t<td align = \"left\" width = \"35%\" valign = \"middle\">\n");
-                    }
-
-                    //Ist toolbar item -- Batch Processing
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/BatchProcess.aspx', '', 'Height = 275, Width = 850, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/BatchProcessing.jpg\" border = \"0\" alt = \"Batch Processing\"></a>\n");
-
-                    //2nd toolbar item -- Activity Special Processing
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/ProcessedData/SplProcessing.aspx', '', 'Height = 500, Width = 950, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/toolbar7.jpg\" border = \"0\" alt = \"Activity Special Processing\"></a>\n");
-
-                    //3rd toolbar item -- Netting screen
-                    //sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/ProcessedData/Netting.aspx', '', 'Height = 500, Width = 950, scrollbars, resizable')\"><img src = \"/" + _appRoot + "/images/toolbar3.jpg\" border = \"0\" alt = \"Netting\"></a>\n");
-
-                    //4th toolbar item -- To Be Decided
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"#\"><img src = \"/" + _appRoot + "/images/toolbar4.jpg\" border = \"0\" alt = \"Help & Support\"></a>\n");
-
-                    //5th toolbar item -- About Screen
-                    sb.Append("\t\t\t\t\t\t\t\t<a href = \"JavaScript:PopUpWindow('/" + _appRoot + "/About.aspx', '', 'Height = 175, Width = 400 ')\"><img src = \"/" + _appRoot + "/images/toolbar6.jpg\" border = \"0\" alt = \"Environment Information\"></a>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t</td>\n");
-
-                    sb.Append(checkSuperUser(Section, Page));
-
-                    sb.Append("\t\t\t\t\t\t</tr>\n");
-                    sb.Append("\t\t\t\t\t</table>\n");
-                    sb.Append("\t\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t\t\t</tr>\n");
-
-                    sb.Append("\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t<td>\n");
-                    sb.Append("\t\t\t\t\t\t\t<table Class = \"Outer2\" align =left cellpadding=0 cellspacing=0>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t<td nowrap>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t<table Class = \"Inner1\" align =\"left\" cellpadding=0 cellspacing=0 border = 0>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t<td width=\"150\" nowrap valign = top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t<Table border = 0 cellpadding=0 cellspacing=0 valign = top>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR> \n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top> \n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Maintenance/AccountGroup.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgMaintMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_03r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgMaintMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_03.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divMaintenance','','show')\" onMouseOut=\"MM_showHideLayers('divMaintenance','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Maintenance/ActivityManualEntry.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgManualEntryMenu','','/" + _appRoot + "/images/manual_entry_01.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgManualEntryMenu\" border=\"0\" src=\"/" + _appRoot + "/images/manual_entry_03.gif\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divManualEntry','','show')\" onMouseOut=\"MM_showHideLayers('divManualEntry','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n"); 
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Admin/cnfg_busLogic.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgConfigMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_06r.jpg',1)\">\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgConfigMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_06.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divConfiguration','','show')\" onMouseOut=\"MM_showHideLayers('divConfiguration','','hide')\">\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    //					sb.Append ("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    /* P2422: This moudle entirely removed as it is no longer needed.
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/ProcessedData/ProcessedActivity.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgProcDataMenu','','/" + _appRoot + "/images/Mo%27-Better-041403_08r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgProcDataMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041403_08.jpg\" width=\"110\" height=\"19\" onMouseOver=\"MM_showHideLayers('divMaintenance','','hide','divConfiguration','','hide','divProcData','','show')\" onMouseOut=\"MM_showHideLayers('divProcData','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n"); */
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=left VALIGN=top>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=a\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgReportsMenu','','/" + _appRoot + "/images/Mo%27-Better-041803_06r.jpg',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgReportsMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Mo%27-Better-041803_06.jpg\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divReports','','show')\" onMouseOut=\"MM_showHideLayers('divReports','','hide')\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<!-- Portal -->\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=\"left\" VALIGN=\"top\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Portal/OnLoanReconPortal.aspx?screenType=Reporting\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgPortalMenu','','/" + _appRoot + "/images/Portal_N.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgPortalMenu\" border=\"0\" src=\"/" + _appRoot + "/images/Portal_M.gif\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divPortal','','show')\" onMouseOut=\"MM_showHideLayers('divPortal','','hide')\" />\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-
-                    if (_IsSuperUser)
-                    {
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t<TR>\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<!-- Admin -->\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<TD ALIGN=\"left\" VALIGN=\"top\">\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<a href=\"/" + _appRoot + "/Administration/UserMaster.aspx\" onMouseOut=\"MM_swapImgRestore()\" onMouseOver=\"MM_swapImage('imgAdminMenu','','/" + _appRoot + "/images/MainMenu_33.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t<img name=\"imgAdminMenu\" border=\"0\" src=\"/" + _appRoot + "/images/MainMenu_31.gif\" width=\"110\" height=\"18\" onMouseOver=\"MM_showHideLayers('divAdmin','','show')\" onMouseOut=\"MM_showHideLayers('divAdmin','','hide')\" />\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</a>\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TD>\n");
-                        sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t\t\t</TR>\n");
-                    }
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t\t</TABLE>\n");
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t\t</td>\n");
-
-                    sb.Append("\t\t\t\t\t\t\t\t\t\t<td align =\"middle\" valign = \"top\">\n");
-                    break;
-            }
-
-            return (sb);
-
-        }
-
-        public static StringBuilder BuildFooter(string Section, string Page)
-        {
-            StringBuilder sb = new StringBuilder("");
-            sb.Length = 0;
-
-            //Put in the proper table class
-            switch (Page)
-            {
-                case "Activity Details":
-                case "About":
-                case "Batch Process":
-                case "BusReports_PopUp":
-                case "Collateral Info":
-                case "Collateral Allocation":
-                case "Future Info":
-                case "Loan History":
-                case "Reference History":
-                case "Indemnity Security Index":
-                case "Special Processing":
-                case "Netting":
-                case "Popup Error":
-                case "Validation Details":
-                case "Fee Split":
-                case "Availability":
-                    // case "Report Parameters":    
-                    //Body closing Tag and it's content -- goes in Footer
-                    //sb.Append("</td> </tr> </table> </td> </tr> </table> </BODY> </HTML>\n");
-                    sb.Append("</td> </tr> </table> </td> </tr> </table> </BODY> </HTML>\n");
-                    break;
-                case "Report Parameters":
-                    sb.Append("<tr>\n");
-                    sb.Append("<td>&nbsp;</td>\n");
-
-                    sb.Append("<td>&nbsp;</td>\n");
-                    sb.Append("</tr>\n");
-
-                    //sb.Append("<tr>\n");
-                    //sb.Append("<td class = \"MainFooter1\" nowrap colspan=\"3\" >Version " + ApplicationVersion() + "</td>\n");
-                    //sb.Append("</tr>\n");
-
-                    //sb.Append("<tr>\n");
-                    //sb.Append("<td class = \"MainFooter2\" nowrap colspan=\"3\" >Copyright ©2007 Sumitomo Mitsui Trust Bank (U.S.A). All rights reserved.</td>\n");
-                    //sb.Append("</tr>\n");
-
-                    sb.Append("</td> </tr> </table> </td> </tr> </table> </BODY> </HTML>\n");
-                    break;
-
-                default:
-                    //Body closing Tag and it's content -- goes in Footer
-                    sb.Append("</td>\n");
-                    sb.Append("<td width=\"150\" height = \"400\" nowrap>&nbsp;</td>\n");
-                    sb.Append("</tr>\n");
-
-                    sb.Append("<tr>\n");
-                    sb.Append("<td class=\"FooterSpacer\" nowrap colspan=\"3\"></td>\n");
-                    sb.Append("</tr>\n");
-
-                    sb.Append("<tr>\n");
-                    sb.Append("<td></td>\n");
-
-                    sb.Append("<td>\n");
-                    sb.Append("<table align=\"center\" cellpadding=\"0\" cellspacing=\"0\">\n");
-                    sb.Append("<tr>\n");
-                    sb.Append("<td align=\"center\" class =\"MainFooterLine\"></td>\n");
-                    sb.Append("</tr>\n");
-                    sb.Append("</table>\n");
-                    sb.Append("</td>\n");
-
-                    sb.Append("<td></td>\n");
-                    sb.Append("</tr>\n");
-
-                    sb.Append("<tr>\n");
-                    sb.Append("<td class = \"MainFooter1\" nowrap colspan=\"3\" align=\"center\">Version " + ApplicationVersion() + "</td>\n");
-                    sb.Append("</tr>\n");
-
-                    sb.Append("<tr>\n");
-                    sb.Append("<td class = \"MainFooter2\" nowrap colspan=\"3\" align=\"center\"> " + Disclaimer() + "</td>\n");
-                    sb.Append("</tr>\n");
-
-                    sb.Append("</table> </td> </tr> </table> </td> </tr> </table> </BODY> </HTML>\n");
-                    break;
-            }
-
-            return (sb);
-        }
-
-        static string AssemblyVersion()
-        {
-            string sVersion = null;
-            sVersion = GlobalVariable.AssemblyVersion;
-            return sVersion;
-
-            // method 2
-            //			string assemblyName = System.Reflection.Assembly.GetExecutingAssembly().FullName ;
-            //			string[] assemblyParts = assemblyName.Split(',');
-            //			sVersion = assemblyParts[1].Substring(assemblyParts[1].IndexOf("=") + 1) ; 
-            //			return sVersion ;
-        }
-
-        static string ApplicationVersion()
-        {
-            string sVersion = null;
-            sVersion = GlobalVariable.AppVersion;
-            return sVersion;
-        }
-
-        public static String WriteIncFiles_Old(string Section, string Page, string IncType)
-        {
-            string incFile = "";
-            string s = "";
-
-            try
-            {
-
-                switch (IncType)
-                {
-                    case "CSS":
-                        //incFile = @"\\" + _serverName + @"\stbusa app runtime files\Intra-Net\" + _appRoot + @"\StyleSheets\StyleSheet1.css";
-                        //incFile = @"C:\stbusa app runtime files\Intra-Net\" + _appRoot + @"\StyleSheets\StyleSheet1.css";
-                        incFile = _appRoot + @"/StyleSheets/StyleSheet1.css";
-                        break;
-                    case "JS":
-                        //incFile = @"\\" + _serverName + @"\stbusa app runtime files\Intra-Net\" + _appRoot + @"\JavaScript\Common.js";
-                        //incFile = @"C:\stbusa app runtime files\Intra-Net\" + _appRoot + @"\JavaScript\Common.js";
-                        incFile = _appRoot + @"/JavaScript/Common.js";
-                        break;
-                    default:
-                        break;
-                }
-
-                StreamReader sr = new StreamReader(incFile);
-                s = sr.ReadToEnd() + "\n";
-                sr.Close();
-                return (s);
-            }
-
-            catch (Exception e)
-            {
-                HttpContext.Current.Response.Write("Error reading File<br>");
-                return e.Message.ToString();
-            }
-        }
-
-        public static void WriteIncFiles(string Section, string Page)
-        {
-            string jsFile = "";
-            string cssFile = "";
-            string incFilePath = @"/" + _appRoot;
-            //string incFilePath = @"\\" + _serverName + @"\stbusa app runtime files\Intra-Net\" + _appRoot ;
-            //string incFilePath = @"C:\stbusa app runtime files\Intra-Net\" + _appRoot;
-
-            try
-            {
-                //First, write out the common inc files
-                cssFile = incFilePath + @"/StyleSheets/Common.css";
-                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(cssFile)));
-
-                cssFile = incFilePath + @"/StyleSheets/Menu.css";
-                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(cssFile)));
-
-
-                jsFile = incFilePath + @"/JavaScript/Common.js";
-                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(jsFile)));
-
-
-                //Now write section-specific inc files
-                switch (Section)
-                {
-                    case "Home":
-                        //cssFile = incFilePath + @"/StyleSheets/Reports.css";
-                        //jsFile = incFilePath + @"/JavaScript/Reports.js";
-                        switch (Page)
-                        {
-                            case "Welcome":
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/WebFormCallBackSuport.js")));
-                                break;
-                        }
-                        break;
-
-                    case "Reports":
-                        cssFile = incFilePath + @"/StyleSheets/Reports.css";
-                        jsFile = incFilePath + @"/JavaScript/Reports.js";
-                        switch (Page)
-                        {
-                            case "Customer Reports":
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/WebFormCallBackSuport.js")));
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/CustReports.js")));
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/CustReportsNew.js")));
-                                break;
-                            case "Business Reports":
-                            case "Misc Reports":
-                            case "Management Reports":
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/WebFormCallBackSuport.js")));
-                                break;
-                            case "Report Packages":
-                                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/CustReportsNew.js")));
-                                break;
-                        }
-                        break;
-
-                    case "Processed Data":
-                        cssFile = incFilePath + @"/StyleSheets/ProcData.css";
-                        jsFile = incFilePath + @"/JavaScript/ProcData.js";
-                        break;
-
-                    case "Maintenance":
-                        cssFile = incFilePath + @"/StyleSheets/Maintenance.css";
-                        jsFile = incFilePath + @"/JavaScript/Maintenance.js";
-                        HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(incFilePath + @"/JavaScript/CustReportsNew.js")));
-                        break;
-
-                    case "Admin":
-                        cssFile = incFilePath + @"/StyleSheets/Admin.css";
-                        jsFile = incFilePath + @"/JavaScript/Admin.js";
-                        break;
-
-                    case "Manual Entry":
-                        cssFile = incFilePath + @"/StyleSheets/MnlEntry.css";
-                        jsFile = incFilePath + @"/JavaScript/MnlEntry.js";
-                        break;
-
-                    case "Portal":
-                        cssFile = incFilePath + @"/StyleSheets/StyleSheet.css";
-                        jsFile = incFilePath + @"/JavaScript/AllScript.js";
-                        break;
-
-                }
-
-                HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(cssFile)));
-                if (Page != "Report Parameters")
-                    HttpContext.Current.Response.Write(ReadIncFiles(HttpContext.Current.Server.MapPath(jsFile)));
-            }
-
-            catch
-            {
-                HttpContext.Current.Response.Write("Error reading File<br>");
-                return;
-            }
-        }
-
-        public static string ReadIncFiles(string sFileName)
-        {
-            string s = "";
-            StreamReader sr = null;
-
-            try
-            {
-                sr = new StreamReader(sFileName);
-                s = sr.ReadToEnd() + "\n";
-                return s;
-                //HttpContext.Current.Response.Write(s);				
-            }
-
-            catch (Exception e)
-            {
-                return e.Message.ToString();
-            }
-            finally
-            {
-                sr.Close();
-            }
-
-        }
-
-        public static StringBuilder WriteTabHeader(string Page)
-        {
-            StringBuilder sb = new StringBuilder("");
-            sb.Length = 0;
-
-            switch (Page)
-            {
-                case "ReportsPkg":
-                case "BusReports":
-                case "CustReports":
-                case "CustReportsNew":
-                case "MgmtReports":
-                case "MiscReports":
-                    //<!--Row for the Tab Header table>
-                    sb.Length = 0;
-                    sb.Append("<div id=\"RptMainttabs\" class=\"6tab\">");
-                    sb.Append("<ul>");
-
-                    //Ist tab -- Packages
-                    if (Page != "ReportsPkg")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=b'\"><br/> <br/>Packages</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" ><br/> <br/>Packages</a></li>"); //class=\"selected\"
-                    }
-
-                    //2nd tab -- Business Reports
-                    if (Page != "BusReports")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/BusReports.aspx'\"><br/>Business <br/>Reports</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" ><br/>Business <br/>Reports</a></li>"); //class=\"selected\"
-                    }
-
-                    //3rd tab -- Customer Reports
-                    if (Page != "CustReports")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/CustReports.aspx'\">Customer <br/>Reports <br/>(Legacy)</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Customer Reports (Legacy)</a></li>"); //class=\"selected\"
-                    }
-
-                    //4th tab -- Customer Reports New
-                    if (Page != "CustReportsNew")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/CustReportsNew.aspx'\"><br/>Customer <br/>Reports</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" ><br/>Customer <br/>Reports</a></li>"); //class=\"selected\"
-                    }
-
-                    //5th tab -- Mgmt Reports
-                    if (Page != "MgmtReports")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/MgmtReports.aspx'\"><br/> <br/>Mgmt Reports</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" ><br/> <br/>Mgmt Reports</a></li>"); //class=\"selected\"
-                    }
-
-                    //6th tab -- Misc Reports
-                    if (Page != "MiscReports")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Reports/MiscReports.aspx'\"><br/> <br/>Misc Reports</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" ><br/> <br/>Misc Reports</a></li>"); //class=\"selected\"
-                    }
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-
-                    /*
-                    sb.Length = 0;
-                    sb.Append("\t<tr class = \"ReportTabHeader2\">\n");
-
-                    sb.Append("\t\t<td>\n");
-                    sb.Append("\t\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\">\n");
-
-                    sb.Append("\t\t\t\t<tr>\n");
-
-                    //Ist tab -- Packages
-                    sb.Append("\t\t\t\t\t<td id=\"tabPackages\">\n");
-                    if (Page != "ReportsPkg")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/ReportsPkg.aspx?_PageAction=b'\" onMouseOut=\"MM_swapImgRestore2('packages')\" onMouseOver=\"MM_swapImage2('packages','','/MoBetter/Images/tabReports_06.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"packages\" border=\"0\" src = \"/MoBetter/Images/tabReports_02.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"packages\" border=\"0\" src = \"/MoBetter/Images/tabReports_04.gif\">\n");
-                    }
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    //White spacer
-                    sb.Append("\t\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //2nd tab -- Business Reports
-                    sb.Append("\t\t\t\t\t<td id=\"tabBusReports\">\n");
-                    if (Page != "BusReports")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/BusReports.aspx'\" onMouseOut=\"MM_swapImgRestore2('busReports')\" onMouseOver=\"MM_swapImage2('busReports','','/MoBetter/Images/tabReports_12.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"busReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_08.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"busReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_10.gif\">\n");
-                    }
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    //White spacer
-                    sb.Append("\t\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //3rd tab -- Customer Reports
-                    sb.Append("\t\t\t\t\t<td id=\"tabCustReports\">\n");
-                    if (Page != "CustReports")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/CustReports.aspx'\" onMouseOut=\"MM_swapImgRestore2('custReports')\" onMouseOver=\"MM_swapImage2('custReports','','/MoBetter/Images/tabReports_18.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"custReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_14.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"custReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_16.gif\">\n");
-                    }
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    //White Spacer
-                    sb.Append("\t\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //4th tab -- Customer Reports New
-                    sb.Append("\t\t\t\t\t<td id=\"tabCustReports\">\n");
-                    if (Page != "CustReports")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/CustReportsNew.aspx'\" onMouseOut=\"MM_swapImgRestore2('custReports')\" onMouseOver=\"MM_swapImage2('custReports','','/MoBetter/Images/tabReports_18.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"custReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_14.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"custReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_16.gif\">\n");
-                    }
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    //White Spacer
-                    sb.Append("\t\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //5th tab -- Mgmt Reports
-                    sb.Append("\t\t\t\t\t<td id=\"tabMgmtReports\">\n");
-                    if (Page != "MgmtReports")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/MgmtReports.aspx'\" onMouseOut=\"MM_swapImgRestore2('mgmtReports')\" onMouseOver=\"MM_swapImage2('mgmtReports','','/MoBetter/Images/tabReports_24.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"mgmtReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_20.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"mgmtReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_22.gif\">\n");
-                    }
-
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    //White spacer
-                    sb.Append("\t\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //6th tab -- Misc Reports
-                    sb.Append("\t\t\t\t\t<td id=\"tabMiscReports\">\n");
-                    if (Page != "MiscReports")
-                    {
-                        sb.Append("\t\t\t\t\t\t<a href='/" + _appRoot + "/Reports/MiscReports.aspx'\" onMouseOut=\"MM_swapImgRestore2('miscReports')\" onMouseOver=\"MM_swapImage2('miscReports','','/MoBetter/Images/tabReports_30.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t\t<img name = \"miscReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_26.gif\">\n");
-                        sb.Append("\t\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t\t<img name = \"miscReports\" border=\"0\" src = \"/MoBetter/Images/tabReports_28.gif\">\n");
-                    }
-                    sb.Append("\t\t\t\t\t</td>\n");
-
-                    sb.Append("\t\t\t\t<tr>\n");
-                    sb.Append("\t\t\t</table>\n");
-                    sb.Append("\t\t</td>\n");
-                    sb.Append("\t</tr>\n"); */
-                    break;
-
-                case "CreditGroup":
-                case "CreditLimit":
-                case "BrokerGroup":
-                case "Broker":
-                case "CreditRating":
-                case "BrokerGroupClient":
-                    // case "TimeTableCCUP":
-                    //<!--Row for the Tab Header table>
-                    sb.Length = 0;
-                    sb.Append("<div id=\"BkrMainttabs\" class=\"6tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "CreditGroup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerCreditGroup.aspx'\">Credit Group</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Credit Group</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "CreditLimit")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerCreditLimit.aspx'\" >Credit Limit</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Credit Limit</a></li>");
-                    }
-
-                    if (Page != "BrokerGroup")
-                    {
-
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerGroup.aspx'\">Broker Group</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Broker Group</a></li>");
-                    }
-
-                    if (Page != "Broker")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/Broker.aspx'\">Broker</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Broker</a></li>");
-                    }
-
-
-                    if (Page != "CreditRating")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerCreditRating.aspx'\" >Credit Rating</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Credit Rating</a></li>");
-                    }
-
-                    // ************P2422:  Addemdum 16.12(13) Broker Group Client tab should not be removed as it is being used for legacy reports.
-                    if (Page != "BrokerGroupClient")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerGroupClient.aspx'\" >Clients</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Clients</a></li>");
-                    }
-
-
-                    //if (Page != "TimeTableCCUP")
-                    //{
-                    //    sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/TimeTableCCUP.aspx'\" >EquiLend TimeTable</a></li>");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("<li><a class=\"selected\" >EquiLend TimeTable</a></li>");
-                    //}
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-                case "LendLimit":
-                case "LendLimitFxRate":
-                case "LendLimitBrkPerc":
-                    //case "LendLimitClient":
-
-                    sb.Length = 0;
-                    sb.Append("<div id=\"LendLimitMainttabs\" class=\"3tab\">");
-                    sb.Append("<ul>");
-
-                    /************ P2422: Moved to "Maintenance => Account => LendingLimitGrop".
-                    if (Page != "LendLimitGroup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimitGroup.aspx'\">Lending Limit Groups</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Lending Limit Groups</a></li>"); //class=\"selected\"
-                    } */
-
-                    if (Page != "LendLimit")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimit.aspx'\">Limits</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Limits</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "LendLimitFxRate")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimitFxRate.aspx'\">Fx Rates</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Fx Rates</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "LendLimitBrkPerc")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimitBrkPerc.aspx'\">Broker Percentage</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Broker Percentage</a></li>"); //class=\"selected\"
-                    }
-
-                    /************* P2422: Removed client From Lending Limit.
-                    if (Page != "LendLimitClient")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimitClient.aspx'\">Clients</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Clients</a></li>"); //class=\"selected\"
-                    } */
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-                    //sb.Append("<tr>\n");
-                    //sb.Append("\t<td colspan=\"2\">\n");
-                    //sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n");
-                    //sb.Append("\t\t\t<tr>\n");
-
-                    ////1st tab
-                    //sb.Append("\t\t\t\t<td id=\"tabLimit\">\n");
-                    //if (Page != "LendLimit")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/LendLimit.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgLimit')\" onMouseOver=\"MM_swapImage2('imgLimit','','/MoBetter/Images/tabLendLimit_12.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgLimit\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_08.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgLimit\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_10.gif\">\n");
-                    //}
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    ////White spacer
-                    //sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    ////2nd Tab
-                    //sb.Append("\t\t\t\t<td id=\"tabFxRate\">\n");
-                    //if (Page != "LendLimitFxRate")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/LendLimitFxRate.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgFxRate')\" onMouseOver=\"MM_swapImage2('imgFxRate','','/MoBetter/Images/tabLendLimit_18.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgFxRate\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_14.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgFxRate\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_16.gif\">\n");
-                    //}
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    ////White spacer
-                    //sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    ////3rd tab
-                    //sb.Append("\t\t\t\t<td id=\"tabBrkPerc\">\n");
-                    //if (Page != "LendLimitBrkPerc")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/LendLimitBrkPerc.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgBrkPerc')\" onMouseOver=\"MM_swapImage2('imgBrkPerc','','/MoBetter/Images/tabLendLimit_24.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgBrkPerc\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_20.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgBrkPerc\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_22.gif\">\n");
-                    //}
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    //White spacer
-                    //sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    ////4th tab
-                    //sb.Append("\t\t\t\t<td id=\"tabLendLimitClient\">\n");
-                    //if (Page != "LendLimitClient")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/LendLimitClient.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgLendLimitClient')\" onMouseOver=\"MM_swapImage2('imgLendLimitClient','','/MoBetter/Images/tabLendLimit_30.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgLendLimitClient\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_26.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgLendLimitClient\" border=\"0\" src = \"/MoBetter/Images/tabLendLimit_28.gif\">\n");
-                    //}
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    //sb.Append("\t\t\t</tr>\n");
-                    //sb.Append("\t\t</table>\n");
-                    //sb.Append("\t</td>\n");
-                    //sb.Append("</tr>\n");
-                    break;
-
-                /*************** P2422: Added new module Customer Reporting */
-                case "ReportProfiles":
-                case "ReportSetup":
-
-                    sb.Length = 0;
-                    sb.Append("<div id=\"CustRepoMainttabs\" class=\"2tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "ReportProfiles")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/ReportProfiles.aspx'\">Report Profiles</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Report Profiles</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "ReportSetup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/ReportSetup.aspx'\">Customer Reporting (CRMM)</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Customer Reporting (CRMM)</a></li>"); //class=\"selected\"
-                    }
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-                case "AccountGroup":
-                case "LendLimitGroup":
-                case "Account":
-                case "AccountCollCCYSetup":
-                case "CBJAccountFundManager":
-                    sb.Length = 0;
-                    sb.Append("<div id=\"AcctMainttabs\" class=\"5tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "AccountGroup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/AccountGroup.aspx'\"><br/>Group</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\"><br/>Group</a></li>"); //class=\"selected\"
-                    }
-
-                    /************ P2422: Moved form "Maintenance => Lending Limit Grop => LendingLimitGrop" tab to "Maintenance => Account" */
-                    if (Page != "LendLimitGroup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/LendLimitGroup.aspx'\">Account Lending Limit Groups</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Account Lending Limit Groups</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "Account")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/Account.aspx'\"><br/>Account</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\"><br/>Account</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "AccountCollCCYSetup")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/AccountCollCCYSetup.aspx'\">Account Coll CCY <br/>Setup</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Account Coll CCY <br>Setup</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "CBJAccountFundManager")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/CBJAccountFundManager.aspx'\"><br>Fund Manager</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\"><br> Fund Manager </a></li>"); //class=\"selected\"
-                    }
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-                    //               sb.Append("<tr>\n") ;
-                    //sb.Append("\t<td colspan=\"2\">\n") ;
-                    //sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n") ;
-                    //sb.Append("\t\t\t<tr>\n") ;
-
-                    //sb.Append("\t\t\t\t<td id=\"tabAcctGroup\">\n") ;
-                    //if (Page != "AccountGroup")
-                    //{
-                    //                   sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/AccountGroup.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgAcctGroup')\"  onMouseOver=\"MM_swapImage2('imgAcctGroup','','/MoBetter/Images/tabAccount_12.gif',1)\">\n");
-                    //	sb.Append("\t\t\t\t\t<img name = \"imgAcctGroup\" border=\"0\" src = \"/MoBetter/Images/tabAccount_08.gif\">\n") ;
-                    //	sb.Append("\t\t\t\t\t</a>\n") ;
-                    //}
-                    //else
-                    //{
-                    //	sb.Append("\t\t\t\t\t<img name = \"imgAcctGroup\" border=\"0\" src = \"/MoBetter/Images/tabAccount_10.gif\">\n") ;
-                    //}
-
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    ////White spacer
-                    //sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //sb.Append("\t\t\t\t<td id=\"tabAcct\">\n") ;
-                    //if (Page != "Account")
-                    //{
-                    //                   sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/Account.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgAcct')\"  onMouseOver=\"MM_swapImage2('imgAcct','','/MoBetter/Images/tabAccount_06.gif',1)\">\n");
-                    //	sb.Append("\t\t\t\t\t<img name = \"imgAcct\" border=\"0\" src = \"/MoBetter/Images/tabAccount_02.gif\">\n") ;
-                    //	sb.Append("\t\t\t\t\t</a>\n") ;
-                    //}
-                    //else
-                    //{
-                    //	sb.Append("\t\t\t\t\t<img name = \"imgAcct\" border=\"0\" src = \"/MoBetter/Images/tabAccount_04.gif\">\n") ;
-                    //}
-
-                    //sb.Append("\t\t\t\t</td>\n") ;
-
-                    //               //White spacer
-                    //               sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //               sb.Append("\t\t\t\t<td id=\"tabAcctCollCcySetup\">\n");
-                    //               if (Page != "AccountCollCCYSetup")
-                    //               {
-                    //                   sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/AccountCollCCYSetup.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgAcctCollCcySetup')\"  onMouseOver=\"MM_swapImage2('imgAcctCollCcySetup','','/MoBetter/Images/tabAccount_06.gif',1)\">\n");
-                    //                   sb.Append("\t\t\t\t\t<img name = \"imgAcctCollCcySetup\" border=\"0\" src = \"/MoBetter/Images/tabAccount_02.gif\">\n");
-                    //                   sb.Append("\t\t\t\t\t</a>\n");
-                    //               }
-                    //               else
-                    //               {
-                    //                   sb.Append("\t\t\t\t\t<img name = \"imgAcctCollCcySetup\" border=\"0\" src = \"/MoBetter/Images/tabAccount_04.gif\">\n");
-                    //               }
-
-                    //               sb.Append("\t\t\t\t</td>\n");
-
-                    //               sb.Append("\t\t\t</tr>\n") ;					
-                    //sb.Append("\t\t</table>\n") ;
-                    //sb.Append("\t</td>\n") ;
-                    //sb.Append("</tr>\n") ;
-                    break;
-
-                case "CollateralSchedule":
-                case "AcctCollTypeSchedule":
-                case "BrokerCollTypeSchedule":
-
-                    sb.Length = 0;
-                    sb.Append("<div id=\"CollScheduleMainttabs\" class=\"3tab\">");
-                    sb.Append("<ul>");
-
-                    /**************** P2422: Added "Maintenance => Coll Schedule Type => Collateral Schedule" tab */
-                    if (Page != "CollateralSchedule")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/CollateralSchedule.aspx'\">Collateral Schedule</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Collateral Schedule</a></li>"); //class=\"selected\"
-                    }
-
-
-                    if (Page != "AcctCollTypeSchedule")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/AcctCollTypeSchedule.aspx'\">Account Collateral Type</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Account Collateral Type</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "BrokerCollTypeSchedule")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BrokerCollTypeSchedule.aspx'\">Broker Collateral Type</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\">Broker Collateral Type</a></li>"); //class=\"selected\"
-                    }
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-                    //sb.Append("<tr>\n");
-                    //sb.Append("\t<td colspan=\"2\">\n");
-                    //sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n");
-                    //sb.Append("\t\t\t<tr>\n");
-
-                    //sb.Append("\t\t\t\t<td id=\"tabAcctCollTypeSchedule\">\n");
-                    //if (Page != "AcctCollTypeSchedule")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/AcctCollTypeSchedule.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgAcctCollTypeSchedule')\"  onMouseOver=\"MM_swapImage2('imgAcctCollTypeSchedule','','/MoBetter/Images/tabCollTypeSchedule_06.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgAcctCollTypeSchedule\" border=\"0\" src = \"/MoBetter/Images/tabCollTypeSchedule_02.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgAcctCollTypeSchedule\" border=\"0\" src = \"/MoBetter/Images/tabCollTypeSchedule_04.gif\">\n");
-                    //}
-
-                    //sb.Append("\t\t\t\t</td>\n");
-
-                    ////White spacer
-                    //sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    //sb.Append("\t\t\t\t<td id=\"tabBrokerCollTypeSchedule\">\n");
-                    //if (Page != "BrokerCollTypeSchedule")
-                    //{
-                    //    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/BrokerCollTypeSchedule.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgBrokerCollTypeSchedule')\"  onMouseOver=\"MM_swapImage2('imgBrokerCollTypeSchedule','','/MoBetter/Images/tabCollTypeSchedule_12.gif',1)\">\n");
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgBrokerCollTypeSchedule\" border=\"0\" src = \"/MoBetter/Images/tabCollTypeSchedule_08.gif\">\n");
-                    //    sb.Append("\t\t\t\t\t</a>\n");
-                    //}
-                    //else
-                    //{
-                    //    sb.Append("\t\t\t\t\t<img name = \"imgBrokerCollTypeSchedule\" border=\"0\" src = \"/MoBetter/Images/tabCollTypeSchedule_10.gif\">\n");
-                    //}
-
-                    //sb.Append("\t\t\t\t</td>\n");
-                    //sb.Append("\t\t\t</tr>\n");
-                    //sb.Append("\t\t</table>\n");
-                    //sb.Append("\t</td>\n");
-                    //sb.Append("</tr>\n");
-                    break;
-
-                case "LOCGroup":
-                case "Finder":
-
-                    sb.Append("<tr>\n");
-                    sb.Append("\t<td colspan=\"2\">\n");
-                    sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n");
-                    sb.Append("\t\t\t<tr>\n");
-
-                    sb.Append("\t\t\t\t<td id=\"tabLocGroup\">\n");
-                    if (Page != "LOCGroup")
-                    {
-                        sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/LOCGroup.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgLocGroup')\"  onMouseOver=\"MM_swapImage2('imgLocGroup','','/MoBetter/Images/tabLoc_12.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t<img name = \"imgLocGroup\" border=\"0\" src = \"/MoBetter/Images/tabLoc_08.gif\">\n");
-                        sb.Append("\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t<img name = \"imgLocGroup\" border=\"0\" src = \"/MoBetter/Images/tabLoc_10.gif\">\n");
-                    }
-
-                    sb.Append("\t\t\t\t</td>\n");
-
-                    //White spacer
-                    sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                    sb.Append("\t\t\t\t<td id=\"tabFinder\">\n");
-                    if (Page != "Finder")
-                    {
-                        sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/Finder.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgFinder')\"  onMouseOver=\"MM_swapImage2('imgFinder','','/MoBetter/Images/tabLoc_06.gif',1)\">\n");
-                        sb.Append("\t\t\t\t\t<img name = \"imgFinder\" border=\"0\" src = \"/MoBetter/Images/tabLoc_02.gif\">\n");
-                        sb.Append("\t\t\t\t\t</a>\n");
-                    }
-                    else
-                    {
-                        sb.Append("\t\t\t\t\t<img name = \"imgFinder\" border=\"0\" src = \"/MoBetter/Images/tabLoc_04.gif\">\n");
-                    }
-
-                    sb.Append("\t\t\t\t</td>\n");
-                    sb.Append("\t\t\t</tr>\n");
-                    sb.Append("\t\t</table>\n");
-                    sb.Append("\t</td>\n");
-                    sb.Append("</tr>\n");
-                    break;
-
-                case "SecuritySpecial":
-
-                    /************ P2422: Removed form "Maintenance => Securities => Security Exception and Coupon Payment" tabs 
-                    case "SecurityException":
-                    case "CouponPayment":
-
-                        sb.Append("<tr>\n");
-                        sb.Append("\t<td colspan=\"2\">\n");
-                        sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n");
-                        sb.Append("\t\t\t<tr>\n");
-
-
-                        sb.Append("\t\t\t\t<td  id=\"tabSecSpecial\">\n");
-                        if (Page != "SecuritySpecial")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/SecuritySpecial.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgSecSpecial')\"  onMouseOver=\"MM_swapImage2('imgSecSpecial','','/MoBetter/Images/tabSecurity_06.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecSpecial\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_02.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecSpecial\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_04.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        //White spacer
-                        sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                        sb.Append("\t\t\t\t<td  id=\"imgSecException\">\n");
-                        if (Page != "SecurityException")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/SecurityException.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgSecException')\"  onMouseOver=\"MM_swapImage2('imgSecException','','/MoBetter/Images/tabSecurity_12.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecException\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_08.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecException\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_10.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        //White spacer
-                        sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                        sb.Append("\t\t\t\t<td id=\"imgCouponPayment\">\n");
-                        if (Page != "CouponPayment")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/CouponPayment.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgCouponPayment')\"  onMouseOver=\"MM_swapImage2('imgCouponPayment','','/MoBetter/Images/tabSecurity_18.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgCouponPayment\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_14.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgCouponPayment\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_16.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        sb.Append("\t\t\t</tr>\n");
-                        sb.Append("\t\t</table>\n");
-                        sb.Append("\t</td>\n");
-                        sb.Append("</tr>\n");*/
-                    break;
-
-                case "SecurityDefault":
-                case "SecurityUpdates":
-
-                    //<!--Row for the Tab Header table>
-                    sb.Length = 0;
-                    sb.Append("<div id=\"sectabs\" class=\"3tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "SecurityDefault")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/SecurityDefault.aspx?TabPage=SecurityDefault'\">FETCH INDEMNITY DATA</a></li>"); //class=\"selected\"
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >FETCH INDEMNITY DATA</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "SecurityUpdates")
-                    {
-                        //sb.Append("<li><a class=\"notselected\" href=\"/Lava/Reports/ETITranAllocation.aspx\">ETI Allocation</a></li>");
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/SecurityMaintenance.aspx?TabPage=SecurityUpdates'\" >VERIFY INDEMNITY DATA</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >VERIFY INDEMNITY DATA</a></li>");
-                    }
-
-                    sb.Append("</ul>");
-                    //sb.Append("<br style=\"clear: left\" />");
-                    sb.Append("</div>");
-                    break;
-
-                case "TriPartyBank":
-                // case "ContractException":
-                case "Holiday":
-                // case "BOJSecCodeOverride":
-                case "CreditLimitPercentWarning":
-
-                    //<!--Row for the Tab Header table>
-                    sb.Length = 0;
-                    sb.Append("<div id=\"Misctabs\" class=\"3tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "TriPartyBank")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/TriPartyBank.aspx'\">TriParty Bank</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >TriParty Bank</a></li>"); //class=\"selected\"
-                    }
-
-                    /******** P2422: Removed "Maintenance => Miscellaneous => Contract Exception" tab
-                    if (Page != "ContractException")
-                    {
-
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/ContractException.aspx'\">Contract Exception</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Contract Exception</a></li>");
-                    } */
-
-                    if (Page != "Holiday")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/Holiday.aspx'\">Holiday</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Holiday</a></li>");
-                    }
-
-                    /******** P2422: Removed "Maintenance => Miscellaneous => BOJ Security Code" tab
-                    if (Page != "BOJSecCodeOverride")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/BOJSecCodeOverride.aspx'\" >BOJ Security Code</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >BOJ Security Code</a></li>");
-                    }  */
-
-                    if (Page != "CreditLimitPercentWarning")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/CreditLimitPercentWarning.aspx'\" >Credit Limit Pct</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Credit Limit Pct</a></li>");
-                    }
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-
-                case "JPConsamptionTax":
-                case "JPAggPeriodDate":
-                case "CBJExchangeRates":
-                case "UploadBookValues":
-
-                    //<!--Row for the Tab Header table>
-                    sb.Length = 0;
-                    sb.Append("<div id=\"Misctabs\" class=\"4tab\">");
-                    sb.Append("<ul>");
-
-                    if (Page != "CBJExchangeRates")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/JPClientExRate.aspx'\">CBJ Exchange Rates</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >CBJ Exchange Rates</a></li>"); //class=\"selected\"
-                    }
-
-                    if (Page != "JPConsamptionTax")
-                    {
-
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/JPClientConsTaxRate.aspx'\">Consumption Tax Rates</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Consumption Tax Rates</a></li>");
-                    }
-
-                    if (Page != "JPAggPeriodDate")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/JPClientAggDate.aspx'\">Aggregate Reporting Period</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Aggregate Reporting Period</a></li>");
-                    }
-
-                    if (Page != "UploadBookValues")
-                    {
-                        sb.Append("<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/UploadBookValues.aspx'\" >Upload Book Values</a></li>");
-                    }
-                    else
-                    {
-                        sb.Append("<li><a class=\"selected\" >Upload Book Values</a></li>");
-                    }
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-                /*
-                sb.Append("<tr>\n") ;
-                sb.Append("\t<td colspan=\"2\">\n") ;
-                sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n") ;
-                sb.Append("\t\t\t<tr>\n") ;
-
-                sb.Append("\t\t\t\t<td id=\"imgCBJExchangeRates\">\n") ;
-                if (Page != "CBJExchangeRates")
-                {
-                    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/JPClientExRate.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgCBJExchangeRates')\"  onMouseOver=\"MM_swapImage2('imgCBJExchangeRates','','/MoBetter/Images/tabJPNClient_06.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t<img name = \"imgCBJExchangeRates\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_02.gif\">\n") ;
-                    sb.Append("\t\t\t\t\t</a>\n") ;
-                }
-                else
-                {
-                    sb.Append("\t\t\t\t\t<img name = \"imgCBJExchangeRates\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_04.gif\">\n") ;
-                }
-
-                sb.Append("\t\t\t\t</td>\n");
-
-                //White spacer
-                sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                sb.Append("\t\t\t\t<td id=\"imgJPConsamptionTax\">\n") ;
-                if (Page != "JPConsamptionTax")
-                {
-                    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/JPClientConsTaxRate.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgJPConsamptionTax')\"  onMouseOver=\"MM_swapImage2('imgJPConsamptionTax','','/MoBetter/Images/tabJPNClient_12.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t<img name = \"imgJPConsamptionTax\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_08.gif\">\n") ;
-                    sb.Append("\t\t\t\t\t</a>\n") ;
-                }
-                else
-                {
-                    sb.Append("\t\t\t\t\t<img name = \"imgJPConsamptionTax\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_10.gif\">\n") ;
-                }
-
-                sb.Append("\t\t\t\t</td>\n") ;
-
-                //White spacer
-                sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                sb.Append("\t\t\t\t<td id=\"imgJPClientAggDate\">\n") ;
-                if (Page != "JPAggPeriodDate")
-                {
-                    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/JPClientAggDate.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgJPClientAggDate')\"  onMouseOver=\"MM_swapImage2('imgJPClientAggDate','','/MoBetter/Images/tabJPNClient_18.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t<img name = \"imgJPClientAggDate\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_14.gif\">\n") ;
-                    sb.Append("\t\t\t\t\t</a>\n") ;
-                }
-                else
-                {
-                    sb.Append("\t\t\t\t\t<img name = \"imgJPClientAggDate\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_16.gif\">\n") ;
-                }
-
-                sb.Append("\t\t\t\t</td>\n") ;
-
-                //White spacer
-                sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                sb.Append("\t\t\t\t<td id=\"imgUploadBookValues\">\n");
-                if (Page != "UploadBookValues")
-                {
-                    sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/UploadBookValues.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgUploadBookValues')\"  onMouseOver=\"MM_swapImage2('imgUploadBookValues','','/MoBetter/Images/tabJPNClient_18.gif',1)\">\n");
-                    sb.Append("\t\t\t\t\t<img name = \"imgUploadBookValues\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_14.gif\">\n");
-                    sb.Append("\t\t\t\t\t</a>\n");
-                }
-                else
-                {
-                    sb.Append("\t\t\t\t\t<img name = \"imgUploadBookValues\" border=\"0\" src = \"/MoBetter/Images/tabJPNClient_16.gif\">\n");
-                }
-
-                sb.Append("\t\t\t\t</td>\n");
-
-                sb.Append("\t\t\t</tr>\n") ;					
-                sb.Append("\t\t</table>\n") ;
-                sb.Append("\t</td>\n") ;
-                sb.Append("</tr>\n") ;
-                break ;
-                */
-
-                case "RWAActualCapitalBalanceManualEntry":
-                case "RWANonLendingRAAllowedManualEntry":
-                case "RWARequiredCapitalRatioManualEntry":
-                // case "RWAManufacturedDivCouponManualEntry":
-                case "RWACapitalAllocationRatioManualEntry":
-                case "RWAEquilendCapitalAllocationRiskRatioManualEntry":
-                case "RWANonLendingRiskAssetsManualEntry":
-                case "RWASecLendingCapitalRatioAlarmPoint":
-
-                    sb.Length = 0;
-
-                    sb.Append("<div id=\"Misctabs\" class=\"7tab\">");
-                    sb.Append("<ul>");
-
-                    sb.Append((Page != "RWAActualCapitalBalanceManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWAActualCapitalBalanceManualEntry.aspx'\">Actual <br/>Capital <br/>Balance</a></li>"
-                                      : "<li><a class=\"selected\" >Actual <br/>Capital <br/>Balance</a></li>");
-
-                    sb.Append((Page != "RWANonLendingRAAllowedManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWANonLendingRAAllowedManualEntry.aspx'\">Actual <br/>Non-Lending <br/>Risk Asset</a></li>"
-                                      : "<li><a class=\"selected\" >Actual <br/>Non-Lending <br/>Risk Asset</a></li>");
-
-                    sb.Append((Page != "RWARequiredCapitalRatioManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWARequiredCapitalRatioManualEntry.aspx'\">Capital <br/>Ratio <br/>Alarm Point</a></li>"
-                                      : "<li><a class=\"selected\" >Capital <br/>Ratio <br/>Alarm Point</a></li>");
-
-                    /******** P2422: Removed "Manual Entry => Risk Weight Asset Reporting =>  Lending Menu Dividend/Coupon" tab 
-                    sb.Append((Page != "RWAManufacturedDivCouponManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWAManufacturedDivCouponManualEntry.aspx'\"><br/>Lending <br/>Manufactured Div / Coupon</a></li>"
-                                      : "<li><a class=\"selected\" ><br/>Lending <br/>Manufactured Div / Coupon</a></li>"); */
-
-                    sb.Append((Page != "RWACapitalAllocationRatioManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWACapitalAllocationRatioManualEntry.aspx'\">Risk<br/> Budget <br/>Allocation</a></li>"
-                                      : "<li><a class=\"selected\" >Risk<br/> Budget <br/>Allocation</a></li>");
-
-                    sb.Append((Page != "RWAEquilendCapitalAllocationRiskRatioManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWAEquilendCapitalAllocationRiskRatioManualEntry.aspx'\">Equilend <br/>Capital <br/Allocation <br/>Risk Ratio</a></li>"
-                                      : "<li><a class=\"selected\" >Equilend <br/>Capital <br/Allocation <br/>Risk Ratio</a></li>");
-
-                    sb.Append((Page != "RWANonLendingRiskAssetsManualEntry") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWANonLendingRiskAssetsManualEntry.aspx'\">Greater of Daily <br/>or 12m Non-<br>Lending RWA at 99%</a></li>"
-                                      : "<li><a class=\"selected\" >Greater of Daily <br/>or 12m Non-<br>Lending RWA at 99%</a></li>");
-
-                    sb.Append((Page != "RWASecLendingCapitalRatioAlarmPoint") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWASecLendingCapitalRatioAlarmPoint.aspx'\">Sec Lending <br/>Capital Ratio <br/>Alarm Point</a></li>"
-                                      : "<li><a class=\"selected\" >Sec Lending <br/>Capital Ratio <br/>Alarm Point</a></li>");
-
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-
-                case "RWATradedReportRiskWeight":
-                case "StandardSupervisoryhaircut":
-                case "RWACollateralClassAssetTypes":
-                case "EquityMainIndexUpload":
-                case "OECDHighRiskCountries":
-                case "RWACollateralScheduleWorstCaseHaircut":
-                    sb.Length = 0;
-
-                    sb.Append("<div id=\"Misctabs\" class=\"6tab\">");
-                    sb.Append("<ul>");
-
-                    sb.Append((Page != "RWATradedReportRiskWeight") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWATradedReportRiskWeight.aspx'\">Traded  Report <br/>Tri-Party <br/>Risk Weights</a></li>"
-                                      : "<li><a class=\"selected\" >Traded Report <br/>Tri-Party <br/>Risk Weights</a></li>");
-
-                    sb.Append((Page != "StandardSupervisoryhaircut") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWACollateralScheduleRiskWeights.aspx'\">Standard <br/>Supervisory<br/> Haircuts</a></li>"
-                                      : "<li><a class=\"selected\" >Standard <br/>Supervisory<br/> Haircuts</a></li>");
-
-                    sb.Append((Page != "RWACollateralClassAssetTypes") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWACollateralClassAssetTypes.aspx'\">Collateral<br/> Schedule <br/> Asset Types</a></li>"
-                                      : "<li><a class=\"selected\" >Collateral<br/> Schedule <br/> Asset Types</a></li>");
-
-                    sb.Append((Page != "EquityMainIndexUpload") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/EquityMainIndexUpload.aspx'\">Equity Main <br/>Index <br/> Upload</a></li>"
-                                      : "<li><a class=\"selected\" >Equity Main <br/>Index <br/> Upload</a></li>");
-
-                    sb.Append((Page != "OECDHighRiskCountries") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/OECDHighRiskCountries.aspx'\">OECD <br/>High Risk <br/> Countries</a></li>"
-                                      : "<li><a class=\"selected\" >OECD <br/>High Risk <br/> Countries</a></li>");
-
-                    sb.Append((Page != "RWACollateralScheduleWorstCaseHaircut") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/RWACollateralScheduleWorstCaseHaircut.aspx'\">Collateral Schedule <br/>WorstCase</a></li>"
-                                      : "<li><a class=\"selected\" >Collateral Schedule <br/>WorstCase</a></li>");
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-                    break;
-
-                case "SecurityTickerUpload":
-                case "SecurityMonthlyAverageVolumeUpload":
-                    sb.Length = 0;
-
-                    sb.Append("<div id=\"Misctabs\" class=\"2tab\">");
-                    sb.Append("<ul>");
-
-                    sb.Append((Page != "SecurityTickerUpload") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/SecurityTickerUpload.aspx'\">Security Ticker Upload</a></li>"
-                                      : "<li><a class=\"selected\" >Security Ticker Upload</a></li>");
-
-                    sb.Append((Page != "SecurityMonthlyAverageVolumeUpload") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/SecurityMonthlyAverageVolumeUpload.aspx'\">Security Monthly Average Volume Upload</a></li>"
-                                      : "<li><a class=\"selected\" >Security Monthly Average Volume Upload</a></li>");
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-                    break;
-
-                case "InterBankFileUpload":
-                case "CounterPartyCode":
-
-                    sb.Append("<div id=\"Misctabs\" class=\"2tab\">");
-                    sb.Append("<ul>");
-
-                    sb.Append((Page != "CounterPartyCode") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/CounterPartyCode.aspx'\">Counterparty Code Maintenance</a></li>"
-                                      : "<li><a class=\"selected\" >Counterparty Code Maintenance</a></li>");
-
-                    sb.Append((Page != "InterBankFileUpload") ?
-                                        "<li><a class=\"notselected\" href='/" + _appRoot + "/Maintenance/InterBankFileUpload.aspx'\">Inter Bank File Upload</a></li>"
-                                      : "<li><a class=\"selected\" >Inter Bank File Upload</a></li>");
-
-
-                    sb.Append("</ul>");
-                    sb.Append("</div>");
-
-                    break;
-                    /*
-                    case "EquiLendLegalEntitySetup":
-                    case "Test1":
-                    case "Test2":
-
-                        sb.Append("<tr>\n");
-                        sb.Append("\t<td colspan=\"2\">\n");
-                        sb.Append("\t\t<table cellpadding=\"0\" cellspacing=\"0\" width = \"100%\" border=\"0\">\n");
-                        sb.Append("\t\t\t<tr>\n");
-
-                        sb.Append("\t\t\t\t<td  id=\"tabSecSpecial\">\n");
-                        if (Page != "EquiLendLegalEntitySetup")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/EquiLendLegalEntitySetup.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgSecSpecial')\"  onMouseOver=\"MM_swapImage2('imgSecSpecial','','/MoBetter/Images/tabSecurity_06.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecSpecial\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_02.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecSpecial\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_04.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        //White spacer
-                        sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                        sb.Append("\t\t\t\t<td  id=\"imgSecException\">\n");
-                        if (Page != "Test1")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/Test1.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgSecException')\"  onMouseOver=\"MM_swapImage2('imgSecException','','/MoBetter/Images/tabSecurity_12.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecException\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_08.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgSecException\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_10.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        //White spacer
-                        sb.Append("\t\t\t\t<td bgcolor=\"#ffffff\" width=\"1\"></td>\n");
-
-                        sb.Append("\t\t\t\t<td id=\"imgCouponPayment\">\n");
-                        if (Page != "Test2")
-                        {
-                            sb.Append("\t\t\t\t\t<a href='/" + _appRoot + "/Maintenance/Test2.aspx'\" onMouseOut=\"MM_swapImgRestore2('imgCouponPayment')\"  onMouseOver=\"MM_swapImage2('imgCouponPayment','','/MoBetter/Images/tabSecurity_18.gif',1)\">\n");
-                            sb.Append("\t\t\t\t\t<img name = \"imgCouponPayment\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_14.gif\">\n");
-                            sb.Append("\t\t\t\t\t</a>\n");
-                        }
-                        else
-                        {
-                            sb.Append("\t\t\t\t\t<img name = \"imgCouponPayment\" border=\"0\" src = \"/MoBetter/Images/tabSecurity_16.gif\">\n");
-                        }
-
-                        sb.Append("\t\t\t\t</td>\n");
-
-                        sb.Append("\t\t\t</tr>\n");
-                        sb.Append("\t\t</table>\n");
-                        sb.Append("\t</td>\n");
-                        sb.Append("</tr>\n");
-                        break;
-                    */
-            }
-
-            return (sb);
-        }
-
-
-        #endregion
-
+        var attribs = "width=800,height=600,scrollbars,resizable";
+        var loc = "/MoBetter/Reports/CustReports.aspx?_openStyle=PopUp";
+        loc += "&_reportId=" + reportID;
+        loc += "&_reportType=" + reportType;
+        loc += "&_reportTitle=" + reportTitle;
+        loc += "&batchRunDate=" + batchRunDate;
+        loc += "&acctNbr=" + acctNbr;
+        loc += "&brkGrpCode=" + brkGrpCode;
+
+        PopUpWindow(loc,'',attribs);
+    }
+    catch (ex)
+    {
+        throw ex;
     }
 }
 
+
+
+</script>
+
+
+
+
+
+
+<script language="JavaScript">
+
+    var methodsByReportProfileID = {};
+var controllersByReportCategory = {};
+                    
+function GetMethodsByReportProfile() {
+
+    //Getting Controllers Methods name based on ReportProfileID
+    //Activity
+    methodsByReportProfileID[1] = "GetEquityMovementReport";
+
+    //Availability
+    methodsByReportProfileID[2] = "GetAvailabilityMonitoringReportEQ";
+    methodsByReportProfileID[3] = "GetAvailabilityMonitoringReportFI";
+
+    //CashMovement
+    methodsByReportProfileID[4] = "GetCashMovementReport";
+
+    //CreditLineUsage
+    methodsByReportProfileID[5] = "GetCreditLineUsageRepoReport";
+    methodsByReportProfileID[6] = "GetCreditLineUsageSecLendUSDReport";
+    methodsByReportProfileID[7] = "GetCreditLineUsageSecLendYENReport";
+    methodsByReportProfileID[8] = "GetCBJCreditLineUsageReport";
+    methodsByReportProfileID[9] = "GetCBJLendingOnLoanPositionByBorrower";
+    methodsByReportProfileID[10] = "GetCBJMonitoringReport";
+    methodsByReportProfileID[11] = "GetCBJMonitoringReportPQ";
+    methodsByReportProfileID[12] = "GetCreditLineUsageLOCReport";
+
+    //FeesPayable
+    methodsByReportProfileID[13] = "GetCreditAdviceSLReport";
+    methodsByReportProfileID[14] = "GetSecLendInvoiceDetailsReport";
+    methodsByReportProfileID[15] = "GetCreditAdviceCBJReport";
+    methodsByReportProfileID[16] = "GetCreditAdviceMontlyPensionReport";
+    methodsByReportProfileID[17] = "GetDailyPensionUnpaidReport";
+    methodsByReportProfileID[18] = "GetCreditAdviceSBPDReport";
+
+    //FeesReceivable
+    methodsByReportProfileID[19] = "GetRepoInvoiceDetailsReport";
+    methodsByReportProfileID[20] = "GetPaymentInvoiceRepoReport";
+
+    //MarkToMarket
+    methodsByReportProfileID[22] = "GetRepoMTMReport";
+    methodsByReportProfileID[23] = "GetSLMTMReport";
+    methodsByReportProfileID[24] = "GetCBJCollateralMonitoringMTMReport";
+    methodsByReportProfileID[25] = "GetCBJCollateralMonitoringInternalReport";
+    methodsByReportProfileID[26] = "GetCBJMTMReport";
+    methodsByReportProfileID[37] = "GetSLMTMReportWithCollValueAfterHC";
+
+    //Other
+    methodsByReportProfileID[27] = "GetOnLoanBalanceReport";
+    methodsByReportProfileID[28] = "GetTeachersCollateralPencentageReport";
+    methodsByReportProfileID[29] = "GetTermOnLoanBalanceReport";
+    methodsByReportProfileID[30] = "GetBPTRFBalanceReport";
+    methodsByReportProfileID[31] = "GetCBJSecLendingPerformanceReport";
+    methodsByReportProfileID[32] = "GetNYBTRFBalanceReport";
+    methodsByReportProfileID[33] = "GetPrivateSchoolPerformanceReport";
+    methodsByReportProfileID[38] = "GetSMTBTokyoLCRReport";
+
+    //OtherManufacturedDiv
+    methodsByReportProfileID[21] = "GetManufacturedDividendReport";
+
+    //Outsource
+    //methodsByReportProfileID[] = "";
+
+    //TradeConfirmation
+    methodsByReportProfileID[35] = "GetTradeConfirmationReport";
+    methodsByReportProfileID[36] = "GetTradeConfirmationDetailReport";
+    methodsByReportProfileID[34] = "GetRepoLoanExtractReport";
+    }
+
+    function GetControllersByReportCategory() {
+
+    //Getting Controllers Names here based on Report Type.
+    controllersByReportCategory["Activity"] = "Activity";
+    controllersByReportCategory["Availability"] = "Availability";
+    controllersByReportCategory["Cash Movement"] = "CashMovement";
+    controllersByReportCategory["Credit Line Usage"] = "CreditLineUsage";
+    controllersByReportCategory["Fees (Payable)"] = "FeesPayable";
+    controllersByReportCategory["Fees (Receivable)"] = "FeesReceivable";
+    controllersByReportCategory["Mark to Market"] = "MarkToMarket";
+    controllersByReportCategory["Other"] = "Other";
+    controllersByReportCategory["Manufactured Div"] = "OtherManufacturedDiv";
+    controllersByReportCategory["Outsource"] = "Outsource";
+    controllersByReportCategory["Trade Confirmation"] = "TradeConfirmation";
+}
+
+    function ajaxCall(url, param, token, callback) {
+        $.ajax({
+            type: "GET",
+            url: url,
+            data: param,
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            beforeSend: function (xhr) {
+                /* Authorization header */
+                xhr.setRequestHeader("Authorization", "authorize");//There is no need to pass Authorization header in case of WnAuth.
+                xhr.setRequestHeader("authToken", token);
+            },
+            success: function (response) {
+                callback(response);
+            }, //End of AJAX Success function
+            failure: function (response) {
+                callback(response);
+            }, //End of AJAX failure function
+            error: function (response) {
+                callback(response);
+            } //End of AJAX error function
+
+        });
+
+    }
+
+    function ajaxPackageCall(url, param, token, callback) {
+        //debugger;
+        $.ajax({
+            type: "POST",
+            url: url,
+            //async: false,
+            data: param,
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            beforeSend: function (xhr) {
+                /* Authorization header */
+                xhr.setRequestHeader("Authorization", "authorize");//There is no need to pass Authorization header in case of WnAuth.
+                xhr.setRequestHeader("authToken", token);
+            },
+            success: function (response) {
+                callback(response);
+            }, //End of AJAX Success function
+            failure: function (response) {
+                callback(response);
+            }, //End of AJAX failure function
+            error: function (response) {
+                callback(response);
+            } //End of AJAX error function
+
+        });
+
+    }
+
+ </script>
+
+
+
+
+
+
+
+<script language="JavaScript">
+
+/**********************************************************************************************************************************
+Filename : Report.js
+Original creator:  
+Date created:      
+Description :      This js file used for Ajax callback for Webforms.
+History:
+1.	                              : Initial Creation
+2. 07/14/2017  Raghavan Jayaraman : P2194 : New KKR3 FI Account.
+/**********************************************************************************************************************************/
+
+/*
+Exemple of use:
+
+	var Params = MDArray(3, 2);
+	Params[0][0] = "method";
+	Params[0][1] = "DataRangeCheck";
+	Params[1][0] = "start";
+	Params[1][1] = StartDt;
+	Params[2][0] = "end";
+	Params[2][1] = EndDt;
+
+	var xmlRequest = DoCallback(Page, Params);
+
+	// sync updates
+	var BusDayCount = xmlRequest.responseText;
+*/
+
+function MDArray(iRows,iCols)
+{
+	var i;
+	var j;
+	var a = new Array(iRows);
+	for (i=0; i < iRows; i++){
+		a[i] = new Array(iCols);
+		for (j=0; j > iCols; j++){
+			a[i][j] = "";
+		}
+	}
+	return(a);
+}
+
+function DoJavaScriptRequest(url, params) {
+	var pageUrl = url + "?";
+	
+	for(i = 0; i < params.length; i++){
+		pageUrl = pageUrl + (params[i][0] + "=" + params[i][1] + "&");
+	}
+	pageUrl = pageUrl.substring(0, pageUrl.length -1);
+	
+	window.location = pageUrl;
+}
+
+var xmlhttp;
+var url;
+
+function DoCallback() {
+	var params = null;
+	var isAsync = false;
+	var functionHandler = function(){};
+	
+	for(var i = 0; i < arguments.length; i++){
+		switch(i){
+			case 0:
+			url = arguments[i];
+			break;
+			case 1:
+			params = arguments[i];
+			break;
+			case 2:
+			isAsync = arguments[i];
+			break;
+			case 3:
+			functionHandler = arguments[i];
+			break;
+		}
+	}
+	
+	var pageUrl = url + "?callback=true&";
+	
+	for(i = 0; i < params.length; i++){
+		pageUrl = pageUrl + (params[i][0] + "=" + encodeURIComponent(params[i][1]) + "&");
+	}
+	pageUrl = pageUrl.substring(0, pageUrl.length -1);
+	
+	xmlhttp=false;
+	
+	/*@cc_on @*/
+	/*@if (@_jscript_version >= 5)
+	// JScript gives us Conditional compilation, we can cope with old IE versions.
+	// and security blocked creation of the objects.
+		try {
+			xmlhttp = new ActiveXObject("Msxml2.XMLHTTP");
+		} catch (e) {
+			try {
+				xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+			} catch (E) {
+				xmlhttp = false;
+			}
+		}
+	@end @*/
+	
+	if (!xmlhttp && typeof XMLHttpRequest!='undefined') {
+		xmlhttp = new XMLHttpRequest();
+	}
+	
+	if(isAsync == true){
+		xmlhttp.onreadystatechange = functionHandler;
+	}
+	xmlhttp.open("POST", pageUrl, isAsync);
+	xmlhttp.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+	xmlhttp.send(null);
+	return xmlhttp;
+}
+</script>
