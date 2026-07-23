@@ -82,7 +82,7 @@ public virtual string BuildWorkBook(DataSet dataSet, int? reportId = null)
             Directory.CreateDirectory(confFilePath);
         }
 
-        #region Worksheets
+}
 
 
 
