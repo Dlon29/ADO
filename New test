@@ -1,39 +1,3 @@
-/**************************************************************************************************************************************************************************************************************
-File Name: Default.aspx.cs
-Creation Date [MM/DD/YYYY]: 
-Author: OFSS
-Description: Showing dashboard data.
-
-Revision History:
-***************************************************************************************************************************************************************************************************************
-Sr. No     Date            ModifiedBy              Tag Name                                         Description
-***************************************************************************************************************************************************************************************************************
-  * 1    03/06/2017          Nisha Patel            Unit testing bug fix                            Modified to pass "NE" in SecCode link popup
-  * 2    03/24/2017          Nisha Patel            Logging improvement                             Modified code to improve logging
-  * 3    04/05/2017          Neelima Abhane         P-2123                          				Show Frequent Trader account on home Page
-  * 4    07/25/2017          Nisha Patel            UAT Bug fix                                     Modified to solve pop-up window opening issue for collateral
- *  5    01/16/2018          Neelima Abhane         Logging improvement                             Logging Activity Code For Authorization, base on ModuleName 
- *  6    07/25/2018          Sonal Puthran          P1693- FICC Changes                             Modifief code to include FICC Dashboard changes
- *  7    07/27/2018          Neelima Abhane         P1693- FICC Changes                             Modified to added Broker FICC ID
- *  8    07/27/2018          Sonal Puthran          P1693- FICC Changes                             Modified to update ficc code from 250 to 240
- *  9    01/04/2019          Sonal Puthran          QA Bug Fix-FICC Changes                         Modified to fix QA issue on FICC Dashboard
- *  10   04/09/2019          Sonal Puthran          P2357                                           Modifief code to include Trade Verification Dashboard changes
- *  11   09/19/2019          Ramesh Buram           P2345                                           Added FICC FOS Dashboard Grid and logic to generate credit and debit fiels
- *  12   11/20/2019          Priti Mayekar          P2345 GI Generation Changes                     Removed Timer after GI Generation   
- *  13   11/29/2019          Priti Mayekar          P2345 GI Generation Changes                     Rdm Value databound field mapped on FOS Dashboard 
- *  14   05/29/2020	         Narendra Aseri	        P2248 ( R5 )                                    Changes to remove build warnings 
- *  15   06/11/2020	        Serina Tuscano		    P2248(R5)-Scan Fixes                            Dynamic scan issue fixes for SqlInjection issue.
- *  16   03/16/2021	        Sonal Puthran		    P2468                                           Modified to add Fixed Incime Security Maturity details for current batch date.
- *  17   02/28/2022	        Sonal Puthran		    P2468.2                                         Modified to add two new tabs for Adjust TPUID and Adjust Pre-Pay in GCI Status section.
- *  18   07/11/2022         Deepti Chakrawarty		P2468.2                                         Added event handler for Adjust PrePay and TPUID grid
- *  19   12/13/2022         Raghavan Jayaraman      M48                                             Add CPR (Cash pool rate) to LAVA homepage GCI Section ( event handler for CPR) 
- *  20   01/24/2024         Sonal Rastogi           PRJ0047932                                      Sales Recall Dashboard Home Page Changes added
- *  21   03/29/2024         Sonal Rastogi           PRJ0047932                                      Non Sale hyperlink Changes added
- *  22   08/26/2024	        Kumkum Srivastav	    PRJ0058590                                      Fixed pdf report URL for TLS 1.2 changes.
- *  23   02/10/2025         Sonal Rastogi           PRJ0063031                                      GCR Tranche 1 CA Dashboard UI Changes added.
- *  24   05/29/2024         Sonal Rastogi           PRJ0063031 GCR Tranche 1                        Modified code for Supporting both CAPS and BaNCS Dashboard Section
-***************************************************************************************************************************************************************************************************************/
-
 using Common.Logging;
 using Lava.Models;
 using System;
