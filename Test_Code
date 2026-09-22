@@ -94,3 +94,95 @@ CREATE TABLE #TempCloseRebookLoan
 INSERT INTO #TempCloseRebookLoan (RawDataId)
 SELECT RawDataId
 FROM dbo.fn_GetCloseRebookRawDataIds();
+
+
+
+
+
+CREATE FUNCTION [dbo].[f_CreateSettlementStatusSchema] ()
+RETURNS 
+	@TMP_SettlementStatus TABLE
+	(
+		HeaderID			  INT NOT NULL,
+		AsOfDate			  DATETIME NOT NULL,
+		BGNREF				  VARCHAR(12) NULL,
+		AcctNbr				  VARCHAR(12) NULL,
+		AcctGrpID			  INT NULL,
+		ClientFICCID		  VARCHAR(10) NULL,
+		TripartyRepoBankName  VARCHAR(100) NULL,
+		SecCode				  VARCHAR(12) NULL,
+		SettlementDate		  DATETIME NULL,
+		CitiAccount			  VARCHAR(20) NULL,
+		FEDStatus			  INT NOT NULL,
+		Notes				  VARCHAR(MAX) NULL,
+		ModifiedBy			  VARCHAR(50) NOT NULL,
+		ModifiedDate		  DATETIME NOT NULL,
+		TransactionID		  VARCHAR(11) NULL,
+		DateMarkedAsFailed	  DATETIME NULL,
+		RRLinkRefNbr		  VARCHAR(8) NULL,
+		EuroclearAccount	  VARCHAR(6) NULL,
+		EuroclearSwitchStatus INT NULL,
+		EuroclearStatus		  INT NOT NULL,
+		PrevBusinesDateMarkedAsFailed DATETIME NULL
+	) AS
+BEGIN
+	RETURN
+END
+
+IF OBJECT_ID('tempdb..#TMP_SETTLEMENTS_MARKED_FAILED','U') IS NULL			
+	BEGIN
+		SELECT *
+		INTO #TMP_SETTLEMENTS_MARKED_FAILED 
+		FROM dbo.f_CreateSettlementStatusSchema()
+	END
+
+	INSERT INTO #TMP_SETTLEMENTS_MARKED_FAILED
+	(
+		HeaderID,
+		AsOfDate,
+		BGNREF,
+		AcctNbr,
+		AcctGrpID,
+		ClientFICCID,
+		TripartyRepoBankName,
+		SecCode,
+		SettlementDate,
+		CitiAccount,
+		FEDStatus,
+		Notes,
+		ModifiedBy,
+		ModifiedDate,
+		TransactionID,
+		DateMarkedAsFailed,
+		RRLinkRefNbr,
+		EuroclearAccount,
+		EuroclearSwitchStatus,
+		EuroclearStatus,
+		PrevBusinesDateMarkedAsFailed
+	)
+	SELECT
+		HeaderID,
+		AsOfDate,
+		BGNREF,
+		AcctNbr,
+		AcctGrpID,
+		ClientFICCID,
+		TripartyRepoBankName,
+		SecCode,
+		SettlementDate,
+		CitiAccount,
+		FEDStatus,
+		Notes,
+		ModifiedBy,
+		ModifiedDate,
+		TransactionID,
+		DateMarkedAsFailed,
+		RRLinkRefNbr,
+		EuroclearAccount,
+		EuroclearSwitchStatus,
+		EuroclearStatus,
+		dbo.f_GetPrevBizDay(TSETL.DateMarkedAsFailed)
+	FROM LAVA.DBO.SettlementStatus TSETL
+	WHERE ( TSETL.AsOfDate = @BatchRunDate )	   AND 
+		  ( TSETL.DateMarkedAsFailed IS NOT NULL ) AND 
+		  ( ISNULL(TSETL.DateMarkedAsFailed, '12/31/9999') < @BatchRunDate )
