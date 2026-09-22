@@ -1,25 +1,31 @@
 
---METHOD 1
+--METHOD - 2
 CREATE TABLE #ValidTxnRefs
 (
-    TxnRefNbr INT NOT NULL PRIMARY KEY
-);
+    TxnRefNbr INT
+)
 
-INSERT INTO #ValidTxnRefs (TxnRefNbr)
+INSERT INTO #ValidTxnRefs
+(
+	TxnRefNbr
+)
 SELECT DISTINCT
        E.TxnRefNbr
 FROM ETIDetailRecord E
 WHERE E.StatusId = 140
-  AND E.ProcessedRecordID = 2;
+  AND E.ProcessedRecordID = 2
+  AND E.RecordTypeId = 3
 
 
-CREATE TABLE #tempCloseRebookLoan
+CREATE TABLE #TempCloseRebookLoan
 (
-    RawDataId BIGINT NOT NULL
-);
+    RawDataId INT
+)
 
-INSERT INTO #tempCloseRebookLoan (RawDataId)
-
+INSERT INTO #TempCloseRebookLoan
+(
+	RawDataId
+)
 SELECT E.RawDataId
 FROM ETIDetailRecord E
 INNER JOIN #ValidTxnRefs V
@@ -27,15 +33,15 @@ INNER JOIN #ValidTxnRefs V
    AND E.RecordTypeId = 1
    AND E.StatusId = 0
 
-UNION
+UNION ALL
 
 SELECT E.RawDataId
 FROM ETIDetailRecord E
 INNER JOIN #ValidTxnRefs V
     ON V.TxnRefNbr =
-       CAST(SUBSTRING(E.AgrRef, 2, 11) AS INT)
+       CAST(SUBSTRING(E.BgnRef, 2, 11) AS INT)
    AND E.RecordTypeId = 23
-   AND E.StatusId = 0;
+   AND E.StatusId = 0
 
 
 
