@@ -1,0 +1,36 @@
+CREATE TABLE #ValidTxnRefs
+(
+    TxnRefNbr INT NOT NULL PRIMARY KEY
+);
+
+INSERT INTO #ValidTxnRefs (TxnRefNbr)
+SELECT DISTINCT
+       E.TxnRefNbr
+FROM ETIDetailRecord E
+WHERE E.StatusId = 140
+  AND E.ProcessedRecordID = 2;
+
+
+CREATE TABLE #tempCloseRebookLoan
+(
+    RawDataId BIGINT NOT NULL
+);
+
+INSERT INTO #tempCloseRebookLoan (RawDataId)
+
+SELECT E.RawDataId
+FROM ETIDetailRecord E
+INNER JOIN #ValidTxnRefs V
+    ON V.TxnRefNbr = E.BgnRef
+   AND E.RecordTypeId = 1
+   AND E.StatusId = 0
+
+UNION
+
+SELECT E.RawDataId
+FROM ETIDetailRecord E
+INNER JOIN #ValidTxnRefs V
+    ON V.TxnRefNbr =
+       CAST(SUBSTRING(E.AgrRef, 2, 11) AS INT)
+   AND E.RecordTypeId = 23
+   AND E.StatusId = 0;
