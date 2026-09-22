@@ -1,3 +1,5 @@
+
+--METHOD 1
 CREATE TABLE #ValidTxnRefs
 (
     TxnRefNbr INT NOT NULL PRIMARY KEY
@@ -34,3 +36,115 @@ INNER JOIN #ValidTxnRefs V
        CAST(SUBSTRING(E.AgrRef, 2, 11) AS INT)
    AND E.RecordTypeId = 23
    AND E.StatusId = 0;
+
+
+
+
+--METHOD - 2
+
+CREATE TABLE #tempCloseRebookLoan
+(
+    RawDataId <same datatype as ETIDetailRecord.RawDataId>
+);
+
+INSERT INTO #tempCloseRebookLoan (RawDataId)
+SELECT DISTINCT
+       ETIDet2.RawDataId
+FROM ETIDetailRecord ETIDet1
+INNER JOIN ETIDetailRecord ETIDet2
+    ON ETIDet1.TxnRefNbr =
+       CASE
+           WHEN ETIDet2.RecordTypeId = 23
+               THEN CAST(SUBSTRING(ETIDet2.AgrRef, 2, 11) AS INT)
+           ELSE ETIDet2.BgnRef
+       END
+WHERE ETIDet1.StatusId = 140
+  AND ETIDet1.ProcessedRecordID = 2
+  AND ETIDet2.RecordTypeId IN (1, 23)
+  AND ETIDet2.StatusId = 0;
+
+
+--METHOD - 3
+
+/* =============================================================
+   Function-based version, adapted from the generic template to
+   your actual schema.
+
+   IMPORTANT: this restructuring does NOT fix the deadlock. It's
+   the same query as the UNION ALL version from before, just
+   packaged inside a function for reuse/testability. If the
+   client's ask is specifically "make this a function so it's
+   reusable/testable," this satisfies that. If the client believes
+   a function will resolve the deadlock, that's a misconception -
+   correct it before this ships. The root cause is still the
+   read-then-write gap against ETIDetailRecord (see the two
+   earlier messages in this thread).
+
+   Note: functions cannot reference local (#) temp tables created
+   outside their own scope, so the two-temp-table split from the
+   previous version (#ValidTxnRefs -> #tempCloseRebookLoan) has to
+   collapse into one self-contained query inside the function.
+   ============================================================= */
+
+CREATE OR ALTER FUNCTION dbo.fn_GetCloseRebookRawDataIds()
+RETURNS TABLE
+AS
+RETURN
+(
+    WITH ValidTxnRefs AS (
+        SELECT DISTINCT E.TxnRefNbr
+        FROM ETIDetailRecord E
+        WHERE E.RecordTypeId = 3        -- RSL
+          AND E.StatusId = 140
+          AND E.ProcessedRecordID = 2
+    )
+    SELECT E.RawDataId
+    FROM ETIDetailRecord E
+    INNER JOIN ValidTxnRefs V
+        ON V.TxnRefNbr = E.BgnRef
+       AND E.RecordTypeId = 1           -- TSL
+       AND E.StatusId = 0
+
+    UNION ALL
+
+    SELECT E.RawDataId
+    FROM ETIDetailRecord E
+    INNER JOIN ValidTxnRefs V
+        ON V.TxnRefNbr = CAST(SUBSTRING(E.BgnRef, 2, 11) AS INT)
+       AND E.RecordTypeId = 23          -- GPL
+       AND E.StatusId = 0
+);
+GO
+
+-- 1. Explicitly define the table structure
+CREATE TABLE #tempCloseRebookLoan
+(
+    RawDataId BIGINT NOT NULL
+);
+
+-- 2. Insert the data via the function
+INSERT INTO #tempCloseRebookLoan (RawDataId)
+SELECT RawDataId
+FROM dbo.fn_GetCloseRebookRawDataIds();
+
+/* The UPDATE against ETIDetailRecord still needs to follow this
+   using #tempCloseRebookLoan. That UPDATE is where the deadlock
+   risk actually lives - this function only affects the read step.
+
+   To make this version actually deadlock-safe, layer on ONE of:
+
+   (a) Add WITH (UPDLOCK, HOLDLOCK) inside the function's join
+       against ETIDetailRecord, OR
+   (b) Skip the temp table + function entirely and fold this same
+       CTE logic straight into the single-statement UPDATE from
+       two messages ago - that's the version that actually closes
+       the read/write gap, not just shrinks it.
+
+   Optional: if the client's standard requires SCHEMABINDING on
+   functions, this one qualifies (two-part table names, no SELECT
+   *, no non-deterministic functions) - add WITH SCHEMABINDING
+   after RETURNS TABLE if required. It's a maintenance safeguard
+   (prevents ETIDetailRecord's referenced columns from being
+   dropped/altered while the function depends on them), not a
+   locking or deadlock behavior change.
+*/
