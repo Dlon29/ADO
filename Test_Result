@@ -1,0 +1,28 @@
+var deliveries = new BlockingCollection<BasicDeliverEventArgs>();   // was Tuple<ulong, byte[]>
+var consumer = new EventingBasicConsumer(ch);
+consumer.Received += (s, ea) =>
+{
+    deliveries.Add(new BasicDeliverEventArgs(
+        ea.ConsumerTag,
+        ea.DeliveryTag,
+        ea.Redelivered,
+        ea.Exchange,
+        ea.RoutingKey,
+        ea.BasicProperties,
+        ea.Body.ToArray()));      // owned copy of the body
+};
+
+
+
+BasicDeliverEventArgs bdea;                                         // was Tuple<ulong, byte[]> delivery;
+isConsuming = deliveries.TryTake(out bdea,
+    Convert.ToInt32(appConfig.AppSettings.Settings["MQBusTimeoutMilliseconds"].Value));
+
+if (bdea != null)                                                   // was if (isConsuming)
+{
+
+
+
+byte[] body = bdea.Body.ToArray();          // was delivery.Item2
+...
+ch.BasicAck(bdea.DeliveryTag, false);       // was delivery.Item1
