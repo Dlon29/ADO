@@ -1,44 +1,700 @@
-// The consumer just drops each delivery into a thread-safe queue,
-// so the rest of the loop keeps working like the old Dequeue-with-timeout.
-var deliveries = new BlockingCollection<Tuple<ulong, byte[]>>();
-var consumer = new EventingBasicConsumer(ch);
-consumer.Received += (s, ea) =>
-{
-    // MUST copy the body here: in 6.x the memory behind ea.Body is reused
-    // by the library once this handler returns.
-    deliveries.Add(Tuple.Create(ea.DeliveryTag, ea.Body.ToArray()));
-};
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.ComponentModel;
+using Common.Logging;
+using SMTBUSA.Messaging.Producer;
+using SMTBUSA.FailSafe.RetryLogic;
+using SMTBUSA.FailSafe;
+using System.Collections;
 
-log.Info(" Waiting to Consume MQ Message");
-ch.BasicConsume(appConfig.AppSettings.Settings["QueueName"].Value, false, consumer);
-ch.BasicQos(0, 1, false);
-
-while (conn.IsOpen)
+namespace SMTBUSA.Messaging.Consumer
 {
-    try
+
+    public class ConsumeMessageFaultException : ApplicationException
     {
-        Tuple<ulong, byte[]> delivery;
-        isConsuming = deliveries.TryTake(out delivery,
-            Convert.ToInt32(appConfig.AppSettings.Settings["MQBusTimeoutMilliseconds"].Value));
-
-        if (isConsuming)
+        public ConsumeMessageFaultException(string message , Exception innerException) : base(message, innerException)
         {
-            byte[] body = delivery.Item2;
-            if (body != null)
-            {
-                log.Info(" Start processing MQ notification");
-                ProcessMQMessage(System.Text.Encoding.UTF8.GetString(body));
-                log.Info(" End processing MQ notification");
-            }
-            ch.BasicAck(delivery.Item1, false);
-            log.Info(" confirming receive of the mq message");
         }
-        else
-        {
-            if (ch != null && ch.IsOpen) ch.Close(200, "Goodbye");
-            if (conn != null && conn.IsOpen) conn.Close();
-            break;
-        }
-        iRetries = iMaxRetries;
     }
-    // ... your existing catch blocks stay exactly as they are
+
+
+    public class MQConsumer : MQBase
+    {
+        private bool _continueConsuming;
+        private static ILog _logger = LogManager.GetLogger(typeof(MQConsumer));
+        private const string MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID = "SMTBUSA.Messaging.MQConsumer.ConsumeMessageActivity";
+
+        #region Events
+        public delegate void MQMessageReceivedHandler(object sender, MQMessageReceivedArgs args);
+        public delegate void MQOnStopConsumingEventHandler(object sender, MQOnStopConsumingEventArgs args);
+        public delegate void MQDequeueCompletedEventHandler(object sender);
+
+        public event MQMessageReceivedHandler MQMessageReceived;
+        public event MQOnStopConsumingEventHandler MQOnStopConsumingEvent;
+        public event MQDequeueCompletedEventHandler MQDequeueCompleted;
+        public event OnFailHandler MQConsumerCompositeRetry;
+        #endregion 
+
+        #region MQ Subscriber Properties
+        public int QueueTimeout { get; set; }        //Dequeue timeout
+        public bool IsAutoAck { get; set; }
+        public ushort PrefetchCount { get; set; }
+        #endregion 
+
+        #region Constructor
+        public MQConsumer (string hostName, int portNumber, string userName, string passWord, string vHost) : base(hostName, portNumber, userName, passWord, vHost) 
+        {
+            PrefetchCount = 1;
+        }
+        #endregion 
+
+        #region Methods
+        public void ConsumeMessages()
+        {
+            try
+            {
+                _continueConsuming = true;
+                this.SafeInvokeConsumeMessages();
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        public void ConsumeSingleMessage()
+        {
+            try
+            {
+                _continueConsuming = false;
+                this.SafeInvokeConsumeMessages();
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        public void StopConsuming()
+        {
+            _logger.InfoFormat("Stop consuming request received. Host: {0}, Port: {1}, Exchange: {2}, Queue: {3}", this.HostName, this.Port, this.ExchangeName, this.QueueName);
+            _continueConsuming = false;
+        }
+
+        private void SafeInvokeConsumeMessages()
+        {
+            try
+            {
+                Action consumeMessagesAction = () => { DoConsumeMessages(); };
+                FailSafeActivity failSafeConsume = new FailSafeActivity(MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID);
+                
+
+                failSafeConsume.OnFail += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
+                                                            {
+                                                                _logger.Error(failArgs.Exception);
+                                                            });
+                
+                failSafeConsume.OnCompositeRetry += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
+                {
+                    if (MQConsumerCompositeRetry != null)
+                    {
+                        MQConsumerCompositeRetry(this, failArgs);
+                    }
+                });
+
+
+                failSafeConsume.OnSuccess += new Action(() => { });
+                failSafeConsume.Invoke(consumeMessagesAction);
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoMQDequeueCompleted()
+        {
+
+            if (MQDequeueCompleted == null) { return; }
+            try
+            {
+                MQDequeueCompleted(this);
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        private void DoMQMessageReceived(MQMessageReceivedArgs args)
+        {
+            if (MQMessageReceived == null) { return; } 
+
+            try
+            {
+                MQMessageReceived(this, args);
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoMQOnStopConsuming(ShutdownEventArgs reason)
+        {
+            _logger.WarnFormat("RabbitMQ connection is shutting down. {0}. {1}. Exchange: {2}, Quueue: {3}", reason.ReplyText, reason.ToString(), this.ExchangeName, this.QueueName);
+
+            if (MQOnStopConsumingEvent == null)
+                return;
+
+            try
+            {
+                MQOnStopConsumingEvent(this, new MQOnStopConsumingEventArgs() { 
+                                                                                Reason = string.Format("{0} {1}",reason.ReplyText, reason.ToString())
+                                                                              });
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoConsumeMessages()
+        {
+            do
+            {
+                try
+                {
+                    _logger.InfoFormat("Consuming messages. Host: {0}, Port: {1}, QueueName: {2}", this.HostName, this.Port, this.QueueName);
+
+                    ConnectionFactory connectionFactory = new ConnectionFactory()
+                    {
+                        HostName = this.HostName,
+                        Port = this.Port,
+                        UserName = this.UserName,
+                        Password = this.Password,
+                        VirtualHost = this.VHost,
+                        RequestedHeartbeat = this.HeartBeat
+                    };
+
+                    using (IConnection conn = connectionFactory.CreateConnection())
+                    {
+                        //conn.ConnectionShutdown += new ConnectionShutdownEventHandler(ConnectionShutdown);
+                        conn.ConnectionShutdown += (connection1, reason) =>
+                            {
+                                try
+                                {
+                                    DoMQOnStopConsuming(reason);
+                                }
+                                catch
+                                {
+                                    throw;
+                                }
+                            };
+
+                        using (IModel channel = conn.CreateModel())
+                        {
+                            channel.QueueBind(QueueName, ExchangeName, RoutingKey);
+
+                            QueueingBasicConsumer consumer = new QueueingBasicConsumer(channel);
+                            channel.BasicConsume(QueueName, IsAutoAck, consumer);
+                            channel.BasicQos(0, PrefetchCount, false);              //TODO: verify the QoS args
+                            object result = null;
+
+                            while (true)
+                            {
+                                bool isConsuming = consumer.Queue.Dequeue(QueueTimeout, out result);
+                                BasicDeliverEventArgs deliverEventArgs = result as BasicDeliverEventArgs;
+
+                                this.DoMQDequeueCompleted();
+
+                                if (deliverEventArgs != null)
+                                {
+                                    _logger.DebugFormat("MQ message read from queue. DeliveryTag: {0}", deliverEventArgs.DeliveryTag);
+                                    try
+                                    {
+                                        MQMessageReceivedArgs msgRecvdArgs = new MQMessageReceivedArgs()
+                                        {
+                                            DeliveryTag = deliverEventArgs.DeliveryTag,
+                                            MessageBody = deliverEventArgs.Body,
+                                            HeaderProperties = ( deliverEventArgs.BasicProperties != null ) ? deliverEventArgs.BasicProperties.Headers : null,
+                                            ContinueConsuming = true
+                                        };
+
+                                        this.DoMQMessageReceived(msgRecvdArgs);
+
+                                        if (!IsAutoAck)
+                                        {
+                                            if (msgRecvdArgs.IsAcknowledge)
+                                            {
+                                                _logger.InfoFormat("Acknowledging message. DeliveryTag: {0},  MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                channel.BasicAck(deliverEventArgs.DeliveryTag, false);
+                                            }
+                                            else if (msgRecvdArgs.IsRejectMessage)
+                                            {
+                                                if (deliverEventArgs.Redelivered)
+                                                {
+                                                    _logger.InfoFormat("Nacking message. No requeue. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, false);
+                                                }
+                                                else
+                                                {
+                                                    _logger.InfoFormat("Nacking message. Re-queuing. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, true);
+                                                }
+                                            }
+                                        }
+
+                                        if (!msgRecvdArgs.ContinueConsuming)
+                                        {
+                                            this.StopConsuming();
+                                        }
+                                    }
+                                    catch
+                                    {
+                                        throw;
+                                    }
+                                }
+
+                                if (!_continueConsuming) break;
+                            }
+
+                            if (conn.IsOpen)
+                            {
+                                conn.Close();
+                            }
+                        }
+                    }
+                }
+                catch 
+                {
+                    throw;
+                }
+
+            } while (_continueConsuming);            
+ 
+        }
+
+        private void ConnectionShutdown(IConnection connection, ShutdownEventArgs reason)
+        {
+            try
+            {
+                DoMQOnStopConsuming(reason);
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+        #endregion 
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.ComponentModel;
+using Common.Logging;
+using SMTBUSA.Messaging.Producer;
+using SMTBUSA.FailSafe.RetryLogic;
+using SMTBUSA.FailSafe;
+using System.Collections;
+
+namespace SMTBUSA.Messaging.Consumer
+{
+
+    public class ConsumeMessageFaultException : ApplicationException
+    {
+        public ConsumeMessageFaultException(string message , Exception innerException) : base(message, innerException)
+        {
+        }
+    }
+
+
+    public class MQConsumer : MQBase
+    {
+        private bool _continueConsuming;
+        private static ILog _logger = LogManager.GetLogger(typeof(MQConsumer));
+        private const string MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID = "SMTBUSA.Messaging.MQConsumer.ConsumeMessageActivity";
+
+        #region Events
+        public delegate void MQMessageReceivedHandler(object sender, MQMessageReceivedArgs args);
+        public delegate void MQOnStopConsumingEventHandler(object sender, MQOnStopConsumingEventArgs args);
+        public delegate void MQDequeueCompletedEventHandler(object sender);
+
+        public event MQMessageReceivedHandler MQMessageReceived;
+        public event MQOnStopConsumingEventHandler MQOnStopConsumingEvent;
+        public event MQDequeueCompletedEventHandler MQDequeueCompleted;
+        public event OnFailHandler MQConsumerCompositeRetry;
+        #endregion 
+
+        #region MQ Subscriber Properties
+        public int QueueTimeout { get; set; }        //Dequeue timeout
+        public bool IsAutoAck { get; set; }
+        public ushort PrefetchCount { get; set; }
+        #endregion 
+
+        #region Constructor
+        public MQConsumer (string hostName, int portNumber, string userName, string passWord, string vHost) : base(hostName, portNumber, userName, passWord, vHost) 
+        {
+            PrefetchCount = 1;
+        }
+        #endregion 
+
+        #region Methods
+        public void ConsumeMessages()
+        {
+            try
+            {
+                _continueConsuming = true;
+                this.SafeInvokeConsumeMessages();
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        public void ConsumeSingleMessage()
+        {
+            try
+            {
+                _continueConsuming = false;
+                this.SafeInvokeConsumeMessages();
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        public void StopConsuming()
+        {
+            _logger.InfoFormat("Stop consuming request received. Host: {0}, Port: {1}, Exchange: {2}, Queue: {3}", this.HostName, this.Port, this.ExchangeName, this.QueueName);
+            _continueConsuming = false;
+        }
+
+        private void SafeInvokeConsumeMessages()
+        {
+            try
+            {
+                Action consumeMessagesAction = () => { DoConsumeMessages(); };
+                FailSafeActivity failSafeConsume = new FailSafeActivity(MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID);
+                
+
+                failSafeConsume.OnFail += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
+                                                            {
+                                                                _logger.Error(failArgs.Exception);
+                                                            });
+                
+                failSafeConsume.OnCompositeRetry += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
+                {
+                    if (MQConsumerCompositeRetry != null)
+                    {
+                        MQConsumerCompositeRetry(this, failArgs);
+                    }
+                });
+
+
+                failSafeConsume.OnSuccess += new Action(() => { });
+                failSafeConsume.Invoke(consumeMessagesAction);
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoMQDequeueCompleted()
+        {
+
+            if (MQDequeueCompleted == null) { return; }
+            try
+            {
+                MQDequeueCompleted(this);
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+
+        private void DoMQMessageReceived(MQMessageReceivedArgs args)
+        {
+            if (MQMessageReceived == null) { return; } 
+
+            try
+            {
+                MQMessageReceived(this, args);
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoMQOnStopConsuming(ShutdownEventArgs reason)
+        {
+            _logger.WarnFormat("RabbitMQ connection is shutting down. {0}. {1}. Exchange: {2}, Quueue: {3}", reason.ReplyText, reason.ToString(), this.ExchangeName, this.QueueName);
+
+            if (MQOnStopConsumingEvent == null)
+                return;
+
+            try
+            {
+                MQOnStopConsumingEvent(this, new MQOnStopConsumingEventArgs() { 
+                                                                                Reason = string.Format("{0} {1}",reason.ReplyText, reason.ToString())
+                                                                              });
+            }
+            catch
+            {
+                throw;
+            }
+        }
+
+        private void DoConsumeMessages()
+        {
+            do
+            {
+                try
+                {
+                    _logger.InfoFormat("Consuming messages. Host: {0}, Port: {1}, QueueName: {2}", this.HostName, this.Port, this.QueueName);
+
+                    ConnectionFactory connectionFactory = new ConnectionFactory()
+                    {
+                        HostName = this.HostName,
+                        Port = this.Port,
+                        UserName = this.UserName,
+                        Password = this.Password,
+                        VirtualHost = this.VHost,
+                        RequestedHeartbeat = new TimeSpan(0, 0, this.HeartBeat)
+                    };
+
+                    using (IConnection conn = connectionFactory.CreateConnection())
+                    {
+                        //conn.ConnectionShutdown += new ConnectionShutdownEventHandler(ConnectionShutdown);
+                        conn.ConnectionShutdown += (connection1, reason) =>
+                            {
+                                try
+                                {
+                                    DoMQOnStopConsuming(reason);
+                                }
+                                catch
+                                {
+                                    throw;
+                                }
+                            };
+
+                        using (IModel channel = conn.CreateModel())
+                        {
+                            channel.QueueBind(QueueName, ExchangeName, RoutingKey);
+
+                            EventingBasicConsumer consumer = new EventingBasicConsumer(channel);
+
+                            consumer.Received += (model, deliverEventArgs) =>
+                            {
+
+
+                                // Extract message body bytes
+                                var body = deliverEventArgs.Body.ToArray();
+
+                                // Convert bytes back to string
+                                var message = Encoding.UTF8.GetString(body);
+
+                                this.DoMQDequeueCompleted();
+
+
+                                if (deliverEventArgs != null)
+                                {
+                                    _logger.DebugFormat("MQ message read from queue. DeliveryTag: {0}", deliverEventArgs.DeliveryTag);
+                                    try
+
+                                    {
+                                        MQMessageReceivedArgs msgRecvdArgs = new MQMessageReceivedArgs()
+                                        {
+                                            DeliveryTag = deliverEventArgs.DeliveryTag,
+                                            MessageBody = deliverEventArgs.Body.ToArray(),
+                                            HeaderProperties = (deliverEventArgs.BasicProperties != null) ? deliverEventArgs.BasicProperties.Headers : null,
+                                            ContinueConsuming = true
+                                        };
+
+                                        this.DoMQMessageReceived(msgRecvdArgs);
+
+                                        if (!IsAutoAck)
+                                        {
+                                            if (msgRecvdArgs.IsAcknowledge)
+                                            {
+                                                _logger.InfoFormat("Acknowledging message. DeliveryTag: {0},  MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                channel.BasicAck(deliverEventArgs.DeliveryTag, false);
+                                            }
+                                            else if (msgRecvdArgs.IsRejectMessage)
+                                            {
+                                                if (deliverEventArgs.Redelivered)
+                                                {
+                                                    _logger.InfoFormat("Nacking message. No requeue. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, false);
+                                                }
+                                                else
+                                                {
+                                                    _logger.InfoFormat("Nacking message. Re-queuing. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
+                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, true);
+                                                }
+                                            }
+                                        }
+
+                                        if (!msgRecvdArgs.ContinueConsuming)
+                                        {
+                                            this.StopConsuming();
+                                        }
+                                    }
+                                    catch
+                                    {
+                                        throw;
+                                    }
+                                }
+
+                            };
+                            
+                            channel.BasicQos(0, PrefetchCount, false);              //TODO: verify the QoS args
+
+                            while (true)
+                            {
+                                channel.BasicConsume(QueueName, IsAutoAck, consumer);
+                                if (!_continueConsuming) break;
+                            }
+
+                            if (conn.IsOpen)
+                            {
+                                conn.Close();
+                            }
+                        }
+                    }
+                }
+                catch 
+                {
+                    throw;
+                }
+
+            } while (_continueConsuming);            
+ 
+        }
+
+        private void ConnectionShutdown(IConnection connection, ShutdownEventArgs reason)
+        {
+            try
+            {
+                DoMQOnStopConsuming(reason);
+            }
+            catch 
+            {
+                throw;
+            }
+        }
+        #endregion 
+    }
+}
+
+
+
+
+
+
+
+
+
+#region Assembly RabbitMQ.Client, Version=6.0.0.0, Culture=neutral, PublicKeyToken=89e7d7c5feba84ce
+// C:\Users\dcolaco\TFS\Utilities\Common\Assembly\Binaries(x64)\RabbitMQ.Client.dll
+// Decompiled with ICSharpCode.Decompiler 9.1.0.7988
+#endregion
+
+using System;
+
+namespace RabbitMQ.Client.Events;
+
+public class BasicDeliverEventArgs : EventArgs
+{
+    public IBasicProperties BasicProperties { get; set; }
+
+    public ReadOnlyMemory<byte> Body { get; set; }
+
+    public string ConsumerTag { get; set; }
+
+    public ulong DeliveryTag { get; set; }
+
+    public string Exchange { get; set; }
+
+    public bool Redelivered { get; set; }
+
+    public string RoutingKey { get; set; }
+
+    public BasicDeliverEventArgs()
+    {
+    }
+
+    public BasicDeliverEventArgs(string consumerTag, ulong deliveryTag, bool redelivered, string exchange, string routingKey, IBasicProperties properties, ReadOnlyMemory<byte> body)
+    {
+        ConsumerTag = consumerTag;
+        DeliveryTag = deliveryTag;
+        Redelivered = redelivered;
+        Exchange = exchange;
+        RoutingKey = routingKey;
+        BasicProperties = properties;
+        Body = body;
+    }
+}
+#if false // Decompilation log
+'25' items in cache
+------------------
+Resolve: 'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Found single assembly: 'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll'
+------------------
+Resolve: 'System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+Found single assembly: 'System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+Load from: 'C:\Program Files\IIS\Microsoft Web Deploy V3\System.Memory.dll'
+------------------
+Resolve: 'System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Found single assembly: 'System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Core.dll'
+------------------
+Resolve: 'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Found single assembly: 'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.dll'
+------------------
+Resolve: 'System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+Could not find by name: 'System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+------------------
+Resolve: 'System.Threading.Channels, Version=7.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+Could not find by name: 'System.Threading.Channels, Version=7.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+------------------
+Resolve: 'System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+Could not find by name: 'System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
+------------------
+Resolve: 'System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+Could not find by name: 'System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+#endif
