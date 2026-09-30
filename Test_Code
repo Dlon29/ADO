@@ -1,700 +1,775 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 using System.ComponentModel;
+using System.Configuration;
+using System.Data;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Net.Mail;
+using System.Reflection;
+using System.ServiceProcess;
+using System.Text;
+using System.Threading.Tasks;
 using Common.Logging;
-using SMTBUSA.Messaging.Producer;
-using SMTBUSA.FailSafe.RetryLogic;
-using SMTBUSA.FailSafe;
-using System.Collections;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
+using Newtonsoft.Json.Schema;
+using Newtonsoft.Json.Utilities;
+//using Org.BouncyCastle.Bcpg;
+//using Org.BouncyCastle.Bcpg.Attr;
+//using Org.BouncyCastle.Bcpg.OpenPgp;
+//using Org.BouncyCastle.Bcpg.Sig;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Content;
+using RabbitMQ.Client.Exceptions;
+using RabbitMQ.Client.MessagePatterns;
+using RabbitMQ.Util;
+using WinSCP;
 
-namespace SMTBUSA.Messaging.Consumer
+
+namespace Equilend
 {
-
-    public class ConsumeMessageFaultException : ApplicationException
+    public partial class DMZ_Pub : ServiceBase//, IDisposable
     {
-        public ConsumeMessageFaultException(string message , Exception innerException) : base(message, innerException)
+        //making service to use EquilendIntranet_Sub.exe.config file to configure itself.
+        private Configuration appConfig = ConfigurationManager.OpenExeConfiguration(Assembly.GetExecutingAssembly().Location);
+        private TaskFactory taskFactory = new TaskFactory();   
+        //private ILog log = LogManager.GetCurrentClassLogger();
+        private ILog log = LogManager.GetLogger(Assembly.GetExecutingAssembly().GetType());
+        // private List<string> lastReqFiles = new List<string>();
+
+        private string QueueName = string.Empty;
+        private string QueueKey = string.Empty;
+        private int iRetries = 0;
+        private int iMaxRetries = 0;
+        
+        #region Service related methods
+
+        public DMZ_Pub()
         {
-        }
-    }
-
-
-    public class MQConsumer : MQBase
-    {
-        private bool _continueConsuming;
-        private static ILog _logger = LogManager.GetLogger(typeof(MQConsumer));
-        private const string MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID = "SMTBUSA.Messaging.MQConsumer.ConsumeMessageActivity";
-
-        #region Events
-        public delegate void MQMessageReceivedHandler(object sender, MQMessageReceivedArgs args);
-        public delegate void MQOnStopConsumingEventHandler(object sender, MQOnStopConsumingEventArgs args);
-        public delegate void MQDequeueCompletedEventHandler(object sender);
-
-        public event MQMessageReceivedHandler MQMessageReceived;
-        public event MQOnStopConsumingEventHandler MQOnStopConsumingEvent;
-        public event MQDequeueCompletedEventHandler MQDequeueCompleted;
-        public event OnFailHandler MQConsumerCompositeRetry;
-        #endregion 
-
-        #region MQ Subscriber Properties
-        public int QueueTimeout { get; set; }        //Dequeue timeout
-        public bool IsAutoAck { get; set; }
-        public ushort PrefetchCount { get; set; }
-        #endregion 
-
-        #region Constructor
-        public MQConsumer (string hostName, int portNumber, string userName, string passWord, string vHost) : base(hostName, portNumber, userName, passWord, vHost) 
-        {
-            PrefetchCount = 1;
-        }
-        #endregion 
-
-        #region Methods
-        public void ConsumeMessages()
-        {
-            try
-            {
-                _continueConsuming = true;
-                this.SafeInvokeConsumeMessages();
-            }
-            catch 
-            {
-                throw;
-            }
+            InitializeComponent();
         }
 
-        public void ConsumeSingleMessage()
+        protected override void OnStart(string[] args)
         {
-            try
-            {
-                _continueConsuming = false;
-                this.SafeInvokeConsumeMessages();
-            }
-            catch 
-            {
-                throw;
-            }
+            log.Info(" Start EquilendDMZ_Pub Service.");   
+            this.backgroundWorker1.DoWork += new DoWorkEventHandler(backgroundWorker1_DoWork);
+            this.backgroundWorker1.RunWorkerAsync();
         }
 
-        public void StopConsuming()
+        protected override void OnStop()
         {
-            _logger.InfoFormat("Stop consuming request received. Host: {0}, Port: {1}, Exchange: {2}, Queue: {3}", this.HostName, this.Port, this.ExchangeName, this.QueueName);
-            _continueConsuming = false;
+            this.backgroundWorker1.Dispose();
+            this.Dispose();            
+            log.Info(" End EquilendDMZ_Pub Service.");
         }
 
-        private void SafeInvokeConsumeMessages()
-        {
-            try
-            {
-                Action consumeMessagesAction = () => { DoConsumeMessages(); };
-                FailSafeActivity failSafeConsume = new FailSafeActivity(MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID);
-                
+        #endregion
 
-                failSafeConsume.OnFail += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
-                                                            {
-                                                                _logger.Error(failArgs.Exception);
-                                                            });
-                
-                failSafeConsume.OnCompositeRetry += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
-                {
-                    if (MQConsumerCompositeRetry != null)
-                    {
-                        MQConsumerCompositeRetry(this, failArgs);
-                    }
-                });
-
-
-                failSafeConsume.OnSuccess += new Action(() => { });
-                failSafeConsume.Invoke(consumeMessagesAction);
-            }
-            catch
-            {
-                throw;
-            }
-        }
-
-        private void DoMQDequeueCompleted()
+        void backgroundWorker1_DoWork(object sender, DoWorkEventArgs e)
         {
 
-            if (MQDequeueCompleted == null) { return; }
-            try
-            {
-                MQDequeueCompleted(this);
-            }
-            catch 
-            {
-                throw;
-            }
-        }
+            DateTime currentDateTime;
+            TimeSpan? StartTime = null;
+            TimeSpan? EndTime = null;
+            bool IsWeekendEnabled = false;
+            iMaxRetries = Convert.ToInt32(appConfig.AppSettings.Settings["MaxRetries"].Value);
+            string SleepDays = string.IsNullOrEmpty(appConfig.AppSettings.Settings["SleepDays"].Value) ? "" : appConfig.AppSettings.Settings["SleepDays"].Value;                        
+            string StartHour = string.IsNullOrEmpty(appConfig.AppSettings.Settings["SleepStartHour"].Value) ? "" : appConfig.AppSettings.Settings["SleepStartHour"].Value;
+            string EndHour = string.IsNullOrEmpty(appConfig.AppSettings.Settings["SleepEndHour"].Value) ? "" : appConfig.AppSettings.Settings["SleepEndHour"].Value;
+            iRetries = iMaxRetries;
 
-        private void DoMQMessageReceived(MQMessageReceivedArgs args)
-        {
-            if (MQMessageReceived == null) { return; } 
-
-            try
+            if (StartHour.Contains(":") && EndHour.Contains(":"))
             {
-                MQMessageReceived(this, args);
+                StartTime = new TimeSpan(Convert.ToInt32(StartHour.Substring(0, StartHour.IndexOf(@":"))), Convert.ToInt32(StartHour.Substring(StartHour.IndexOf(@":") + 1)), 0);
+                EndTime = new TimeSpan(Convert.ToInt32(EndHour.Substring(0, EndHour.IndexOf(@":"))), Convert.ToInt32(EndHour.Substring(EndHour.IndexOf(@":") + 1)), 0);
             }
-            catch
-            {
-                throw;
+            else
+            {                
+                log.ErrorFormat(" FOR EquilendDMZ_Pub Service on {0}. Invalid Sleep Start or End Hour format.Please specify in 24 hours (HH:MM) format.", Environment.MachineName);
             }
-        }
 
-        private void DoMQOnStopConsuming(ShutdownEventArgs reason)
-        {
-            _logger.WarnFormat("RabbitMQ connection is shutting down. {0}. {1}. Exchange: {2}, Quueue: {3}", reason.ReplyText, reason.ToString(), this.ExchangeName, this.QueueName);
-
-            if (MQOnStopConsumingEvent == null)
-                return;
-
-            try
+            // sftp check loop
+            while (true)
             {
-                MQOnStopConsumingEvent(this, new MQOnStopConsumingEventArgs() { 
-                                                                                Reason = string.Format("{0} {1}",reason.ReplyText, reason.ToString())
-                                                                              });
-            }
-            catch
-            {
-                throw;
-            }
-        }
+                currentDateTime = DateTime.Now;
+                IsWeekendEnabled = false;
 
-        private void DoConsumeMessages()
-        {
-            do
-            {
                 try
                 {
-                    _logger.InfoFormat("Consuming messages. Host: {0}, Port: {1}, QueueName: {2}", this.HostName, this.Port, this.QueueName);
-
-                    ConnectionFactory connectionFactory = new ConnectionFactory()
+                    foreach (string sleepDay in SleepDays.Split(new string[] { "||" }, StringSplitOptions.RemoveEmptyEntries))
                     {
-                        HostName = this.HostName,
-                        Port = this.Port,
-                        UserName = this.UserName,
-                        Password = this.Password,
-                        VirtualHost = this.VHost,
-                        RequestedHeartbeat = this.HeartBeat
-                    };
-
-                    using (IConnection conn = connectionFactory.CreateConnection())
-                    {
-                        //conn.ConnectionShutdown += new ConnectionShutdownEventHandler(ConnectionShutdown);
-                        conn.ConnectionShutdown += (connection1, reason) =>
-                            {
-                                try
-                                {
-                                    DoMQOnStopConsuming(reason);
-                                }
-                                catch
-                                {
-                                    throw;
-                                }
-                            };
-
-                        using (IModel channel = conn.CreateModel())
+                        if (sleepDay.Length == 1 && (int)currentDateTime.DayOfWeek == Convert.ToInt32(sleepDay))
                         {
-                            channel.QueueBind(QueueName, ExchangeName, RoutingKey);
+                            log.Info(" EquiLendDMZ_Pub Service will not execute on weekends");
+                            IsWeekendEnabled = true;
+                        }
+                    }
 
-                            QueueingBasicConsumer consumer = new QueueingBasicConsumer(channel);
-                            channel.BasicConsume(QueueName, IsAutoAck, consumer);
-                            channel.BasicQos(0, PrefetchCount, false);              //TODO: verify the QoS args
-                            object result = null;
+                    if (!IsWeekendEnabled)
+                        if (IsServiceSleeping(currentDateTime, StartTime, EndTime)) 
+                        {
+                            log.InfoFormat(" EquiLendDMZ_Pub Service will not execute from {0} to {1}." , StartHour.ToString() ,EndHour.ToString());
+                        }
+                        else
+                        {
+                            SFTPFilesFromRemoteServer(ref appConfig);                           
+                        }
+                    iRetries = iMaxRetries;
+                }
+                catch (Exception ex)
+                {   
+                    log.ErrorFormat(" FOR EquilendDMZ_Pub Service on {0}.Service Interrupted for the following reason. {1} ", ex, Environment.MachineName, ex.Message);
+                    if (iRetries == 0)
+                    {
+                        log.FatalFormat(" FOR EquilendDMZ_Pub Service on {0}.Service Interrupted for the following reason. {1} ", ex, Environment.MachineName, ex.Message);
+                        iRetries = iMaxRetries;
+                    }
+                    else
+                    {
+                        if (iRetries > 0) --iRetries;
+                    }  
+                    //break;
+                }
+                finally
+                {
+                    System.Threading.Thread.Sleep(Convert.ToInt32(appConfig.AppSettings.Settings["ThreadSuspendTimeout"].Value));
+                }
+            }
+        }
 
-                            while (true)
+        private bool IsServiceSleeping(DateTime currDate, TimeSpan? startTime, TimeSpan? endTime)
+        {
+
+            bool IsServiceIdle = false;
+
+            if (startTime.HasValue && endTime.HasValue)
+            {
+
+                DateTime start = DateTime.Today.Add(startTime.Value);
+                DateTime end = DateTime.Today.Add(endTime.Value);
+                // Cope with a start hour later than an end hour - we just
+                // want to invert the normal result.
+                bool invertResult = end < start;
+                // Now check for the current time within the time period
+                // IsServiceIdle = (start <= currDate && currDate <= end) ^ invertResult;
+
+                if (start <= currDate && currDate <= end)
+                {
+                    IsServiceIdle = true;
+                }
+                else if (invertResult && (start.AddDays(-1) <= currDate && currDate <= end))
+                {
+                    IsServiceIdle = true;
+                }
+                else if (invertResult && (start <= currDate && currDate <= end.AddDays(1)))
+                {
+                    IsServiceIdle = true;
+                }
+            }
+            return IsServiceIdle;
+        }
+
+        //void IDisposable.Dispose()
+        //{
+        //    if (log.IsInfoEnabled) log.Info("Disposing EquilendDMZ_Pub Service");
+        //}
+
+        //private void SendMQNotification(string filePath)
+        private void SendMQNotification(string localfilePath, string filename)       //SN changed to include local path in name..
+        {
+            //initialize logger interface            
+            log.Info(" Start sending MQ notification.");
+            StringBuilder sb = new StringBuilder();
+
+
+//            string filePrefix = filePath.Substring(filePath.LastIndexOf('\\') + 1);
+            string filePrefix = filename.Substring(filename.LastIndexOf('\\') + 1);
+            filePrefix = filePrefix.Substring(0, filePrefix.IndexOf('_')).ToUpper();
+
+            string HostName = appConfig.AppSettings.Settings["HostName"].Value;
+            int Port = Convert.ToInt32(appConfig.AppSettings.Settings["Port"].Value);
+            string UserName = appConfig.AppSettings.Settings["UserName"].Value;
+            string PassWord = appConfig.AppSettings.Settings["PassWord"].Value;
+            string vHost = appConfig.AppSettings.Settings["vHost"].Value;
+            string ExchangeName = appConfig.AppSettings.Settings["ExchangeName"].Value;
+            string HeartBeatInterval = appConfig.AppSettings.Settings["HeartBeatInterval"].Value;
+
+            Dictionary<string, string> values = new Dictionary<string, string>();
+
+            values.Add("Publisher", Environment.MachineName);
+//            values.Add("MQBus", appConfig.AppSettings.Settings["MQBus"].Value);       //SN changed to remove MQBus appsetting..
+            values.Add("MQBus", HostName + ":" + appConfig.AppSettings.Settings["Port"].Value);
+            values.Add("TransferType", "SFTP");
+            //values.Add("FileToTransfer", filePath.Substring(filePath.LastIndexOf('\\') + 1));
+            values.Add("FileToTransfer", filename.Substring(filename.LastIndexOf('\\') + 1));   //if contains slashes in filename (should not contain).
+            values.Add("RemoteFolder", localfilePath);      //New Queue member SN added.
+
+            QueueName = (filePrefix != "ERPA-NO") ? appConfig.AppSettings.Settings["QueueName1"].Value : appConfig.AppSettings.Settings["QueueName2"].Value;
+            QueueKey = (filePrefix != "ERPA-NO") ? appConfig.AppSettings.Settings["QueueKey1"].Value : appConfig.AppSettings.Settings["QueueKey2"].Value;
+            log.DebugFormat(" FilePrefix : {0} , QueueName : {1} , QueueKey : {2} ", filePrefix, QueueName, QueueKey);
+            
+            try
+            {
+                sb.Append(JsonConvert.SerializeObject(values));
+                //sb.Append(JSON.Instance.ToJSON(values));
+            }
+            catch (Exception e)
+            {
+
+                log.FatalFormat(" FOR EquilendDMZ_Pub Service on {0}.Failed to Serialize JSON object {1} for the following reason {2} ", e, Environment.MachineName, values.ToString(), e.Message);               
+                //throw e;
+            }
+
+            try
+            {
+                ConnectionFactory connectionFactory = new ConnectionFactory()
+                {
+                    HostName = HostName,
+                    Port = Port,
+                    UserName = UserName,
+                    Password = PassWord,
+                    VirtualHost = vHost,
+                    RequestedHeartbeat = ushort.Parse(HeartBeatInterval)
+                };
+
+                using (IConnection conn = connectionFactory.CreateConnection())
+                {
+                    using (IModel ch = conn.CreateModel())
+                    {
+                        //declare exchange
+                        ch.ExchangeDeclare(ExchangeName, ExchangeType.Direct, true);
+                        //declare queue
+                        ch.QueueDeclare(QueueName, true, false, false, null);
+
+                        ////bind to queue
+                        ch.QueueBind(QueueName, ExchangeName, QueueKey); 
+
+                        byte[] messageBodyBytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+                        IBasicProperties prop = ch.CreateBasicProperties();
+                        prop.ContentType = "application/json";
+                        prop.DeliveryMode = 2;
+                        log.Info(" Start Publishing MQ Mesaage.");
+                        ch.BasicPublish(appConfig.AppSettings.Settings["ExchangeName"].Value, QueueKey, prop, messageBodyBytes);
+                        log.Info(" End Publishing MQ Message.");
+                        if (ch != null && ch.IsOpen) ch.Close(200, "Goodbye");
+                    }
+                    if (conn != null && conn.IsOpen) conn.Close();
+                }
+                log.Info(" MQ Message process check successfull.");                
+            }
+            catch (Exception e)
+            {
+                log.FatalFormat(" FOR EquilendDMZ_Pub Service on {0}.Error Sending MQ Message for the following reason. {1} ", e, Environment.MachineName, e.Message);                          
+                //throw e;
+            }
+            log.Info(" End sending MQ notification.");
+        }
+
+      
+        /*      
+        [System.Security.Permissions.PermissionSet(System.Security.Permissions.SecurityAction.Assert, Name = "FullTrust")]
+        private void SFTPFilesFromRemoteServer(ref Configuration appConfig)
+        {
+            string remoteFilePath = null;
+            Sftp sftp = null;           
+            remoteFilePath = ".";
+            string localFilePath = appConfig.AppSettings.Settings["DestinationFolder"].Value;            
+            log.InfoFormat(" Start of SFTP process to {0} from {1}  on remote host {2}" , localFilePath,appConfig.AppSettings.Settings["SFTPAccount"].Value ,appConfig.AppSettings.Settings["SFTPDestinationHost"].Value);
+
+            try
+            {
+                sftp = new Sftp(
+                                appConfig.AppSettings.Settings["SFTPDestinationHost"].Value,
+                                appConfig.AppSettings.Settings["SFTPAccount"].Value,
+                                appConfig.AppSettings.Settings["SFTPPassword"].Value
+                                );
+
+                sftp.Connect();
+                List<String> files = sftp.getFTPDirectoryListing(remoteFilePath);
+
+                foreach (string file in files.Where(f => f.ToLower().Contains(".out")))
+                {
+                    //downloadFile(file);
+                    sftp.Get(file, localFilePath + "/" + file);
+                    sftp.Delete(file);
+                    log.InfoFormat(" Completed downloading and deleting file {0}." , file);
+                    
+                    try
+                    {
+                        SendMQNotification(localFilePath + file);
+                    }
+                    catch (Exception MQEx)
+                    {
+                        throw MQEx;
+                    }
+                }                
+                log.Info(" SFTP process successfull.");
+            }
+            catch (Exception e)
+            {
+                throw new Exception(string.Format(" >> Error in SFTP process.Failed to download and delete file {0} for the following reason.{1}", remoteFilePath, e.Message));
+                //throw e;
+            }
+            finally
+            {
+                if(sftp!=null)sftp.Close();
+                log.Info(" End SFTP process.");
+            }
+            //sftp.Get("",localFilePath);    
+        }
+        */
+
+
+        [System.Security.Permissions.PermissionSet(System.Security.Permissions.SecurityAction.Assert, Name = "FullTrust")]
+        private void SFTPFilesFromRemoteServer(ref Configuration appConfig)
+        {
+            string remoteFilePath = null;
+            //Sftp sftp = null;
+            remoteFilePath = ".";
+            // string localFilePath = appConfig.AppSettings.Settings["DestinationFolder"].Value;         //SN changed to LocalFileStore..
+            string localFilePath = appConfig.AppSettings.Settings["LocalFileStore"].Value;         //SN changed to LocalFileStore..
+            
+            string NewFile = string.Empty;
+            log.InfoFormat(" Start of SFTP process to {0} from {1}  on remote host {2}", localFilePath, appConfig.AppSettings.Settings["SFTPAccount"].Value, appConfig.AppSettings.Settings["SFTPDestinationHost"].Value);
+
+            try
+            {
+                //sftp = new Sftp(
+                //                triPartyBankInfo.HostName,
+                //                triPartyBankInfo.UserName,
+                //                triPartyBankInfo.Password
+                //                );
+
+
+                string sftpHostName = appConfig.AppSettings.Settings["SFTPDestinationHost"].Value;
+               // int Port = Convert.ToInt32(appConfig.AppSettings.Settings["Port"].Value);
+                string sftpUserName = appConfig.AppSettings.Settings["SFTPAccount"].Value;
+                string sftpPassWord = appConfig.AppSettings.Settings["SFTPPassword"].Value;
+               // string vHost = appConfig.AppSettings.Settings["vHost"].Value;
+              //  string ExchangeName = appConfig.AppSettings.Settings["ExchangeName"].Value;
+                string FingerPrint = appConfig.AppSettings.Settings["FingerPrint"].Value;
+                string PrivateKeyPath = appConfig.AppSettings.Settings["PrivateKeyPath"].Value;
+                string RemoteFolderPath = appConfig.AppSettings.Settings["RemoteFolderPath"].Value;
+                string FileExtension = appConfig.AppSettings.Settings["FileExtension"].Value;
+
+                SessionOptions sessionOptions = new SessionOptions
+                {
+                    Protocol = Protocol.Sftp,
+                    HostName = sftpHostName,
+                    UserName = sftpUserName,
+                    Password = sftpPassWord,
+                    SshHostKeyFingerprint = FingerPrint,
+                    //SshHostKeyFingerprint = "ssh-rsa 2048 nW+JsWMStOdfyw/uxwtyj6Zf+En8DtZajEFA6mmsehQ=", //"ssh-rsa 2048 kcKgdAOtHACVYgVM4TaoRuvD181IkSekafJy+cj5oPk=",
+                    SshPrivateKeyPath = PrivateKeyPath
+                };
+
+                using (Session winSCPSession = new Session())
+                {
+                    winSCPSession.Open(sessionOptions);
+
+                    TransferOptions transferOptions = new TransferOptions();
+                    transferOptions.TransferMode = TransferMode.Binary;
+                    //transferOptions.FileMask = fileExtensions;
+                    //string fileExtensions = triPartyBankInfo.FileExtension;
+
+                    IEnumerable<RemoteFileInfo> fileInfos =
+                         winSCPSession.EnumerateRemoteFiles(
+                             RemoteFolderPath, FileExtension,
+                             EnumerationOptions.None);
+
+
+                    //string[] allowedExtn = fileExtensions.Split(new char[] { '|' });
+
+                    if (fileInfos.Count() > 0)
+                    {
+
+                        foreach (RemoteFileInfo fileInfo in fileInfos)
+                        {
+
+                            //string extension = Path.GetExtension(fileInfo.FullName).ToLower();
+                            //if ((string.Compare(extension, ".csv", true) == 0) || (string.Compare(extension, ".ppsum", true) == 0))
+                            //if ((allowedExtn.Any(c => extension.Contains(c.ToLower()))))
+                            //{
+                            //downloadFile(file);
+                            // Rename BONY TriParty file with DateTimeStamp
+
+                          
+                            NewFile = fileInfo.Name;
+
+                            //sftp.Get(file, localFilePath + "/" + NewFile);
+                            //sftp.Delete(file);
+
+                            TransferOperationResult transferResult = winSCPSession.GetFiles(fileInfo.FullName, localFilePath + NewFile, true, transferOptions);
+
+                            if (transferResult.IsSuccess)
                             {
-                                bool isConsuming = consumer.Queue.Dequeue(QueueTimeout, out result);
-                                BasicDeliverEventArgs deliverEventArgs = result as BasicDeliverEventArgs;
+                                log.InfoFormat(" Completed downloading and deleting remote file {0}", fileInfo.FullName);
+                            }
 
-                                this.DoMQDequeueCompleted();
-
-                                if (deliverEventArgs != null)
+                            try
+                            {
+                                SendMQNotification(localFilePath, NewFile);
+                            }
+                            catch (Exception MQEx)
+                            {
+                                if (winSCPSession != null)
                                 {
-                                    _logger.DebugFormat("MQ message read from queue. DeliveryTag: {0}", deliverEventArgs.DeliveryTag);
-                                    try
-                                    {
-                                        MQMessageReceivedArgs msgRecvdArgs = new MQMessageReceivedArgs()
-                                        {
-                                            DeliveryTag = deliverEventArgs.DeliveryTag,
-                                            MessageBody = deliverEventArgs.Body,
-                                            HeaderProperties = ( deliverEventArgs.BasicProperties != null ) ? deliverEventArgs.BasicProperties.Headers : null,
-                                            ContinueConsuming = true
-                                        };
+                                    winSCPSession.Close();
+                                    winSCPSession.Dispose();
 
-                                        this.DoMQMessageReceived(msgRecvdArgs);
-
-                                        if (!IsAutoAck)
-                                        {
-                                            if (msgRecvdArgs.IsAcknowledge)
-                                            {
-                                                _logger.InfoFormat("Acknowledging message. DeliveryTag: {0},  MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                channel.BasicAck(deliverEventArgs.DeliveryTag, false);
-                                            }
-                                            else if (msgRecvdArgs.IsRejectMessage)
-                                            {
-                                                if (deliverEventArgs.Redelivered)
-                                                {
-                                                    _logger.InfoFormat("Nacking message. No requeue. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, false);
-                                                }
-                                                else
-                                                {
-                                                    _logger.InfoFormat("Nacking message. Re-queuing. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, true);
-                                                }
-                                            }
-                                        }
-
-                                        if (!msgRecvdArgs.ContinueConsuming)
-                                        {
-                                            this.StopConsuming();
-                                        }
-                                    }
-                                    catch
-                                    {
-                                        throw;
-                                    }
                                 }
-
-                                if (!_continueConsuming) break;
+                                throw MQEx;
                             }
+                            //}
 
-                            if (conn.IsOpen)
-                            {
-                                conn.Close();
-                            }
+                        }
+                    }
+
+                    log.Info(" SFTP process successfull.");
+                }
+
+                //scp.OnTransferEnd += new FileTransferEvent(scp_OnTransferEnd);
+                //scp.OnTransferProgress += new FileTransferEvent(scp_OnTransferProgress);
+                //scp.OnTransferStart += new FileTransferEvent(scp_OnTransferStart);
+
+                //sftp.Connect();
+                //sftp.cd(triPartyBankInfo.RemoteFolderPath);
+                //List<String> files = sftp.getFTPDirectoryListing(remoteFilePath);
+
+
+            }
+            catch (Exception e)
+            {
+                //throw new Exception(string.Format(" >> Error Occured.{0}", e.Source + "|" + e.Message));
+                throw new Exception(string.Format(" >> Error in SFTP process.Failed to download and delete file {0} for the following reason.{1}", remoteFilePath, e.Message));
+                //throw e;
+            }
+            finally
+            {
+                //if (sftp != null) sftp.Close();
+                log.Info(" End SFTP process");
+            }
+            //sftp.Get("",localFilePath);    
+        }
+    }    
+}
+
+
+/*
+
+
+private List<string> getFTPDirectoryListing()
+        {
+            List<string> files = new List<string>();
+            List<string> newFiles = new List<string>();
+
+            try
+            {
+                string fld = appConfig.AppSettings.Settings["FTPDirectory"].Value, user = appConfig.AppSettings.Settings["FTPUserName"].Value, pass = appConfig.AppSettings.Settings["FTPPassword"].Value;
+
+                FtpWebRequest request = (FtpWebRequest)FtpWebRequest.Create(fld);
+                request.Credentials = new NetworkCredential(user, pass);
+                request.UsePassive = false;
+                request.Method = WebRequestMethods.Ftp.ListDirectory;
+
+                using (StreamReader directoryList = new StreamReader(request.GetResponse().GetResponseStream()))
+                {
+                    string line = directoryList.ReadLine();
+                    while (line != null)
+                    {
+                        if (!String.IsNullOrEmpty(line)) { newFiles.Add(line.Trim()); }
+                        line = directoryList.ReadLine();
+                    }
+                }
+
+                request = (FtpWebRequest)FtpWebRequest.Create(fld);
+                request.Credentials = new NetworkCredential(user, pass);
+                request.UsePassive = false;
+                request.Method = WebRequestMethods.Ftp.ListDirectoryDetails;
+                using (StreamReader directoryList = new StreamReader(request.GetResponse().GetResponseStream()))
+                {
+                    String line = directoryList.ReadLine();
+                    while (line != null)
+                    {
+                        if (line.Trim().ToLower().StartsWith("d") || line.Contains(" <DIR> "))
+                        {
+                            String dir = newFiles.First(x => line.EndsWith(x));
+                            newFiles.Remove(dir);
+                        }
+                        line = directoryList.ReadLine();
+                    }
+                }
+
+                files.AddRange(from f in newFiles select f);
+            }
+            catch (Exception e)
+            {
+                if (log.IsInfoEnabled)
+                {
+                    log.Debug("FTP directory listing process failed for the following reason.");
+                    log.Debug(e.Message, e);
+                }
+                
+                using (MailMessage message = new MailMessage())
+                {
+
+                    try
+                    {
+                        message.From = new MailAddress("EquilendDMZ_Pub@stbusax.com");
+                        message.To.Add(appConfig.AppSettings.Settings["ErrorDistributionList"].Value);
+                        message.Subject = "EquilendDMZ_Pub error on " + Environment.MachineName;
+                        message.Body = "Message:\n\n";
+                        message.Body += "FTP directory listing process failed for the following reason.";
+                        message.Body += "Error:\n\n";
+                        message.Body += e.Message;
+
+                        // send message
+                        SmtpClient client = new SmtpClient(appConfig.AppSettings.Settings["MailServer"].Value);
+
+                        client.Send(message);
+                    }
+                    catch (Exception e1)
+                    {
+                        if (log.IsDebugEnabled) log.Debug(e.Message, e1);
+                    }
+                }
+                 
+                throw e;
+            }
+            return files;            
+        }
+
+        private void downloadFiles(List<string> files)
+        {            
+            foreach (string file in files)
+            {
+                downloadFile(file);
+            }
+        }
+
+        private void downloadFile(string remoteFileName)
+        {
+            string remoteFilePath = null;
+            string localFilePath = null;
+
+            if (log.IsInfoEnabled) log.Info("Start downloading file" + remoteFileName);
+
+            try
+            {
+                remoteFilePath = appConfig.AppSettings.Settings["FTPDirectory"].Value + "/" + remoteFileName;
+
+                FtpWebRequest request = (FtpWebRequest)FtpWebRequest.Create(remoteFilePath);
+                request.Credentials = new NetworkCredential(appConfig.AppSettings.Settings["FTPUserName"].Value, appConfig.AppSettings.Settings["FTPPassword"].Value);
+                request.Method = WebRequestMethods.Ftp.DownloadFile;
+                request.UsePassive = false;
+                request.UseBinary = true;
+
+                localFilePath = appConfig.AppSettings.Settings["DestinationFolder"].Value + "/" + remoteFileName;
+
+                using (FileStream outputStream = new FileStream(localFilePath, FileMode.Create, FileAccess.Write))
+                {
+                    using (Stream responseStream = request.GetResponse().GetResponseStream())
+                    {
+                        // .net 4 optimized way to copy stream
+                        responseStream.CopyTo(outputStream);
+
+                        //fileBuffer = new byte[BLOCKSIZE];
+                        //int readCount = responseStream.Read(fileBuffer, 0, BLOCKSIZE);
+
+                        //while (readCount > 0)
+                        //{
+                        //    outputStream.Write(fileBuffer, 0, readCount);
+                        //    readCount = responseStream.Read(fileBuffer, 0, BLOCKSIZE);
+                        //}
+                    }
+                }
+
+                request = null;
+                
+            }
+            catch (Exception e)
+            {
+                if (log.IsInfoEnabled)
+                {
+                    log.Debug("Failed to download a file " + remoteFilePath  + " for the following reason.");
+                    log.Debug(e.Message, e);
+                }
+                
+                using (MailMessage message = new MailMessage())
+                {
+
+                    try
+                    {
+                        message.From = new MailAddress("EquilendDMZ_Pub@stbusax.com");
+                        message.To.Add(appConfig.AppSettings.Settings["ErrorDistributionList"].Value);
+                        message.Subject = "EquilendDMZ_Pub error on " + Environment.MachineName;
+                        message.Body = "Message:\n\n";
+                        message.Body += "Failed to download a file " + remoteFilePath + " for the following reason.";
+                        message.Body += "Error:\n\n";
+                        message.Body += e.Message;
+
+                        // send message
+                        SmtpClient client = new SmtpClient(appConfig.AppSettings.Settings["MailServer"].Value);
+
+                        client.Send(message);
+                    }
+                    catch (Exception e1)
+                    {
+                        if (log.IsDebugEnabled) log.Debug(e.Message, e1);
+                    }
+                }
+                 
+                throw e;
+            }
+
+            if (log.IsInfoEnabled) log.Info("End downloading file" + remoteFileName);
+
+            //handle remote file
+            taskFactory.StartNew(() => { HandleReomteFile(remoteFilePath); });
+
+            //decrypt file
+            taskFactory.StartNew(() => { DecriptFile(localFilePath); });            
+        }
+
+        private void DecriptFile(string localFilePath)
+        {
+            if (log.IsInfoEnabled) log.Info("Start decrypting " +  localFilePath);
+
+            //decrypt file first
+            string decriptedFilePath = localFilePath.Substring(0, localFilePath.LastIndexOf("."));
+
+            try
+            {
+                using (Stream fis = new FileStream(localFilePath, FileMode.Open))
+                {
+                    using (FileStream outputStream = new FileStream(decriptedFilePath, FileMode.Create, FileAccess.Write))
+                    {
+                        using (Stream decryptStream = PGPWrapper.DecryptStream(fis, appConfig.AppSettings.Settings["PGPPrivateKeyFile"].Value, appConfig.AppSettings.Settings["PGPPassphrase"].Value))
+                        {
+                            // .net 4 optimized way to copy stream
+                            decryptStream.CopyTo(outputStream);
+
+                            //fileBuffer = new byte[BLOCKSIZE];
+                            //int readCount = decryptStream.Read(fileBuffer, 0, BLOCKSIZE);
+
+                            //while (readCount > 0)
+                            //{
+                            //    outputStream.Write(fileBuffer, 0, readCount);
+                            //    readCount = decryptStream.Read(fileBuffer, 0, BLOCKSIZE);
+                            //}
                         }
                     }
                 }
-                catch 
+            }
+            catch (Exception e)
+            {
+                if (log.IsInfoEnabled)
                 {
-                    throw;
+                    log.Debug("Decryption process failed for the following reason.");
+                    log.Debug(e.Message, e);
                 }
-
-            } while (_continueConsuming);            
- 
-        }
-
-        private void ConnectionShutdown(IConnection connection, ShutdownEventArgs reason)
-        {
-            try
-            {
-                DoMQOnStopConsuming(reason);
-            }
-            catch 
-            {
-                throw;
-            }
-        }
-        #endregion 
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
-using System.ComponentModel;
-using Common.Logging;
-using SMTBUSA.Messaging.Producer;
-using SMTBUSA.FailSafe.RetryLogic;
-using SMTBUSA.FailSafe;
-using System.Collections;
-
-namespace SMTBUSA.Messaging.Consumer
-{
-
-    public class ConsumeMessageFaultException : ApplicationException
-    {
-        public ConsumeMessageFaultException(string message , Exception innerException) : base(message, innerException)
-        {
-        }
-    }
-
-
-    public class MQConsumer : MQBase
-    {
-        private bool _continueConsuming;
-        private static ILog _logger = LogManager.GetLogger(typeof(MQConsumer));
-        private const string MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID = "SMTBUSA.Messaging.MQConsumer.ConsumeMessageActivity";
-
-        #region Events
-        public delegate void MQMessageReceivedHandler(object sender, MQMessageReceivedArgs args);
-        public delegate void MQOnStopConsumingEventHandler(object sender, MQOnStopConsumingEventArgs args);
-        public delegate void MQDequeueCompletedEventHandler(object sender);
-
-        public event MQMessageReceivedHandler MQMessageReceived;
-        public event MQOnStopConsumingEventHandler MQOnStopConsumingEvent;
-        public event MQDequeueCompletedEventHandler MQDequeueCompleted;
-        public event OnFailHandler MQConsumerCompositeRetry;
-        #endregion 
-
-        #region MQ Subscriber Properties
-        public int QueueTimeout { get; set; }        //Dequeue timeout
-        public bool IsAutoAck { get; set; }
-        public ushort PrefetchCount { get; set; }
-        #endregion 
-
-        #region Constructor
-        public MQConsumer (string hostName, int portNumber, string userName, string passWord, string vHost) : base(hostName, portNumber, userName, passWord, vHost) 
-        {
-            PrefetchCount = 1;
-        }
-        #endregion 
-
-        #region Methods
-        public void ConsumeMessages()
-        {
-            try
-            {
-                _continueConsuming = true;
-                this.SafeInvokeConsumeMessages();
-            }
-            catch 
-            {
-                throw;
-            }
-        }
-
-        public void ConsumeSingleMessage()
-        {
-            try
-            {
-                _continueConsuming = false;
-                this.SafeInvokeConsumeMessages();
-            }
-            catch 
-            {
-                throw;
-            }
-        }
-
-        public void StopConsuming()
-        {
-            _logger.InfoFormat("Stop consuming request received. Host: {0}, Port: {1}, Exchange: {2}, Queue: {3}", this.HostName, this.Port, this.ExchangeName, this.QueueName);
-            _continueConsuming = false;
-        }
-
-        private void SafeInvokeConsumeMessages()
-        {
-            try
-            {
-                Action consumeMessagesAction = () => { DoConsumeMessages(); };
-                FailSafeActivity failSafeConsume = new FailSafeActivity(MQCONSUMER_CONSUME_MESSAGE_ACTIVITYID);
                 
-
-                failSafeConsume.OnFail += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
-                                                            {
-                                                                _logger.Error(failArgs.Exception);
-                                                            });
-                
-                failSafeConsume.OnCompositeRetry += new OnFailHandler((object sender, OnFailEventArgs failArgs) =>
+                using (MailMessage message = new MailMessage())
                 {
-                    if (MQConsumerCompositeRetry != null)
+
+                    try
                     {
-                        MQConsumerCompositeRetry(this, failArgs);
+                        message.From = new MailAddress("EquilendDMZ_Pub@stbusax.com");
+                        message.To.Add(appConfig.AppSettings.Settings["ErrorDistributionList"].Value);
+                        message.Subject = "EquilendDMZ_Pub error on " + Environment.MachineName;
+                        message.Body = "Message:\n\n";
+                        message.Body += "Decryption process failed for the following reason.";
+                        message.Body += "Error:\n\n";
+                        message.Body += e.Message;
+
+                        // send message
+                        SmtpClient client = new SmtpClient(appConfig.AppSettings.Settings["MailServer"].Value);
+
+                        client.Send(message);
                     }
-                });
-
-
-                failSafeConsume.OnSuccess += new Action(() => { });
-                failSafeConsume.Invoke(consumeMessagesAction);
+                    catch (Exception e1)
+                    {
+                        if (log.IsDebugEnabled) log.Debug(e.Message, e1);
+                    }
+                } 
+                 
+                throw e;
             }
-            catch
-            {
-                throw;
-            }
+
+            if (log.IsInfoEnabled) log.Info("End decrypting " + localFilePath + " in following location " + decriptedFilePath);
+
+            //send mq notification for intranet process to start processing file
+            taskFactory.StartNew(() => { SendMQNotification(decriptedFilePath); });
         }
 
-        private void DoMQDequeueCompleted()
+        private void HandleReomteFile(string filePath)
         {
-
-            if (MQDequeueCompleted == null) { return; }
+            FtpWebRequest request = null;
+            string remoteFileLocation = appConfig.AppSettings.Settings["FTPDirectory"].Value + "/" + System.DateTime.Today.ToString("yyyy-MM-dd");
             try
             {
-                MQDequeueCompleted(this);
+                request = (FtpWebRequest)FtpWebRequest.Create(remoteFileLocation);
+                request.Credentials = new NetworkCredential(appConfig.AppSettings.Settings["FTPUserName"].Value, appConfig.AppSettings.Settings["FTPPassword"].Value);
+                request.Method = WebRequestMethods.Ftp.MakeDirectory;
+                request.UsePassive = false;
+                request.GetResponse().Close();
             }
-            catch 
+            catch (Exception e)
             {
-                throw;
-            }
-        }
-
-        private void DoMQMessageReceived(MQMessageReceivedArgs args)
-        {
-            if (MQMessageReceived == null) { return; } 
-
-            try
-            {
-                MQMessageReceived(this, args);
-            }
-            catch
-            {
-                throw;
-            }
-        }
-
-        private void DoMQOnStopConsuming(ShutdownEventArgs reason)
-        {
-            _logger.WarnFormat("RabbitMQ connection is shutting down. {0}. {1}. Exchange: {2}, Quueue: {3}", reason.ReplyText, reason.ToString(), this.ExchangeName, this.QueueName);
-
-            if (MQOnStopConsumingEvent == null)
-                return;
-
-            try
-            {
-                MQOnStopConsumingEvent(this, new MQOnStopConsumingEventArgs() { 
-                                                                                Reason = string.Format("{0} {1}",reason.ReplyText, reason.ToString())
-                                                                              });
-            }
-            catch
-            {
-                throw;
-            }
-        }
-
-        private void DoConsumeMessages()
-        {
-            do
-            {
-                try
+                if (log.IsInfoEnabled)
                 {
-                    _logger.InfoFormat("Consuming messages. Host: {0}, Port: {1}, QueueName: {2}", this.HostName, this.Port, this.QueueName);
+                    log.Debug("HandleReomteFile: Directory " + remoteFileLocation + " already exists");
+                    log.Debug(e.Message, e);
+                }
+            }
 
-                    ConnectionFactory connectionFactory = new ConnectionFactory()
+            string file = @"./" + System.DateTime.Today.ToString("yyyy-MM-dd") + @"/" + filePath.Substring(filePath.LastIndexOf('/') + 1);
+            try
+            {
+
+                request = (FtpWebRequest)FtpWebRequest.Create(filePath);
+                request.Credentials = new NetworkCredential(appConfig.AppSettings.Settings["FTPUserName"].Value, appConfig.AppSettings.Settings["FTPPassword"].Value);
+                request.Method = WebRequestMethods.Ftp.Rename;
+                request.RenameTo = file;
+                request.UsePassive = false;
+                request.GetResponse().Close();
+            }
+            catch (Exception e)
+            {
+                if (log.IsInfoEnabled)
+                {
+                    log.Debug("HandleReomteFile: File " + file + " already exists");
+                    log.Debug(e.Message, e);
+                }
+                
+                using (MailMessage message = new MailMessage())
+                {
+
+                    try
                     {
-                        HostName = this.HostName,
-                        Port = this.Port,
-                        UserName = this.UserName,
-                        Password = this.Password,
-                        VirtualHost = this.VHost,
-                        RequestedHeartbeat = new TimeSpan(0, 0, this.HeartBeat)
-                    };
+                        message.From = new MailAddress("EquilendDMZ_Pub@stbusax.com");
+                        message.To.Add(appConfig.AppSettings.Settings["ErrorDistributionList"].Value);
+                        message.Subject = "EquilendDMZ_Pub error on " + Environment.MachineName;
+                        message.Body = "Message:\n\n";
+                        message.Body += "HandleReomteFile: File " + file + " already exists";
+                        message.Body += "Error:\n\n";
+                        message.Body += e.Message;
 
-                    using (IConnection conn = connectionFactory.CreateConnection())
+                        // send message
+                        SmtpClient client = new SmtpClient(appConfig.AppSettings.Settings["MailServer"].Value);
+
+                        client.Send(message);
+                    }
+                    catch (Exception e1)
                     {
-                        //conn.ConnectionShutdown += new ConnectionShutdownEventHandler(ConnectionShutdown);
-                        conn.ConnectionShutdown += (connection1, reason) =>
-                            {
-                                try
-                                {
-                                    DoMQOnStopConsuming(reason);
-                                }
-                                catch
-                                {
-                                    throw;
-                                }
-                            };
-
-                        using (IModel channel = conn.CreateModel())
-                        {
-                            channel.QueueBind(QueueName, ExchangeName, RoutingKey);
-
-                            EventingBasicConsumer consumer = new EventingBasicConsumer(channel);
-
-                            consumer.Received += (model, deliverEventArgs) =>
-                            {
-
-
-                                // Extract message body bytes
-                                var body = deliverEventArgs.Body.ToArray();
-
-                                // Convert bytes back to string
-                                var message = Encoding.UTF8.GetString(body);
-
-                                this.DoMQDequeueCompleted();
-
-
-                                if (deliverEventArgs != null)
-                                {
-                                    _logger.DebugFormat("MQ message read from queue. DeliveryTag: {0}", deliverEventArgs.DeliveryTag);
-                                    try
-
-                                    {
-                                        MQMessageReceivedArgs msgRecvdArgs = new MQMessageReceivedArgs()
-                                        {
-                                            DeliveryTag = deliverEventArgs.DeliveryTag,
-                                            MessageBody = deliverEventArgs.Body.ToArray(),
-                                            HeaderProperties = (deliverEventArgs.BasicProperties != null) ? deliverEventArgs.BasicProperties.Headers : null,
-                                            ContinueConsuming = true
-                                        };
-
-                                        this.DoMQMessageReceived(msgRecvdArgs);
-
-                                        if (!IsAutoAck)
-                                        {
-                                            if (msgRecvdArgs.IsAcknowledge)
-                                            {
-                                                _logger.InfoFormat("Acknowledging message. DeliveryTag: {0},  MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                channel.BasicAck(deliverEventArgs.DeliveryTag, false);
-                                            }
-                                            else if (msgRecvdArgs.IsRejectMessage)
-                                            {
-                                                if (deliverEventArgs.Redelivered)
-                                                {
-                                                    _logger.InfoFormat("Nacking message. No requeue. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, false);
-                                                }
-                                                else
-                                                {
-                                                    _logger.InfoFormat("Nacking message. Re-queuing. DeliveryTag: {0}, MessageText: {1}", deliverEventArgs.DeliveryTag, msgRecvdArgs.ToString());
-                                                    channel.BasicNack(deliverEventArgs.DeliveryTag, false, true);
-                                                }
-                                            }
-                                        }
-
-                                        if (!msgRecvdArgs.ContinueConsuming)
-                                        {
-                                            this.StopConsuming();
-                                        }
-                                    }
-                                    catch
-                                    {
-                                        throw;
-                                    }
-                                }
-
-                            };
-                            
-                            channel.BasicQos(0, PrefetchCount, false);              //TODO: verify the QoS args
-
-                            while (true)
-                            {
-                                channel.BasicConsume(QueueName, IsAutoAck, consumer);
-                                if (!_continueConsuming) break;
-                            }
-
-                            if (conn.IsOpen)
-                            {
-                                conn.Close();
-                            }
-                        }
+                        if (log.IsDebugEnabled) log.Debug(e.Message, e1);
                     }
                 }
-                catch 
-                {
-                    throw;
-                }
-
-            } while (_continueConsuming);            
- 
-        }
-
-        private void ConnectionShutdown(IConnection connection, ShutdownEventArgs reason)
-        {
-            try
-            {
-                DoMQOnStopConsuming(reason);
-            }
-            catch 
-            {
-                throw;
+                 
             }
         }
-        #endregion 
-    }
-}
 
-
-
-
-
-
-
-
-
-#region Assembly RabbitMQ.Client, Version=6.0.0.0, Culture=neutral, PublicKeyToken=89e7d7c5feba84ce
-// C:\Users\dcolaco\TFS\Utilities\Common\Assembly\Binaries(x64)\RabbitMQ.Client.dll
-// Decompiled with ICSharpCode.Decompiler 9.1.0.7988
-#endregion
-
-using System;
-
-namespace RabbitMQ.Client.Events;
-
-public class BasicDeliverEventArgs : EventArgs
-{
-    public IBasicProperties BasicProperties { get; set; }
-
-    public ReadOnlyMemory<byte> Body { get; set; }
-
-    public string ConsumerTag { get; set; }
-
-    public ulong DeliveryTag { get; set; }
-
-    public string Exchange { get; set; }
-
-    public bool Redelivered { get; set; }
-
-    public string RoutingKey { get; set; }
-
-    public BasicDeliverEventArgs()
-    {
-    }
-
-    public BasicDeliverEventArgs(string consumerTag, ulong deliveryTag, bool redelivered, string exchange, string routingKey, IBasicProperties properties, ReadOnlyMemory<byte> body)
-    {
-        ConsumerTag = consumerTag;
-        DeliveryTag = deliveryTag;
-        Redelivered = redelivered;
-        Exchange = exchange;
-        RoutingKey = routingKey;
-        BasicProperties = properties;
-        Body = body;
-    }
-}
-#if false // Decompilation log
-'25' items in cache
-------------------
-Resolve: 'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Found single assembly: 'mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll'
-------------------
-Resolve: 'System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-Found single assembly: 'System.Memory, Version=4.0.1.2, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-Load from: 'C:\Program Files\IIS\Microsoft Web Deploy V3\System.Memory.dll'
-------------------
-Resolve: 'System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Found single assembly: 'System.Core, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.Core.dll'
-------------------
-Resolve: 'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Found single assembly: 'System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
-Load from: 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\System.dll'
-------------------
-Resolve: 'System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-Could not find by name: 'System.Buffers, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-------------------
-Resolve: 'System.Threading.Channels, Version=7.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-Could not find by name: 'System.Threading.Channels, Version=7.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-------------------
-Resolve: 'System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-Could not find by name: 'System.Threading.Tasks.Extensions, Version=4.2.0.1, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51'
-------------------
-Resolve: 'System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
-Could not find by name: 'System.Runtime.CompilerServices.Unsafe, Version=4.0.4.1, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
-#endif
+*/
