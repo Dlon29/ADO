@@ -1,7 +1,220 @@
-Exception in ValidateRequestAgainstInjection:
-System.Threading.ThreadAbortException: Thread was being aborted.
-   at System.Threading.Thread.AbortInternal()
-   at System.Threading.Thread.Abort(Object stateInfo)
-   at System.Web.HttpResponse.AbortCurrentThread()
-   at System.Web.HttpResponse.Redirect(String url, Boolean endResponse, Boolean permanent)
-   at MOBETTER.Common.ValidateRequestAgainstInjection(NameValueCollection formPostParam, Uri requestURL)
+CREATE PROCEDURE [dbo].[p_EquityMovementReport]
+(
+	@BatchStartDate 		DATETIME,
+	@BatchEndDate 			DATETIME=NULL,
+	@ReportID				SMALLINT=0,	-- Named Report Id
+	@IsFileExtract			BIT=NULL,	-- 0 = No; 1 = Yes
+	@IsLondonOnly			BIT=NULL,	-- 0 = No; 1 = Yes
+	@IsDetailedCodes		BIT=NULL,	-- 0 = No; 1 = Yes, 
+	@ReportAction			VARCHAR(10)='SNAPSHOT',	-- 'SNAPSHOT/RESET/REFRESH/CLIENT'
+	@IsRefreshSnapshot		BIT=0,
+	@ModifiedBy				VARCHAR(50)= NULL 
+)
+AS
+
+BEGIN
+
+    DECLARE @ErrorMessage NVARCHAR(4000)
+	DECLARE @ErrorSeverity INT
+	DECLARE @ErrorState INT
+
+	BEGIN TRY
+	    
+		SET NOCOUNT ON
+		DECLARE @BatchRunDate AS DATETIME, @IsEquityMovementCompleted BIT,@CurrentBatchDate DATETIME
+
+		SET NOCOUNT ON	
+		SET @BatchRunDate = CONVERT(VARCHAR(10), ISNULL(@BatchStartDate,GETDATE()), 101)	--Eliminate time portion of date	
+		SET @BatchEndDate = ISNULL(	@BatchEndDate,@BatchRunDate)
+
+		SELECT @CurrentBatchDate = CurrentBatchDate FROM GlobalOne.dbo.vw_G1_System
+
+		SELECT @IsEquityMovementCompleted = ISNULL(IsCompleted,0) FROM	EquityMovementReportHeader
+			WHERE AsOfDate = @BatchRunDate
+
+		IF ( @ReportAction = 'CLIENT' ) OR ( @ReportAction = 'SUBMIT' )   SET @IsDetailedCodes = 0 -- Summary / Client View
+		
+		-- Check for Same day edits and Completed status and force RESET ( Refresh Snapshot table )
+		IF ((@ReportAction = 'RESET' OR @ReportAction = 'REFRESH') AND( ISNULL(@IsEquityMovementCompleted,0) = 0 ) AND ( CONVERT(VARCHAR(10),@BatchRunDate,101) = CONVERT(VARCHAR(10),@CurrentBatchDate,101) ))
+		BEGIN		
+			SET @IsRefreshSnapshot = 1			
+		END	
+		ELSE
+		BEGIN
+			SET @IsRefreshSnapshot = 0			
+		END
+
+		SET @IsLondonOnly = ISNULL(@IsLondonOnly,0) 
+		
+		IF (@ReportAction = 'SUBMIT') -- Equity Movement Completion.
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM EquityMovementReportHeader WHERE ( AsOfDate = @BatchRunDate ))
+			BEGIN
+
+				INSERT INTO EquityMovementReportHeader
+				(
+					AsOfDate, IsCompleted, ModifiedBy, ModifiedDate
+				)
+				SELECT @BatchRunDate, 1, @ModifiedBy, GetDate()
+
+			END
+			ELSE
+			BEGIN  
+				UPDATE EquityMovementReportHeader
+				SET IsCompleted		= 1,
+					ModifiedBy		= @ModifiedBy,
+					ModifiedDate	= GETDATE()
+				WHERE
+					( AsOfDate = @BatchRunDate )
+			END
+
+			UPDATE EquityMovementReportSnapShot
+			SET IsClientView = 1,
+				ModifiedBy = @ModifiedBy,
+				ModifiedDate = GetDate()
+			WHERE
+				AsOfDate = @BatchRunDate AND
+				IsDeleted = 0 AND -- Exclude Deleted
+		        ProcDate <= @BatchRunDate  -- Exclude T/D greater than Business Date 
+			
+			
+		END
+		ELSE IF (@ReportAction = 'UNSUBMIT') -- Un-Freeze / Reverse Submit
+		BEGIN
+
+			UPDATE EquityMovementReportHeader
+			SET IsCompleted		= 0,
+				ModifiedBy		= @ModifiedBy,
+				ModifiedDate	= GETDATE()
+			WHERE
+				( AsOfDate = @BatchRunDate )
+
+			UPDATE EquityMovementReportSnapShot
+			SET IsClientView = 0,
+				ModifiedBy = @ModifiedBy,
+				ModifiedDate = GetDate()
+			WHERE
+				AsOfDate = @BatchRunDate AND 
+				IsClientView = 1 
+	
+		END
+
+		IF ( @IsFileExtract = 1 ) -- Data ouptput for Mo-Feed / web Portal.
+		BEGIN
+
+			SELECT
+				ID, SecID, PfID, AsOfDate,
+				Toe = CASE WHEN (FaceAmtChange < 0) THEN 'RET'	-- Negative effect is Return
+					ELSE 'NEW' END,								-- Positive effect is New Loan
+				ProcDate, LoanDate, AcctNbr, CollCCYCode, FaceAmtChange, NewPrice, NetAmount,
+				CCYCode, SecCode, SecDesc, TxnRefNbr, TxnSeqNbr, TxnSuffix, FinderNbr, IsReconciled, ModifiedBy, ModifiedDate
+			FROM
+				  MoBetter.dbo.EquityMovementReportSnapshot
+			WHERE
+				  AsOfDate BETWEEN @BatchStartDate AND @BatchEndDate AND
+				  IsClientView = 1	
+
+			RETURN
+
+		END
+
+		-- Get EquityMovement temp table Schema.
+		IF ( OBJECT_ID('tempdb..#TMP_ACTIVITY','U') IS NULL )
+		BEGIN
+			SELECT 
+				TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
+				SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate
+			INTO #TMP_ACTIVITY
+			FROM dbo.f_CreateEquityMovementReportActivitySchema() 
+
+		END	
+	
+		--If applicable, populate snapshot
+		IF (( @IsRefreshSnapshot = 1 ) OR NOT EXISTS(SELECT 1 FROM EquityMovementReportSnapshot WHERE ( AsOfDate = @BatchRunDate )))
+		BEGIN
+
+			EXEC [p_GetEquityMovementReport] @BatchRunDate, @ReportID, @IsFileExtract, @IsLondonOnly, 1, 0	
+	
+			DELETE FROM EquityMovementReportSnapshot 
+				WHERE ( AsOfDate = @BatchRunDate )
+
+			INSERT INTO EquityMovementReportSnapshot 
+			( 
+				AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
+				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
+				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks,IsClientView, ModifiedBy, ModifiedDate
+			)
+			SELECT DISTINCT
+				@BatchRunDate AS AsOfDate,  TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
+				Toe, NewPrice, SecCode, SecID, SEDOL, SecDesc, Spread, ISNULL(PFID,0), CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode,
+				CollNbr, FinderNbr, 0, IsReconciled, NULL AS ActionType, CASE (IsReconciled) WHEN 0 THEN 'Recon Error' END AS Remarks,0 AS IsClientView, @ModifiedBy, GetDate() 												   
+			FROM 
+				#TMP_ACTIVITY
+		END	
+	
+		-- INSERT INTO Snapshot temp table for Customization.
+		SELECT 
+			ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
+			Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
+			CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
+		INTO #TMP_EQUITY_MOVEMENT_SNAPSHOT
+		FROM 
+			EquityMovementReportSnapshot AS TMP_EQ_MVMT
+		WHERE 
+			( AsOfDate = @BatchRunDate ) AND 
+			(
+				( ISNULL(@IsLondonOnly,0) = 0 ) OR 
+				(
+					( ISNULL(@IsLondonOnly,0) = 1 ) AND ( TMP_EQ_MVMT.FinderNbr = '000LDN' ) 
+				)
+			)
+		ORDER BY 
+			TxnRefNbr, Toe, SecCode, AcctCode		
+	
+		--Query from snapshot temp table for output results
+		IF ( @IsDetailedCodes = 0) -- Summary / Client View Extract / Submit
+		BEGIN
+
+			UPDATE #TMP_EQUITY_MOVEMENT_SNAPSHOT
+			SET  Toe = CASE WHEN (FaceAmtChange < 0) THEN 'RET'	-- Negative effect is Return
+					   ELSE 'NEW' END						    -- Positive effect is New Loan
+
+			SELECT 
+				ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
+				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
+				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
+			FROM #TMP_EQUITY_MOVEMENT_SNAPSHOT
+			WHERE
+				( IsDeleted = 0 )			   AND -- Exclude Deleted
+			    ( ProcDate <= @BatchRunDate )	   -- Exclude T/D greater than Business Date
+			ORDER BY 
+				Toe, TxnRefNbr, ProcDate, SecCode, AcctCode	
+			
+        END	
+		ELSE -- All Detailed View Operations.
+		BEGIN
+	
+			SELECT 
+				ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
+				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
+				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
+			FROM 
+				#TMP_EQUITY_MOVEMENT_SNAPSHOT AS TMP_EQ_MVMT
+			ORDER BY
+				Toe, TxnRefNbr, ProcDate, SecCode, AcctCode	
+			
+        END
+	
+	    SET NOCOUNT OFF			
+			
+	END TRY
+	BEGIN CATCH
+		SET @ErrorMessage = 'Error while trying to return Equity Movement Report. ' +  ERROR_MESSAGE() 
+		SET @ErrorSeverity = ERROR_SEVERITY()
+		SET @ErrorState = ERROR_STATE()
+		
+		EXEC dbo.op_InsertEventLog  @Source = 'SP', @Severity=20, @Type = 'E', @ParameterXML=NULL, @EventXML = NULL, @Remarks = @ErrorMessage, @User =  NULL
+		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);	
+		RETURN 1 	
+	END CATCH
+END
