@@ -1,192 +1,23 @@
-public static void ValidateRequestAgainstInjection(NameValueCollection formPostParam, Uri requestURL)
+if ((IsAlphaNumeric(prevChar) || prevChar == BLANK_SPACE) && (IsAlphaNumeric(nextChar) || nextChar == BLANK_SPACE))
 {
-    string configKeySqlInjectionFilter = ConfigurationManager.AppSettings[CONFIG_KEY_SQLINJECTION_FILTER];
-    string configKeyLDAPInjectionFilter = ConfigurationManager.AppSettings[CONFIG_KEY_LDAPINJECTION_FILTER];
-    string configKeyLDAPInjectionControls = ConfigurationManager.AppSettings[CONFIG_KEY_LDAPINJECTION_CONTROLS];
-    string configKeyPageListPeriodCheck = ConfigurationManager.AppSettings[CONFIG_KEY_PAGES_PERIODCHECK];
-    string configKeyPeriodChar = ConfigurationManager.AppSettings[CONFIG_KEY_PERIOD_CHAR];
-
-    string[] arrstrFilterString = null;
-    string[] arrLDAPControls = null;
-    string[] arrLDAPFilters = null;
-    string[] arrPageListPeriodChecks = null;
-    string postValue = "";
-    InjectionError clsError = null;
-    string specialKeyword = "";
-    string prevChar = "";
-    string nextChar = "";
-    char dotchar = ' ';
-
-    try
-    {
-        if (!string.IsNullOrEmpty(configKeySqlInjectionFilter))
-        {
-            arrstrFilterString = configKeySqlInjectionFilter.Split(',');
-        }
-
-        if (!string.IsNullOrEmpty(configKeyLDAPInjectionFilter))
-        {
-            arrLDAPFilters = configKeyLDAPInjectionFilter.Split(',');
-        }
-
-        if (!string.IsNullOrEmpty(configKeyLDAPInjectionControls))
-        {
-            arrLDAPControls = configKeyLDAPInjectionControls.Split(',');
-        }
-
-        if (!string.IsNullOrEmpty(configKeyPageListPeriodCheck))
-        {
-            arrPageListPeriodChecks = configKeyPageListPeriodCheck.Split(',');
-        }
-
-        if (!string.IsNullOrEmpty(configKeyPeriodChar))
-        {
-            dotchar = configKeyPeriodChar[0];
-        }
-
-        //Check the Occurrence of "." in the URL. It should be 1 for the valid requests i.e. ".aspx"/".rpt" etc.
-        //If more than 1 Occurrence is detected then redirect to the Error Page.
-        if (requestURL != null)
-        {
-            //Apply this check only for the pages for which the scan issue was encountered.
-            if (arrPageListPeriodChecks.Any(requestURL.ToString().Contains))
-            {
-                string relativeRequestUrl = requestURL.ToString(); //NOTE: Retrieve only relative URL to ignore dot character of server name
-                var str = relativeRequestUrl;
-                var ch = '/';
-                var n = 3;
-                var result = str
-                  .Select((c, i) => new { c, i })
-                  .Where(x => x.c == ch)
-                  .Skip(n - 1)
-                  .FirstOrDefault();
-                relativeRequestUrl = relativeRequestUrl.Substring(result.i);
-                if (relativeRequestUrl.ToString().IndexOf(dotchar) != relativeRequestUrl.ToString().LastIndexOf(dotchar))
-                {
-                    //For some of the reports this condition may occur.
-                    //i.e URL would be something like  "AJAXServices/AJAXExcelService.aspx?fileName=JTSBLendingBalanceMonitoring.xls&BatchRunDate=7/06/2020"
-                    //We should allow such cases for report generation i.e. extn like .xls,.xlsx,.rpt,.pdf
-                    if (relativeRequestUrl.ToString().Length >= (relativeRequestUrl.ToString().LastIndexOf(dotchar) + 4))
-                    {
-                        //This is the case where last "." occurance may be followed by an extn .xls,.xlsx,.rpt,.pdf etc. 
-                        //As these are valid extensions and we should allow them.
-                        if (!reportExtn.Contains(relativeRequestUrl.ToString().Substring(relativeRequestUrl.ToString().LastIndexOf(dotchar), 4)))
-                        {
-                            clsError = new InjectionError();
-                            clsError.ErrNum = 5000;
-                            clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-                            clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-                            clsError.WindowStyle = "";
-                            HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        clsError = new InjectionError();
-                        clsError.ErrNum = 5000;
-                        clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-                        clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-                        clsError.WindowStyle = "";
-                        HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-                        return;
-                    }
-                }
-            }
-        }
-
-        for (int recform = 0; recform < formPostParam.Count; recform++)
-        {
-            if (formPostParam.Keys[recform] != null)
-            {
-                if (formPostParam[recform] != null)
-                {
-                    postValue = formPostParam[recform].ToString().ToLower();
-                    prevChar = nextChar = "";
-
-                    //Check start for LDAP Injections
-                    if (arrLDAPControls.Any(Convert.ToString(formPostParam.Keys[recform]).Contains))
-                    {
-                        if (arrLDAPFilters.Any(postValue.Contains))
-                        {
-                            clsError = new InjectionError();
-                            clsError.ErrNum = 5000;
-                            clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-                            clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-                            clsError.WindowStyle = "";
-                            HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-                            return;
-                        }
-                    }
-                    //Check end for LDAP Injections
-
-                    //Check whether the form post parameter contains the strings present in the Web.Config list.
-                    if (arrstrFilterString.Any(postValue.Contains))
-                    {
-                        ////If the Keyword mentioned in Web.Config list is found, then fetch the exact Keyword that is found in Post Parameter. 
-                        specialKeyword = arrstrFilterString.FirstOrDefault(filter => postValue.Contains(filter.ToString().ToLower()));
-
-                        if (IsAlphaNumeric(specialKeyword))
-                        {
-                            //Check the character present before and after this special Keyword, If it is alphanumeric/space 
-                            //i.e. not special char then Process the request else reject the request and Redirect to Information.aspx page.
-                            if (postValue.IndexOf(specialKeyword) != 0)
-                            {
-                                prevChar = postValue.Substring(postValue.IndexOf(specialKeyword) - 1, 1);
-                            }
-
-                            if (postValue.Length > (postValue.IndexOf(specialKeyword) + specialKeyword.Length))
-                            {
-                                nextChar = postValue.Substring((postValue.IndexOf(specialKeyword) + specialKeyword.Length), 1);
-                            }
-
-                            if ((IsAlphaNumeric(prevChar) || prevChar == BLANK_SPACE) && (IsAlphaNumeric(nextChar) || nextChar == BLANK_SPACE))
-                            {
-                                continue;  //goto next posted Value
-                            }
-                            else
-                            {
-                                clsError = new InjectionError();
-                                clsError.ErrNum = 5000;
-                                clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-                                clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-                                clsError.WindowStyle = "";
-                                HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            clsError = new InjectionError();
-                            clsError.ErrNum = 5000;
-                            clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-                            clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-                            clsError.WindowStyle = "";
-                            HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-                            return;
-                        }
-
-                    }
-                }
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        _logger.ErrorFormat("Exception in ValidateRequestAgainstInjection:", ex);
-    }
-    finally
-    {
-        if (clsError != null)
-        {
-            clsError.Dispose();
-            clsError = null;
-        }
-    }
-
+    continue;  //goto next posted Value
 }
+else
+{
+    clsError = new InjectionError();
+    clsError.ErrNum = 5000;
+    clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+    clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+    clsError.WindowStyle = "";
+    _logger.ErrorFormat("Reject4 [SQL] Field={0} Keyword={1} Prev={2} Next={3} Value={4}", formPostParam.Keys[recform], specialKeyword, prevChar, nextChar, postValue);
+    HttpContext.Current.Response.Redirect(_errInjectionPage);
+
+    return;
+}
+
+{INFO} 10/15/2026 05:27:23 [AD\admin] : Successfully accessed module. User: admin, Module: EquityMovementSummary
+{ERROR} 10/15/2026 05:27:40 [AD\admin] : Reject4 [SQL] Field=__VIEWSTATE Keyword=exec Prev=+ Next=s Value=ygcagtaarljftvpfsg0h4/fi6lpawlmbvxqtplodps/mdorkicni1pn6prbkdocosvi392upvwqz11cowm0jkfumzitdrvx3bheh+g20
+
+{INFO} 10/15/2026 08:41:36 [AD\admin] : Successfully accessed module. User: admin, Module: ACCOUNT
+{ERROR} 10/15/2026 11:42:23 [AD\admin] : Reject4 [SQL] Field=__VIEWSTATE Keyword=drop Prev=d Next=/ Value=aiewrclq3xemumozawfzlzcl3y0d04hs5aumqqvxmi2powz1i+2s+thtebke/y61scetqqp3m2cq5/s4avvb77+7a4jslf0icle+qspg82nv/ejn3oxd5ql+
+
