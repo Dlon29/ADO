@@ -1,23 +1,46 @@
-if ((IsAlphaNumeric(prevChar) || prevChar == BLANK_SPACE) && (IsAlphaNumeric(nextChar) || nextChar == BLANK_SPACE))
+string fieldName = formPostParam.Keys[recform];
+if (fieldName == "__VIEWSTATE" || fieldName == "__EVENTVALIDATION")
 {
-    continue;  //goto next posted Value
+    // ===== TEMPORARY PROOF LOGGING (remove after verification) =====
+    // postValue is still the raw lowercase base64 here. Run the OLD check on it, log only, never redirect.
+    try
+    {
+        if (arrstrFilterString.Any(postValue.Contains))
+        {
+            string proofKw = arrstrFilterString.FirstOrDefault(filter => postValue.Contains(filter.ToString().ToLower()));
+            int proofIdx = postValue.IndexOf(proofKw);
+            int proofStart = Math.Max(0, proofIdx - 100);
+            int proofEnd = Math.Min(postValue.Length, proofIdx + proofKw.Length + 100);
+            string proofExcerpt = postValue.Substring(proofStart, proofEnd - proofStart);
+
+            if (IsAlphaNumeric(proofKw))
+            {
+                string proofPrev = proofIdx != 0 ? postValue.Substring(proofIdx - 1, 1) : "";
+                string proofNext = postValue.Length > proofIdx + proofKw.Length ? postValue.Substring(proofIdx + proofKw.Length, 1) : "";
+
+                if (!((IsAlphaNumeric(proofPrev) || proofPrev == BLANK_SPACE) && (IsAlphaNumeric(proofNext) || proofNext == BLANK_SPACE)))
+                {
+                    _logger.ErrorFormat("WOULD-HAVE-REJECTED [Reject4-old] Field={0} Keyword={1} Prev={2} Next={3} ValueLen={4} Excerpt={5}",
+                        fieldName, proofKw, proofPrev, proofNext, postValue.Length, proofExcerpt);
+                }
+            }
+            else
+            {
+                _logger.ErrorFormat("WOULD-HAVE-REJECTED [Reject4-old-nonalnum] Field={0} Keyword={1} ValueLen={2} Excerpt={3}",
+                    fieldName, proofKw, postValue.Length, proofExcerpt);
+            }
+        }
+    }
+    catch (Exception) { /* proof logging must never affect the request */ }
+    // ===== END TEMPORARY PROOF LOGGING =====
+
+    // existing fix, unchanged
+    try
+    {
+        postValue = new LosFormatter().Deserialize(formPostParam[recform]).ToString().ToLower();
+    }
+    catch (Exception)
+    {
+        continue;
+    }
 }
-else
-{
-    clsError = new InjectionError();
-    clsError.ErrNum = 5000;
-    clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
-    clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
-    clsError.WindowStyle = "";
-    _logger.ErrorFormat("Reject4 [SQL] Field={0} Keyword={1} Prev={2} Next={3} Value={4}", formPostParam.Keys[recform], specialKeyword, prevChar, nextChar, postValue);
-    HttpContext.Current.Response.Redirect(_errInjectionPage);
-
-    return;
-}
-
-{INFO} 10/15/2026 05:27:23 [AD\admin] : Successfully accessed module. User: admin, Module: EquityMovementSummary
-{ERROR} 10/15/2026 05:27:40 [AD\admin] : Reject4 [SQL] Field=__VIEWSTATE Keyword=exec Prev=+ Next=s Value=ygcagtaarljftvpfsg0h4/fi6lpawlmbvxqtplodps/mdorkicni1pn6prbkdocosvi392upvwqz11cowm0jkfumzitdrvx3bheh+g20
-
-{INFO} 10/15/2026 08:41:36 [AD\admin] : Successfully accessed module. User: admin, Module: ACCOUNT
-{ERROR} 10/15/2026 11:42:23 [AD\admin] : Reject4 [SQL] Field=__VIEWSTATE Keyword=drop Prev=d Next=/ Value=aiewrclq3xemumozawfzlzcl3y0d04hs5aumqqvxmi2powz1i+2s+thtebke/y61scetqqp3m2cq5/s4avvb77+7a4jslf0icle+qspg82nv/ejn3oxd5ql+
-
