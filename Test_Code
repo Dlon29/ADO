@@ -1,220 +1,1986 @@
-CREATE PROCEDURE [dbo].[p_EquityMovementReport]
-(
-	@BatchStartDate 		DATETIME,
-	@BatchEndDate 			DATETIME=NULL,
-	@ReportID				SMALLINT=0,	-- Named Report Id
-	@IsFileExtract			BIT=NULL,	-- 0 = No; 1 = Yes
-	@IsLondonOnly			BIT=NULL,	-- 0 = No; 1 = Yes
-	@IsDetailedCodes		BIT=NULL,	-- 0 = No; 1 = Yes, 
-	@ReportAction			VARCHAR(10)='SNAPSHOT',	-- 'SNAPSHOT/RESET/REFRESH/CLIENT'
-	@IsRefreshSnapshot		BIT=0,
-	@ModifiedBy				VARCHAR(50)= NULL 
-)
-AS
+using Common.Logging;
+using STBUSA.Security;
+// our namespace
 
-BEGIN
+using STBUSA.Utility;
+using STBUSA.Utility.Win32API;
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Configuration;
+using System.Data;
+using System.Data.SqlClient;
+using System.Drawing.Printing;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Web;
+using System.Web.UI;
+using System.Web.UI.WebControls;
 
-    DECLARE @ErrorMessage NVARCHAR(4000)
-	DECLARE @ErrorSeverity INT
-	DECLARE @ErrorState INT
+namespace MOBETTER
+{
+    // class was added to resolve isues with DHTM syncronization to server side after upgrade to .NET 2.0.
+    public class ClientServerSynchronizer
+    {
+        public static void SynchTextBox(ref TextBox wc, ref HttpRequest r)
+        {
+            string requestValue = r[wc.ID];
 
-	BEGIN TRY
-	    
-		SET NOCOUNT ON
-		DECLARE @BatchRunDate AS DATETIME, @IsEquityMovementCompleted BIT,@CurrentBatchDate DATETIME
+            if (wc.Text != requestValue)
+            {
+                wc.Enabled = true;
+                wc.Text = requestValue;
+            }
+        }
+    }
 
-		SET NOCOUNT ON	
-		SET @BatchRunDate = CONVERT(VARCHAR(10), ISNULL(@BatchStartDate,GETDATE()), 101)	--Eliminate time portion of date	
-		SET @BatchEndDate = ISNULL(	@BatchEndDate,@BatchRunDate)
+    // class contains all global variables/constants.
 
-		SELECT @CurrentBatchDate = CurrentBatchDate FROM GlobalOne.dbo.vw_G1_System
+    public class GlobalVariable : IGlobalVariable
+    {
+        #region Global Variables
+        public static string _gsReportsTab = "";
 
-		SELECT @IsEquityMovementCompleted = ISNULL(IsCompleted,0) FROM	EquityMovementReportHeader
-			WHERE AsOfDate = @BatchRunDate
+        #endregion
 
-		IF ( @ReportAction = 'CLIENT' ) OR ( @ReportAction = 'SUBMIT' )   SET @IsDetailedCodes = 0 -- Summary / Client View
-		
-		-- Check for Same day edits and Completed status and force RESET ( Refresh Snapshot table )
-		IF ((@ReportAction = 'RESET' OR @ReportAction = 'REFRESH') AND( ISNULL(@IsEquityMovementCompleted,0) = 0 ) AND ( CONVERT(VARCHAR(10),@BatchRunDate,101) = CONVERT(VARCHAR(10),@CurrentBatchDate,101) ))
-		BEGIN		
-			SET @IsRefreshSnapshot = 1			
-		END	
-		ELSE
-		BEGIN
-			SET @IsRefreshSnapshot = 0			
-		END
+        #region Class Variables
+        // variables
+        static string _AppRoot;
+        static string _AppVersion;
+        static string _AssemblyVersion;
+        static string _AppConnectionString;
+        static string _AppFileServer;
+        static string _AppRuntimeServer;
+        static string _AuthType = "Both";
+        static string _Disclaimer = "";
 
-		SET @IsLondonOnly = ISNULL(@IsLondonOnly,0) 
-		
-		IF (@ReportAction = 'SUBMIT') -- Equity Movement Completion.
-		BEGIN
-			IF NOT EXISTS (SELECT 1 FROM EquityMovementReportHeader WHERE ( AsOfDate = @BatchRunDate ))
-			BEGIN
+        static string _NTUserName = "";
+        static string _ComputerName = "";
 
-				INSERT INTO EquityMovementReportHeader
-				(
-					AsOfDate, IsCompleted, ModifiedBy, ModifiedDate
-				)
-				SELECT @BatchRunDate, 1, @ModifiedBy, GetDate()
+        static string _ServerConfigPath;
+        static int _TraceLevel = 0;
 
-			END
-			ELSE
-			BEGIN  
-				UPDATE EquityMovementReportHeader
-				SET IsCompleted		= 1,
-					ModifiedBy		= @ModifiedBy,
-					ModifiedDate	= GETDATE()
-				WHERE
-					( AsOfDate = @BatchRunDate )
-			END
 
-			UPDATE EquityMovementReportSnapShot
-			SET IsClientView = 1,
-				ModifiedBy = @ModifiedBy,
-				ModifiedDate = GetDate()
-			WHERE
-				AsOfDate = @BatchRunDate AND
-				IsDeleted = 0 AND -- Exclude Deleted
-		        ProcDate <= @BatchRunDate  -- Exclude T/D greater than Business Date 
-			
-			
-		END
-		ELSE IF (@ReportAction = 'UNSUBMIT') -- Un-Freeze / Reverse Submit
-		BEGIN
+        //for router.dll
+        static string _AppCode;
+        static string _AppEnvironment;
+        static bool _IsDRS = false;
+        static string _DRSYN;
 
-			UPDATE EquityMovementReportHeader
-			SET IsCompleted		= 0,
-				ModifiedBy		= @ModifiedBy,
-				ModifiedDate	= GETDATE()
-			WHERE
-				( AsOfDate = @BatchRunDate )
+        //to check if class has been initialised
+        static bool _IsInitialised;
 
-			UPDATE EquityMovementReportSnapShot
-			SET IsClientView = 0,
-				ModifiedBy = @ModifiedBy,
-				ModifiedDate = GetDate()
-			WHERE
-				AsOfDate = @BatchRunDate AND 
-				IsClientView = 1 
-	
-		END
+        // Database connection properties
+        static string _DBServerName = "";
+        static string _DBName = "";
+        static string _DBName2 = "";
+        static string _DBUserID = "";
+        static string _DBPassword = "";
+        static bool _DBIntegratedSecurity = false;
+        static bool _DisableUploadStatusPopUp = false;
 
-		IF ( @IsFileExtract = 1 ) -- Data ouptput for Mo-Feed / web Portal.
-		BEGIN
+        static string _environment = "";
+        static string _environmentKeyColor = "";
 
-			SELECT
-				ID, SecID, PfID, AsOfDate,
-				Toe = CASE WHEN (FaceAmtChange < 0) THEN 'RET'	-- Negative effect is Return
-					ELSE 'NEW' END,								-- Positive effect is New Loan
-				ProcDate, LoanDate, AcctNbr, CollCCYCode, FaceAmtChange, NewPrice, NetAmount,
-				CCYCode, SecCode, SecDesc, TxnRefNbr, TxnSeqNbr, TxnSuffix, FinderNbr, IsReconciled, ModifiedBy, ModifiedDate
-			FROM
-				  MoBetter.dbo.EquityMovementReportSnapshot
-			WHERE
-				  AsOfDate BETWEEN @BatchStartDate AND @BatchEndDate AND
-				  IsClientView = 1	
+        //static Network clsWin32API_Network	= new Network();			// Win32API.Network
+        #endregion
 
-			RETURN
+        #region Class Properties
 
-		END
+        // NT Username - readonly property
+        /// <summary>Gets NT username. </summary>
+        public static string NTUserName
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _NTUserName;
+            }
+        }
 
-		-- Get EquityMovement temp table Schema.
-		IF ( OBJECT_ID('tempdb..#TMP_ACTIVITY','U') IS NULL )
-		BEGIN
-			SELECT 
-				TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-				SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate
-			INTO #TMP_ACTIVITY
-			FROM dbo.f_CreateEquityMovementReportActivitySchema() 
+        // Computer name - readonly property
+        /// <summary>Gets computer name. </summary>
+        public static string ComputerName
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _ComputerName;
+            }
+        }
 
-		END	
-	
-		--If applicable, populate snapshot
-		IF (( @IsRefreshSnapshot = 1 ) OR NOT EXISTS(SELECT 1 FROM EquityMovementReportSnapshot WHERE ( AsOfDate = @BatchRunDate )))
-		BEGIN
+        // application root - readonly property
+        /// <summary>Gets application physical directory.</summary>
+        public static string AppRoot
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppRoot;
+            }
+        }
 
-			EXEC [p_GetEquityMovementReport] @BatchRunDate, @ReportID, @IsFileExtract, @IsLondonOnly, 1, 0	
-	
-			DELETE FROM EquityMovementReportSnapshot 
-				WHERE ( AsOfDate = @BatchRunDate )
+        // application version - readonly property
+        /// <summary>Gets application version from webconfig.</summary>
+        public static string AppVersion
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppVersion;
+            }
+        }
 
-			INSERT INTO EquityMovementReportSnapshot 
-			( 
-				AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
-				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
-				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks,IsClientView, ModifiedBy, ModifiedDate
-			)
-			SELECT DISTINCT
-				@BatchRunDate AS AsOfDate,  TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
-				Toe, NewPrice, SecCode, SecID, SEDOL, SecDesc, Spread, ISNULL(PFID,0), CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode,
-				CollNbr, FinderNbr, 0, IsReconciled, NULL AS ActionType, CASE (IsReconciled) WHEN 0 THEN 'Recon Error' END AS Remarks,0 AS IsClientView, @ModifiedBy, GetDate() 												   
-			FROM 
-				#TMP_ACTIVITY
-		END	
-	
-		-- INSERT INTO Snapshot temp table for Customization.
-		SELECT 
-			ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
-			Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
-			CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
-		INTO #TMP_EQUITY_MOVEMENT_SNAPSHOT
-		FROM 
-			EquityMovementReportSnapshot AS TMP_EQ_MVMT
-		WHERE 
-			( AsOfDate = @BatchRunDate ) AND 
-			(
-				( ISNULL(@IsLondonOnly,0) = 0 ) OR 
-				(
-					( ISNULL(@IsLondonOnly,0) = 1 ) AND ( TMP_EQ_MVMT.FinderNbr = '000LDN' ) 
-				)
-			)
-		ORDER BY 
-			TxnRefNbr, Toe, SecCode, AcctCode		
-	
-		--Query from snapshot temp table for output results
-		IF ( @IsDetailedCodes = 0) -- Summary / Client View Extract / Submit
-		BEGIN
+        // assembly version - readonly property
+        /// <summary>Gets application's  assembly version from AssemblyInfo.cs and web.config</summary>
+        public static string AssemblyVersion
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AssemblyVersion;
+            }
+        }
 
-			UPDATE #TMP_EQUITY_MOVEMENT_SNAPSHOT
-			SET  Toe = CASE WHEN (FaceAmtChange < 0) THEN 'RET'	-- Negative effect is Return
-					   ELSE 'NEW' END						    -- Positive effect is New Loan
+        // Application file server - readonly property
+        /// <summary>Gets application file server name. ie., the server contains \STBUSA APP FILES</summary>
+        public string AppConnectionString
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppConnectionString;
+            }
+        }
 
-			SELECT 
-				ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
-				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
-				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
-			FROM #TMP_EQUITY_MOVEMENT_SNAPSHOT
-			WHERE
-				( IsDeleted = 0 )			   AND -- Exclude Deleted
-			    ( ProcDate <= @BatchRunDate )	   -- Exclude T/D greater than Business Date
-			ORDER BY 
-				Toe, TxnRefNbr, ProcDate, SecCode, AcctCode	
-			
-        END	
-		ELSE -- All Detailed View Operations.
-		BEGIN
-	
-			SELECT 
-				ID, AsOfDate, TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, ActualProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName,
-				Toe, NewPrice, SecCode,	SecID, SEDOL, SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType,	FaceAmtChange, NetAmount, SecLocCode, AcctCode,
-				CollNbr, FinderNbr,	IsDeleted, IsReconciled, ActionType, Remarks, ModifiedBy, ModifiedDate
-			FROM 
-				#TMP_EQUITY_MOVEMENT_SNAPSHOT AS TMP_EQ_MVMT
-			ORDER BY
-				Toe, TxnRefNbr, ProcDate, SecCode, AcctCode	
-			
-        END
-	
-	    SET NOCOUNT OFF			
-			
-	END TRY
-	BEGIN CATCH
-		SET @ErrorMessage = 'Error while trying to return Equity Movement Report. ' +  ERROR_MESSAGE() 
-		SET @ErrorSeverity = ERROR_SEVERITY()
-		SET @ErrorState = ERROR_STATE()
-		
-		EXEC dbo.op_InsertEventLog  @Source = 'SP', @Severity=20, @Type = 'E', @ParameterXML=NULL, @EventXML = NULL, @Remarks = @ErrorMessage, @User =  NULL
-		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);	
-		RETURN 1 	
-	END CATCH
-END
+        /// <summary>Gets name of ther server or ODBC data source where the database is located.</summary>
+        public static string DBServerName
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _DBServerName;
+            }
+        }
+
+        /// <summary>Gets the name of the database.</summary>
+        public static string DBName
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _DBName;
+            }
+        }
+
+        /// <summary>Gets the Source of the database.</summary>
+        public string DBName2
+        {
+            get { return _DBName2; }
+        }
+
+        /// <summary>Gets a user name for logging on to the data source.</summary>
+        public static string DBUserID
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _DBUserID;
+            }
+        }
+
+        /// <summary>Gets password for the user name.</summary>
+        public static string DBPassword
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _DBPassword;
+            }
+        }
+
+        /// <summary>Determines whether the database connection will use integrated security.</summary>
+        public static bool DBIntegratedSecurity
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _DBIntegratedSecurity;
+            }
+        }
+
+        
+        // Application file server - readonly property
+        /// <summary>Gets application file server name. ie., the server contains \STBUSA APP FILES</summary>
+        public static string AppFileServer
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppFileServer;
+            }
+        }
+
+        // Application runtime server - readonly property
+        /// <summary>Gets application runtime server name. ie., the server contains \STBUSA APP RUNTIME FILES</summary>
+        public static string AppRuntimeServer
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppRuntimeServer;
+            }
+        }
+
+        // application LOG file - readonly property
+        /// <summary>Gets application log file. </summary>
+        public string AppLogFile
+        {
+            get
+            {
+                throw new NotSupportedException("AppLogFile is not supported.");
+            }
+        }
+
+        public static bool UploadMessagePopUp
+        {
+            get
+            {
+                //Upload Message PopUp
+                if (ConfigurationManager.AppSettings["DisableUploadStatus_MessagePopUp"] != null
+                      && ConfigurationManager.AppSettings["DisableUploadStatus_MessagePopUp"].Equals("true"))
+                    _DisableUploadStatusPopUp = true;
+
+                return _DisableUploadStatusPopUp;
+            }
+        }
+
+        // application LOG file - readonly property
+        /// <summary>Gets application log file. </summary>
+        public string ServerConfigPath
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _ServerConfigPath;
+            }
+        }
+
+        // application trace level - readonly property
+        /// <summary>Gets application's trace level. 
+        /// Possible values: 
+        /// 0-NO TRACE;
+        /// 1-WARNING ;
+        /// 2-INFO ;
+        /// 3-DATA
+        /// </summary>
+        public int TraceLevel
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _TraceLevel;
+            }
+        }
+
+
+        /// <summary>Gets application code.</summary>
+        /// <remarks>For more information please read Security COM documentation.</remarks>
+        /// <value> Application code identifies the application.</value>
+        public static string AppCode
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _AppCode.Trim().ToUpper();
+            }
+        }
+
+        /// <summary>Gets application's environment. 
+        /// Possible values: 
+        /// D-Development ;
+        /// Q-Q/A ;
+        /// P-Production
+        /// </summary>
+        /// <remarks>For more information please read Security COM documentation.</remarks>
+        public static string AppEnvironment
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+
+                if (_AppEnvironment.Length > 0)
+                    return _AppEnvironment.Trim().Substring(0, 1).ToUpper();
+                else
+                    return _AppEnvironment;
+            }
+        }
+
+        /// <summary>Gets DRS flag. Possible values: True/false. </summary>
+        /// <remarks>For more information please read Security COM documentation.</remarks>
+        public static bool IsDRS
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+                return _IsDRS;
+            }
+        }
+
+        /// <summary>Gets authentication type. </summary>
+        public static string AuthenticationType
+        {
+            get
+            {
+                if (!_IsInitialised)
+                    _IsInitialised = fncReadConfiguration();
+
+                string auth = ConfigurationManager.AppSettings["AuthType"];
+                if (auth != "Win" && auth != "None" && auth != "App" && auth != "Both")
+                    _AuthType = "Both";
+                else
+                    _AuthType = auth;
+                return _AuthType;
+            }
+        }
+
+        // Disclaimer
+        /// <summary>Gets Disclaimer </summary>
+        public static string AppDisclaimer
+        {
+            get
+            {
+                if (_Disclaimer.Equals(""))
+                {
+                    return _Disclaimer = ConfigurationManager.AppSettings["appDisclaimer"];
+                }
+                else
+                {
+                    return _Disclaimer;
+                }
+            }
+        }
+
+        public static string Environment
+        {
+            get
+            {
+                if (!_IsInitialised)
+                { _IsInitialised = fncReadConfiguration(); }
+                return _environment;
+            }
+        }
+
+        public static string EnvironmentKeyColor
+        {
+            get
+            {
+                if (!_IsInitialised)
+                { _IsInitialised = fncReadConfiguration(); }
+                return _environmentKeyColor;
+            }
+        }
+        #endregion
+
+        #region Class Constructors-Destructor
+        //constructor
+
+        public GlobalVariable()
+        {
+            if (!_IsInitialised)
+                _IsInitialised = fncReadConfiguration();
+        }
+
+        //Destructor
+        ~GlobalVariable()
+        {
+            //clsWin32API_Network = null ;
+        }
+
+        static bool fncReadConfiguration()
+        {
+            try
+            {
+                // application root directory
+                if (_AppRoot == null)
+                    _AppRoot = ConfigurationManager.AppSettings["appRoot"];
+
+                // application version
+                if (_AppVersion == null)
+                    _AppVersion = ConfigurationManager.AppSettings["appVersion"];
+
+                // Assembly version
+                if (_AssemblyVersion == null)
+                {
+                    Version vs = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                    _AssemblyVersion = vs.Major.ToString() + "." + vs.Minor.ToString() + "." + vs.Build.ToString() + "." + vs.Revision.ToString();
+                }
+
+
+
+                /********************************************/
+                /*		DATABASE CONNECTION INFORMATION		*/
+                /********************************************/
+                #region  Added New Code for Connection string From web.config
+                string connectionString = ConfigurationManager.ConnectionStrings["MoBetterConn"].ConnectionString;
+
+                _AppConnectionString = connectionString;
+                SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+
+
+                string database = builder.InitialCatalog;
+                _DBServerName = builder.DataSource;
+                _DBName = builder.InitialCatalog;
+                _DBUserID = builder.UserID;
+                _DBPassword = builder.Password;
+                _DBIntegratedSecurity = builder.IntegratedSecurity;
+
+                #endregion
+
+                // application server 
+                if (_AppRuntimeServer == null)
+                {
+                    if (ConfigurationManager.AppSettings["appRuntimeServer"] == "")
+                        _AppRuntimeServer = HttpContext.Current.Server.MachineName;
+                    else
+                        _AppRuntimeServer = ConfigurationManager.AppSettings["appRuntimeServer"];
+                }
+
+                // application server 
+                if (_AppFileServer == null)
+                {
+                    if (ConfigurationManager.AppSettings["appFileServer"] == "")
+                        _AppFileServer = _AppRuntimeServer;
+                    else
+                        _AppFileServer = ConfigurationManager.AppSettings["appFileServer"];
+                }
+
+                if (_ServerConfigPath == null)
+                {
+                    _ServerConfigPath = ConfigurationManager.AppSettings["server.config.path"];
+                }
+
+                //HttpContext.Current.Response.Write("_AppLogFile:" + _AppLogFile);
+                //System.Web.HttpContext.Current.Server.MapPath(@"../")
+
+                //get application code
+                if (_AppCode == null)
+                    _AppCode = ConfigurationManager.AppSettings["appCode"];
+
+                //get environment code D/P/Q
+                if (_AppEnvironment == null)
+                    _AppEnvironment = ConfigurationManager.AppSettings["appEnvironment"];
+
+                if (_DRSYN == null)
+                {
+                    _DRSYN = ConfigurationManager.AppSettings["drs"];
+
+                    if (_DRSYN.Length > 0)
+                    {
+                        if (_DRSYN.Trim().Substring(0, 1).ToUpper() == "Y")
+                            _IsDRS = true;
+                        else
+                            _IsDRS = false;
+                    }
+                    else
+                        _IsDRS = false;
+                }
+
+                //get tracelevel
+                string sTraceLevel = null;
+                sTraceLevel = ConfigurationManager.AppSettings["traceLevel"];
+                try
+                {
+                    _TraceLevel = Convert.ToInt32(sTraceLevel);
+                }
+                catch (FormatException)
+                {
+                    _TraceLevel = 0;
+                }
+
+                if (string.IsNullOrEmpty(_environment))
+                { _environment = ConfigurationManager.AppSettings["MOBETTEREnvironment"] ?? string.Empty; }
+
+                if (string.IsNullOrEmpty(_environmentKeyColor))
+                { _environmentKeyColor = ConfigurationManager.AppSettings["MOBETTEREnvironmentForecolor"] ?? string.Empty; }
+            }
+
+            catch (Exception)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+
+        #endregion
+
+
+    }
+
+    public class UserInfo
+    {
+        #region Class Variables
+
+        private string _NTUserName = "";
+        private string _ComputerName = "";
+        private string _DomainName = "";
+
+        private bool _IsActive = true;
+        private string _ADGroupName = "";
+
+
+        private string _RoleName = "";
+        private bool _IsSuperUser = false;
+
+
+        private string _ApplicationRole = "";
+        private bool _IsApplicationUser = false;
+        private bool _IsSecurityEnabled = true;
+
+        private const int DEFAULTMODULEID = 100; //Default Page ModuleID
+
+        public delegate void DelegateLogUserAction(string Userid, int moduleId, UserInfo.enmUserActionType type, string parameter);
+        static IAsyncResult Result = null;
+        private static ILog _logger = LogManager.GetLogger(typeof(UserInfo));
+
+        #endregion
+
+        #region QueryStringXML Constants
+        public const string START_TAG_ROOT = "<Root>";
+        public const string END_TAG_ROOT = "</Root>";
+
+        public const string START_TAG_QUERYSTRING = "<QueryString>";
+        public const string END_TAG_QUERYSTRING = "</QueryString>";
+
+        public const string START_TAG_PARAMETERNAME = "<ParamaterName>";
+        public const string END_TAG_PARAMETERNAME = "</ParamaterName>";
+
+        public const string START_TAG_PARAMETERVALUE = "<ParamaterValue>";
+        public const string END_TAG_PARAMETERVALUE = "</ParamaterValue>";
+        #endregion
+
+        #region Class Properties
+        // NT Username - readonly property
+        /// <summary>Gets NT username. </summary>
+        public string NTUserName
+        {
+            get
+            {
+                string _Currentuser = HttpContext.Current.Session["UserName"].ToString();
+
+                if (_Currentuser.Equals(""))
+                    return _NTUserName;
+                else
+                    return _Currentuser;
+            }
+        }
+
+        public string DomainName
+        {
+            get
+            {
+                string dom = ConfigurationManager.AppSettings["DomainName"];
+                if (dom != "")
+                    _DomainName = dom;
+
+                return _DomainName;
+            }
+
+        }
+
+        // Computer name - readonly property
+        /// <summary>Gets computer name. </summary>
+        public string ComputerName
+        {
+            get { return _ComputerName; }
+        }
+
+        //check Security
+        public bool IsSecurityEnabled
+        {
+            get
+            {
+                return _IsSecurityEnabled;
+            }
+        }
+
+        //gets AD AppUsers GroupName
+        public string ADGroupName
+        {
+            get
+            {
+                return _ADGroupName;
+            }
+        }
+
+        // Gets Role Name -- ReadOnly.
+        public string RoleName
+        {
+            get { return _RoleName; }
+        }
+
+        // Gets Role Name -- ReadOnly.
+        public bool IsSuperUser
+        {
+            get { return _IsSuperUser; }
+        }
+
+        #endregion
+
+        #region Class Constructors-Destructor
+        //Constructor
+
+        public UserInfo()
+        {
+            fncGetUserInfo();
+        }
+
+        //Destructor
+        ~UserInfo()
+        {
+
+        }
+
+        //Checks ActiveDirectory Group User
+        public void checkADGroupUser(string ModuleName)
+        {
+            string[] loginId = HttpContext.Current.User.Identity.Name.Trim().Split(new string[] { "\\" }, StringSplitOptions.None);
+            string NTUserId = loginId[(loginId.Length - 1)];
+            UserData CurrentUser = null;
+
+            ADSIUtil adUtil = new ADSIUtil();
+
+            try
+            {
+                if (adUtil.checkUserList(ADGroupName, NTUserId)) // Check Application Main ADGroupName.
+                {
+                    _IsApplicationUser = true;
+                    try
+                    {
+                        CurrentUser = UserData.Authenticate(NTUserId); // Authenticate User against Database.
+                        if (CurrentUser != null)
+                        {
+                            _IsSuperUser = CurrentUser.IsSuperUser;
+                            _RoleName = CurrentUser.RoleName;
+                            _IsActive = CurrentUser.IsActive;
+                        }
+                    }
+                    catch (Exception Exc)
+                    {
+                        throw Exc;
+                    }
+                }
+            }
+            catch // Ignore Exception handle later.
+            {
+
+                //HttpContext.Current.Response.Redirect(string.Format("~/Error/AccessDenied.aspx?{0}", "AuthenticationFail"));
+            }
+            finally
+            {
+                if (_IsApplicationUser) // Check if User is application user and Setup as Active user with defined roles in database
+                {
+                    if (CurrentUser != null)
+                    {
+                        if (!_IsActive) // Check if user is Inactive in database
+                        {
+                            UserInfo.AsyncLogUserAction(ModuleName, UserInfo.enmUserActionType.Authorization_Failure, HttpContext.Current.Request.QueryString);// Authentication  Fail
+                            HttpContext.Current.Response.Redirect(string.Format("~/Error/AccessDenied.aspx?{0}", "AuthorizationFail"));
+                        }
+                    }
+                    else //User not setup on the database.
+                    {
+                        UserInfo.AsyncLogUserAction(ModuleName, UserInfo.enmUserActionType.Authorization_Failure, HttpContext.Current.Request.QueryString);// Authentication  Fail
+                        HttpContext.Current.Response.Redirect(string.Format("~/Error/AccessDenied.aspx?{0}", "AuthorizationFail"));
+                    }
+                }
+                else // user not found in Application ADGroup
+                {
+                    UserInfo.AsyncLogUserAction(ModuleName, UserInfo.enmUserActionType.Authentication_Failure, HttpContext.Current.Request.QueryString);// Authentication  Fail
+                    HttpContext.Current.Response.Redirect(string.Format("~/Error/AccessDenied.aspx?{0}", "AuthenticationFail"));
+                }
+            }
+        }
+
+
+
+
+        #region Convert Querystring to XML
+
+        public static StringBuilder QuerystringXML(NameValueCollection QueryString)
+        {
+            StringBuilder strParam = new StringBuilder();
+            strParam.Append(UserInfo.START_TAG_ROOT);
+            foreach (String key in QueryString.AllKeys)
+            {
+                if (key != null && key != "")
+                {
+                    strParam.Append(UserInfo.START_TAG_QUERYSTRING);
+                    strParam.Append(UserInfo.START_TAG_PARAMETERNAME + key.ToString() + UserInfo.END_TAG_PARAMETERNAME);
+                    strParam.Append(UserInfo.START_TAG_PARAMETERVALUE + QueryString[key].ToString() + UserInfo.END_TAG_PARAMETERVALUE);
+                    strParam.Append(UserInfo.END_TAG_QUERYSTRING);
+                }
+            }
+            strParam.Append(UserInfo.END_TAG_ROOT);
+            return strParam;
+        }
+
+        #endregion
+
+        #region Log User Action
+
+
+        public static void LogUserAction(string Userid, int _ModuleId, UserInfo.enmUserActionType enmUserActionType, string parameter)
+        {
+            Database clsDB = new Database();
+            DataReader clsReader = new DataReader();
+
+            clsDB.IsNewDBSource = true;
+
+            if (clsDB.Open() == true)
+            {
+                clsReader.Connection = clsDB.Connection;
+                clsReader.StoredProcedure = SqlObjectsStaticClass.p_SaveData_UserActionLog;
+                clsReader.LogUserAction(Userid, _ModuleId, enmUserActionType, parameter);
+            }
+        }
+
+        #endregion
+
+        #region Aysnc Method to Log user Requests
+
+        //Aysnc Method to Log user Requests.
+        public static void AsyncLogUserAction(string moduleName, UserInfo.enmUserActionType type, NameValueCollection parameter)
+        {
+            int _ModuleId;
+            StringBuilder strParam = new StringBuilder();
+
+            //Get ModuleID from Module Name             
+            if (!string.IsNullOrEmpty(moduleName))
+            {
+                _ModuleId = Common.getModuleId(moduleName);
+            }
+            else
+            {
+                _ModuleId = DEFAULTMODULEID;
+            }
+
+            //Retrieve user Name 
+            string _userName = HttpContext.Current.Request.ServerVariables["LOGON_USER"];
+            _userName = _userName.Substring(_userName.IndexOf(@"\") + 1);
+
+            strParam = UserInfo.QuerystringXML(parameter);
+
+            DelegateLogUserAction del = new DelegateLogUserAction(LogUserAction);
+            Result = del.BeginInvoke(_userName, _ModuleId, type, strParam.ToString(), null, null);
+
+            if (type == enmUserActionType.Authorization_Success)
+                _logger.InfoFormat("Successfully accessed module. User: {0}, Module: {1}", _userName, moduleName);
+            else if (type == enmUserActionType.Authorization_Failure)
+                _logger.WarnFormat("Module access is denied due to restrictions on the user. User: {0}, Module: {1}", _userName, moduleName);
+
+        }
+
+        #endregion
+
+
+
+        private bool fncGetUserInfo()
+        {
+            // record username\computername
+            try
+            {
+                _NTUserName = HttpContext.Current.Request.ServerVariables["LOGON_USER"];
+                _ComputerName = HttpContext.Current.Request.ServerVariables["REMOTE_HOST"];
+                _DomainName = _NTUserName.Substring(0, _NTUserName.IndexOf(@"\"));
+
+                if (_DomainName == "")
+                {
+                    _DomainName = System.Environment.MachineName;
+
+                }
+                _NTUserName = _NTUserName.Substring(_NTUserName.IndexOf(@"\") + 1);
+
+                if (_ADGroupName.Equals(""))
+                {
+                    _ADGroupName = ConfigurationManager.AppSettings["AppUsersGroupName"];
+                }
+
+
+                if (ConfigurationManager.AppSettings["AppUsersDefaultRole"] != null)
+                {
+                    _ApplicationRole = ConfigurationManager.AppSettings["AppUsersDefaultRole"].Replace(" ", "").ToLower().Trim();
+                }
+
+
+                //Edwin Stephenraj, 07/31/2006
+                try
+                {
+                    //Session will be available only after any page_load event.
+                    HttpContext.Current.Session["UserName"] = _NTUserName;
+                    HttpContext.Current.Session["ComputerName"] = _ComputerName;
+                }
+                catch (Exception)
+                {
+                    //ok to ignore: Need more research on this.
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        public bool ShowDelete(object className)
+        {
+            string keyName = "AllowDelete_" + className.GetType().BaseType.Name;// className.ToString().Replace("ASP.", "").Replace("_aspx", "").Replace("_", "");
+            bool AllowDelete = Convert.ToBoolean(ConfigurationManager.AppSettings[keyName]);
+            return AllowDelete;
+        }
+
+        #endregion
+
+        #region Enums for User Action Type
+        public enum enmUserActionType
+        {
+            Authentication_Success = 1,
+            Authentication_Failure = 2,
+            Authorization_Success = 3,
+            Authorization_Failure = 4
+        }
+        #endregion
+    }
+
+    public class Common
+    {
+        #region Class Variables
+        GlobalVariable clsGV = new GlobalVariable();	// common variables        
+        private static string _errPage = @"/" + GlobalVariable.AppRoot + @"/Information.aspx";
+        private static string _errInjectionPage = @"/" + GlobalVariable.AppRoot + @"/InjectionError.aspx";
+
+        private static string _QtrEndDate1 = @"3/31/" + DateTime.Now.Year.ToString();
+        private static string _QtrEndDate2 = @"6/30/" + DateTime.Now.Year.ToString();
+        private static string _QtrEndDate3 = @"9/30/" + DateTime.Now.Year.ToString();
+        private static string _QtrEndDate4 = @"12/31/" + DateTime.Now.Year.ToString();
+
+        private static ILog _logger = LogManager.GetLogger(typeof(Common));
+
+        #endregion
+
+        #region Class Constructors-Destructor
+        //Constructor
+
+        public Common()
+        {
+        }
+
+        //Destructor
+        ~Common()
+        {
+
+        }
+
+        #endregion
+
+        #region enum
+
+        /// <summary>
+        /// Common DateTime Methods.
+        /// </summary>
+        /// 
+
+        public enum Quarter
+        {
+            First = 1,
+            Second = 2,
+            Third = 3,
+            Fourth = 4
+        }
+
+        public enum Month
+        {
+            January = 1,
+            February = 2,
+            March = 3,
+            April = 4,
+            May = 5,
+            June = 6,
+            July = 7,
+            August = 8,
+            September = 9,
+            October = 10,
+            November = 11,
+            December = 12
+        }
+
+        #endregion
+
+        #region Constants
+
+        #region Scan Issues
+        //SqlInjection filter related constants
+        public const string FORM_KEY_VIEWSTATE = "_";
+        public const string FORM_KEY_URL = "URL";
+        public const string CONFIG_KEY_SQLINJECTION_FILTER = "SqlInjectionFilter";
+        public const string CONFIG_KEY_LDAPINJECTION_FILTER = "LDAPInjectionFilter";
+        public const string CONFIG_KEY_LDAPINJECTION_CONTROLS = "LDAPInjectionControls";
+        public const string CONFIG_KEY_PAGES_PERIODCHECK = "PagesForPeriodCheck";
+        public const string CONFIG_KEY_PERIOD_CHAR = "PeriodCharCheck";
+        public const string ERROR_MSG_INVALID_REQUEST = "A Potential harmful request detected.";
+        public const string BLANK_SPACE = " ";
+
+        //XML Entity Expansion
+        public const string CONST_XML_DOCTYPE = "<!DOCTYPE";
+        public const string CONST_XML_ENTITY = "<!ENTITY";
+        public static string[] reportExtn = { ".xls", ".xlsx", ".rpt", ".pdf" };
+        #endregion
+
+        #region Other Constants
+        public const string CONST_CONFIG_KEY_JTSB = "TrustName_JTSB";
+        public const string CONST_CONFIG_KEY_CBJ = "TrustName_CBJ";
+        public const string CONST_STR_ZERO = "0";
+        public const string STR_AGENT_DIRECT_LENDING = "AGENT DIRECT LENDING";
+        #endregion
+
+        #endregion
+
+        #region Class Methods
+
+        public static void WriteJavascript(string js)
+        {
+            StringBuilder scr = new StringBuilder();
+            try
+            {
+                scr.Append("<script language = \"JavaScript\">\n");
+                scr.Append(js);
+                scr.Append("\t\t</script>\n");
+                HttpContext.Current.Response.Write(scr.ToString());
+            }
+
+            catch (Exception e)
+            {
+                scr.Length = 0;
+                scr.Append("<script language = \"JavaScript\">\n");
+                scr.Append("alert('The following error occured while writing javascript :\\n");
+                scr.Append(e.Message);
+                scr.Append("')");
+                scr.Append("\t\t</script>\n");
+                HttpContext.Current.Response.Write(scr.ToString());
+                return;
+            }
+
+            finally
+            {
+                scr.Length = 0;
+                scr = null;
+            }
+        }
+
+
+        public static Quarter GetQuarter(Month Month)
+        {
+            if (Month <= Month.March)
+                // 1st Quarter = January 1 to March 31
+                return Quarter.First;
+            else if ((Month >= Month.April) && (Month <= Month.June))
+                // 2nd Quarter = April 1 to June 30
+                return Quarter.Second;
+            else if ((Month >= Month.July) && (Month <= Month.September))
+                // 3rd Quarter = July 1 to September 30
+                return Quarter.Third;
+            else // 4th Quarter = October 1 to December 31
+                return Quarter.Fourth;
+        }
+
+
+        public static DateTime GetStartOfQuarter(int Year, Quarter Qtr)
+        {
+            if (Qtr == Quarter.First)    // 1st Quarter = January 1 to March 31
+                return new DateTime(Year, 1, 1, 0, 0, 0, 0);
+            else if (Qtr == Quarter.Second) // 2nd Quarter = April 1 to June 30
+                return new DateTime(Year, 4, 1, 0, 0, 0, 0);
+            else if (Qtr == Quarter.Third) // 3rd Quarter = July 1 to September 30
+                return new DateTime(Year, 7, 1, 0, 0, 0, 0);
+            else // 4th Quarter = October 1 to December 31
+                return new DateTime(Year, 10, 1, 0, 0, 0, 0);
+        }
+
+        public static DateTime GetEndOfQuarter(int Year, Quarter Qtr)
+        {
+            if (Qtr == Quarter.First)    // 1st Quarter = January 1 to March 31
+                return new DateTime(Year, 3,
+                       DateTime.DaysInMonth(Year, 3), 23, 59, 59, 999);
+            else if (Qtr == Quarter.Second) // 2nd Quarter = April 1 to June 30
+                return new DateTime(Year, 6,
+                       DateTime.DaysInMonth(Year, 6), 23, 59, 59, 999);
+            else if (Qtr == Quarter.Third) // 3rd Quarter = July 1 to September 30
+                return new DateTime(Year, 9,
+                       DateTime.DaysInMonth(Year, 9), 23, 59, 59, 999);
+            else // 4th Quarter = October 1 to December 31
+                return new DateTime(Year, 12,
+                       DateTime.DaysInMonth(Year, 12), 23, 59, 59, 999);
+        }
+
+        public static DateTime GetEndOfLastQuarter()
+        {
+            if ((Month)DateTime.Now.Month <= Month.March)
+                //go to last quarter of previous year
+                return GetEndOfQuarter(DateTime.Now.Year - 1, Quarter.Fourth);
+            else if (((Month)DateTime.Now.Month >= Month.April) && ((Month)DateTime.Now.Month <= Month.June))
+                //go to first quarter of Current year
+                return GetEndOfQuarter(DateTime.Now.Year, Quarter.First);
+            else if (((Month)DateTime.Now.Month >= Month.July) && ((Month)DateTime.Now.Month <= Month.September))
+                //go to Second quarter of Current year
+                return GetEndOfQuarter(DateTime.Now.Year, Quarter.Second);
+            else //go to Third quarter of Current year
+                return GetEndOfQuarter(DateTime.Now.Year, Quarter.Third);
+
+        }
+
+        public static DateTime GetStartOfLastQuarter()
+        {
+            if ((Month)DateTime.Now.Month <= Month.March)
+                //go to last quarter of previous year
+                return GetStartOfQuarter(DateTime.Now.Year - 1, Quarter.Fourth);
+            else if (((Month)DateTime.Now.Month >= Month.April) && ((Month)DateTime.Now.Month <= Month.June))
+                //go to first quarter of Current year
+                return GetStartOfQuarter(DateTime.Now.Year, Quarter.First);
+            else if (((Month)DateTime.Now.Month >= Month.July) && ((Month)DateTime.Now.Month <= Month.September))
+                //go to Second quarter of Current year
+                return GetStartOfQuarter(DateTime.Now.Year, Quarter.Second);
+            else //go to Third quarter of Current year
+                return GetStartOfQuarter(DateTime.Now.Year, Quarter.Third);
+        }
+
+        public static DateTime GetStartOfCurrentQuarter()
+        {
+            return GetStartOfQuarter(DateTime.Now.Year,
+                   GetQuarter((Month)DateTime.Now.Month));
+        }
+
+        public static DateTime GetEndOfCurrentQuarter()
+        {
+            return GetEndOfQuarter(DateTime.Now.Year,
+                   GetQuarter((Month)DateTime.Now.Month));
+        }
+
+        public static DateTime GetCurrentQuarterEndDate()
+        {
+            DateTime currQtrDate = DateTime.Now;
+
+            if ((Month)DateTime.Now.Month <= Month.March)
+                //go to last quarter of previous year
+                currQtrDate = GetEndOfQuarter(DateTime.Now.Year - 1, Quarter.Fourth);
+            else if (((Month)DateTime.Now.Month >= Month.April) && ((Month)DateTime.Now.Month <= Month.June))
+                //go to first quarter of Current year
+                currQtrDate = GetEndOfQuarter(DateTime.Now.Year, Quarter.First);
+            else if (((Month)DateTime.Now.Month >= Month.July) && ((Month)DateTime.Now.Month <= Month.September))
+                //go to Second quarter of Current year
+                currQtrDate = GetEndOfQuarter(DateTime.Now.Year, Quarter.Second);
+            else //go to Third quarter of Current year
+                currQtrDate = GetEndOfQuarter(DateTime.Now.Year, Quarter.Third);
+
+            if (DateTime.Now.ToShortDateString() == _QtrEndDate1)
+                currQtrDate = Convert.ToDateTime(_QtrEndDate1);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate2)
+                currQtrDate = Convert.ToDateTime(_QtrEndDate2);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate3)
+                currQtrDate = Convert.ToDateTime(_QtrEndDate3);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate4)
+                currQtrDate = Convert.ToDateTime(_QtrEndDate4);
+
+            return currQtrDate;
+        }
+
+        public static DateTime GetPreviousQuarterEndDate()
+        {
+            DateTime PrevQtrDate = DateTime.Now;
+
+            if ((Month)DateTime.Now.Month <= Month.March)
+                //go to last quarter of previous year
+                PrevQtrDate = GetStartOfQuarter(DateTime.Now.Year - 1, Quarter.Fourth).AddDays(-1);
+            else if (((Month)DateTime.Now.Month >= Month.April) && ((Month)DateTime.Now.Month <= Month.June))
+                //go to first quarter of Current year
+                PrevQtrDate = GetStartOfQuarter(DateTime.Now.Year, Quarter.First).AddDays(-1);
+            else if (((Month)DateTime.Now.Month >= Month.July) && ((Month)DateTime.Now.Month <= Month.September))
+                //go to Second quarter of Current year
+                PrevQtrDate = GetStartOfQuarter(DateTime.Now.Year, Quarter.Second).AddDays(-1);
+            else //go to Third quarter of Current year
+                PrevQtrDate = GetStartOfQuarter(DateTime.Now.Year, Quarter.Third).AddDays(-1);
+
+            if (DateTime.Now.ToShortDateString() == _QtrEndDate1)
+                PrevQtrDate = GetStartOfQuarter(DateTime.Now.Year, Quarter.First).AddDays(-1);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate2)
+                PrevQtrDate = Convert.ToDateTime(_QtrEndDate1);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate3)
+                PrevQtrDate = Convert.ToDateTime(_QtrEndDate2);
+            else if (DateTime.Now.ToShortDateString() == _QtrEndDate4)
+                PrevQtrDate = Convert.ToDateTime(_QtrEndDate3);
+
+            return PrevQtrDate;
+        }
+
+
+
+        public static void WriteJsVars(ref StringDictionary jsVars)
+        {
+            StringBuilder scr = new StringBuilder();
+            try
+            {
+                scr.Append("<script language = \"JavaScript\">\n");
+
+                foreach (DictionaryEntry d in jsVars)
+                {
+                    scr.Append("\t var ");
+                    scr.Append(d.Key);
+                    scr.Append("= '");
+                    scr.Append(d.Value);
+                    scr.Append("';\n");
+                }
+
+                scr.Append("\t\t</script>\n");
+                HttpContext.Current.Response.Write(scr.ToString());
+            }
+
+            catch (Exception e)
+            {
+                scr.Length = 0;
+                scr.Append("<script language = \"JavaScript\">\n");
+                scr.Append("alert('The following error occured while writing javascript variables:\\n");
+                scr.Append(e.Message);
+                scr.Append("')");
+                scr.Append("\t\t</script>\n");
+                HttpContext.Current.Response.Write(scr.ToString());
+                return;
+            }
+
+            finally
+            {
+                scr.Length = 0;
+                scr = null;
+            }
+        }
+
+        public static int GetRandomNumber(int startNum, int EndNum, int defValue)
+        {
+            Random clsRand = new Random();
+            int randNumber = 0;
+            try
+            {
+                randNumber = clsRand.Next(startNum, EndNum);
+            }
+            catch (Exception)
+            {
+                randNumber = defValue;
+            }
+            finally
+            {
+                clsRand = null;
+            }
+            return randNumber;
+        }
+
+
+        public static int ValidateNumber(string numberString, int precision, int scale, decimal maxValue)
+        {
+            int retValue = ValidateNumber(numberString, precision, scale);
+            if (retValue == 0)			// success 
+            {
+                if (Convert.ToDecimal(numberString) > maxValue)
+                    retValue = -2;
+            }
+
+            return retValue;
+        }
+
+        public static int ValidateNumber(string numberString, int precision, int scale)
+        {
+            int retValue = 0;
+            int decPosition = 0;
+            decimal inValue = 0;
+            string numStr = numberString.Replace(",", "").Trim();
+            string precStr = "";
+            string scalStr = "";
+            try
+            {
+                inValue = Convert.ToDecimal(numStr);
+                decPosition = numStr.IndexOf(".");
+
+                switch (decPosition)
+                {
+                    case -1:			// not found		(eg 12345)
+                        precStr = numStr;
+                        break;
+                    case 0:				// first position	(eg .12345)
+                        scalStr = numStr.Substring(decPosition + 1);
+                        break;
+                    default:			// found with real	(eg 12345.12345)
+                        precStr = numStr.Substring(0, decPosition);
+                        scalStr = numStr.Substring(decPosition + 1);
+                        break;
+                }
+
+                //				HttpContext.Current.Response.Write("ActualNumber<" + numStr + "><br>") ;	
+                //				HttpContext.Current.Response.Write("decPosition<" + decPosition.ToString() + ">pos<br>") ;	
+                //				HttpContext.Current.Response.Write("LeftPart<" + precStr + "><br>") ;
+                //				HttpContext.Current.Response.Write("RightPart<" + scalStr + "><br>") ;
+                //
+                //				if (precStr.Length > precision && Convert.ToInt64(precStr) > 0)
+                //					retValue = 1 ;
+                //
+                //				if (scalStr.Length > scale && Convert.ToInt64(scalStr) > 0)
+                //					retValue += 2 ;		
+
+                if (precStr.Length > precision && Convert.ToInt64(precStr) > 0 ||
+                    scalStr.Length > scale && Convert.ToInt64(scalStr) > 0)
+                    retValue = -2;				// overflow
+
+                if (inValue == 0)
+                    retValue = 1;				// zero
+
+                if (inValue < 0)
+                    retValue = 2;				// negative
+            }
+            catch (Exception)
+            {
+                retValue = -1;
+            }
+
+            return retValue;
+        }
+
+        public static int ValidateDate(string dateString)
+        {
+            // date validation
+            try
+            {
+                Convert.ToDateTime(dateString);
+
+                if (!IsDate(dateString))
+                    return -1;	//malformed date string
+                else if (Convert.ToDateTime(dateString) > DateTime.Today)
+                    return 1;	// if the date is greater than today
+                else if (Convert.ToDateTime(dateString) < DateTime.Today)
+                    return 2;	// if the date is less than today
+                else
+                    return 0;	// if the date is equal today
+            }
+            catch (Exception)
+            {
+                return -1;		// if the date is invalid
+            }
+        }
+
+        public static string Text2Null(string inputString)
+        {
+            if (inputString.Trim().Length == 0)
+                return null;
+            else
+                return inputString;
+        }
+
+        public static string Null2Text(string inputString)
+        {
+            if (inputString.Equals("&nbsp;") || inputString == null)
+                return "";
+            else
+                return inputString;
+        }
+
+        public static string FormatDate(string dateString, string dateFormat)
+        {
+            System.DateTime date;
+            string datePart = null;
+
+            try
+            {
+                // date validation
+                date = Convert.ToDateTime(dateString);
+
+                // convert the date string to specified format.
+                datePart = date.ToString(dateFormat);
+
+                return datePart;
+            }
+            catch (Exception Exc)
+            {
+                throw Exc;
+            }
+        }
+
+        // Function to test for Positive Integers.  
+        public static bool IsNaturalNumber(String strNumber)
+        {
+            Regex objNotNaturalPattern = new Regex("[^0-9]");
+            Regex objNaturalPattern = new Regex("0*[1-9][0-9]*");
+            return !objNotNaturalPattern.IsMatch(strNumber) &&
+                objNaturalPattern.IsMatch(strNumber);
+        }
+
+        // Function to test for Positive Integers with zero inclusive  
+        public static bool IsWholeNumber(String strNumber)
+        {
+            Regex objNotWholePattern = new Regex("[^0-9]");
+            return !objNotWholePattern.IsMatch(strNumber);
+        }
+
+        // Function to Test for Integers both Positive & Negative  
+        public static bool IsInteger(String strNumber)
+        {
+            Regex objNotIntPattern = new Regex("[^0-9-]");
+            Regex objIntPattern = new Regex("^-[0-9]+$|^[0-9]+$");
+            return !objNotIntPattern.IsMatch(strNumber) && objIntPattern.IsMatch(strNumber);
+        }
+
+        // Function to Test for Positive Number both Integer & Real 
+        public static bool IsPositiveNumber(String strNumber)
+        {
+            Regex objNotPositivePattern = new Regex("[^0-9.]");
+            Regex objPositivePattern = new Regex("^[.][0-9]+$|[0-9]*[.]*[0-9]+$");
+            Regex objTwoDotPattern = new Regex("[0-9]*[.][0-9]*[.][0-9]*");
+            return !objNotPositivePattern.IsMatch(strNumber) &&
+                objPositivePattern.IsMatch(strNumber) &&
+                !objTwoDotPattern.IsMatch(strNumber);
+        }
+
+        // Function to test whether the string is valid number or not
+        public static bool IsNumber(String strNumber)
+        {
+            Regex objNotNumberPattern = new Regex("[^0-9.-]");
+            Regex objTwoDotPattern = new Regex("[0-9]*[.][0-9]*[.][0-9]*");
+            Regex objTwoMinusPattern = new Regex("[0-9]*[-][0-9]*[-][0-9]*");
+            String strValidRealPattern = "^([-]|[.]|[-.]|[0-9])[0-9]*[.]*[0-9]+$";
+            String strValidIntegerPattern = "^([-]|[0-9])[0-9]*$";
+            Regex objNumberPattern = new Regex("(" + strValidRealPattern + ")|(" + strValidIntegerPattern + ")");
+            return !objNotNumberPattern.IsMatch(strNumber) &&
+                !objTwoDotPattern.IsMatch(strNumber) &&
+                !objTwoMinusPattern.IsMatch(strNumber) &&
+                objNumberPattern.IsMatch(strNumber);
+        }
+
+        // Function To test for Alphabets. 
+        public static bool IsAlpha(String strToCheck)
+        {
+            Regex objAlphaPattern = new Regex("[^a-zA-Z]");
+            return !objAlphaPattern.IsMatch(strToCheck);
+        }
+
+        // Function to Check for IsAlphaNumericWithSpaces.
+        public static bool IsAlphaNumericWithSpaceHyphenAndPeriod(string strToCheck)
+        {
+            string objAlphaNumericPattern = @"^[a-zA-Z0-9 .-]*$";
+            if (Regex.IsMatch(strToCheck, objAlphaNumericPattern))
+            {
+                return true;
+            }
+            return false;
+        }
+
+
+        // Function to Check for AlphaNumeric.
+        public static bool IsAlphaNumeric(String strToCheck)
+        {
+            Regex objAlphaNumericPattern = new Regex("[^a-zA-Z0-9]");
+            return !objAlphaNumericPattern.IsMatch(strToCheck);
+        }
+
+        public static bool IsTime(string strToCheck)
+        {
+            /*
+			 * Function to Check for Time for 24 Clock Time and AM/PM             			 
+			 * */
+
+            Regex objDatePattern = new Regex(@" ^((0?[1-9]|1[012])(:[0-5]\d){0,2}(\ [AP]M))$|^([01]\d|2[0-3])(:[0-5]\d){0,2}$");
+            return objDatePattern.IsMatch(strToCheck);
+        }
+
+
+        public static bool IsDate(String strToCheck)
+        {
+            /*
+             * Function to Check for date in the M/D/Y format
+             *	M can be 1 or 2 digits
+             *	D can be 1 or 2 digits
+             *	Y can be 2 or 4 digits
+             * */
+
+            Regex objDatePattern = new Regex(@"^(\d{1,2})(\/)(\d{1,2})(\/)(\d{2}|\d{4})$");
+            return objDatePattern.IsMatch(strToCheck);
+        }
+
+        public static bool NotifyProductionSupport(string message)
+        {
+            try
+            {
+                _logger.Fatal(message);
+                return true;
+            }
+            catch (Exception exc)
+            {
+                throw exc;
+            }
+        }
+
+        public static string getAccessTypeCode(string ModuleName)
+        {
+            Database clsDB = new Database();
+            DataCommand clsCommand = new DataCommand();
+
+            string AccessTypeCode = null;
+
+            string[] SqlCondition = new string[2];
+            string[] loginId = HttpContext.Current.User.Identity.Name.Trim().Split(new string[] { "\\" }, StringSplitOptions.None);
+            string NTUserId = loginId[(loginId.Length - 1)];
+
+            try
+            {
+                SqlCondition[0] = NTUserId.ToLower();
+                SqlCondition[1] = ModuleName.Trim();
+
+                if (clsDB.Open() != false)
+                {
+                    clsCommand.Connection = clsDB.Connection;
+                    clsCommand.StoredProcedure = SqlObjectsStaticClass.p_GetUserAuthorizationOnModule;
+                    AccessTypeCode = clsCommand.getUserAccessOnModule(SqlCondition);
+                }
+            }
+            catch (Exception Exc)
+            {
+                Information clsInfo = new Information();
+                clsInfo.ErrNum = 5000;
+                clsInfo.ErrStr = Exc.Message;
+                clsInfo.ErrStack = Exc.StackTrace;
+                clsInfo.WindowStyle = "";
+                HttpContext.Current.Server.Transfer(_errPage, true);
+            }
+
+            finally
+            {
+                clsCommand.Dispose();
+                clsDB.Dispose();
+            }
+
+            return AccessTypeCode = string.IsNullOrEmpty(AccessTypeCode) ? "N" : AccessTypeCode;
+        }
+
+        public static Dictionary<string, string> GetUserModuleRights()
+        {
+            Database clsDB = new Database();
+            DataCommand clsCommand = new DataCommand();
+
+            Dictionary<string, string> moduleRights = new Dictionary<string, string>();
+            UserInfo clsUI = new UserInfo();
+
+            try
+            {
+                string userName = clsUI.NTUserName;
+
+                _logger.InfoFormat("Preparing to retrieve module role rights for user : {0}.", userName);
+
+
+                if (clsDB.Open() == false)
+                    return null;
+
+                clsCommand.Connection = clsDB.Connection;
+                clsCommand.StoredProcedure = SqlObjectsStaticClass.P_GetData_GetUserAppAccess;
+
+                Hashtable htMain = new Hashtable();
+                htMain.Add("@UserCode", new Hashtable());
+                ((Hashtable)htMain["@UserCode"]).Add("Value", userName);
+                ((Hashtable)htMain["@UserCode"]).Add("IsReportParameter", true);
+
+                if (clsCommand.ExecuteStoreProc(ref htMain))
+                {
+                    SqlDataReader clsDr = (SqlDataReader)htMain["SqlDataReader"];
+                    while (clsDr.Read())
+                    {
+                        moduleRights.Add(clsDr["ModuleName"].ToString(), clsDr["AccessTypeCode"].ToString());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+
+            return moduleRights;
+        }
+
+        public static string CheckUploadStatus()
+        {
+            Database clsDB = new Database();
+            DataReader clsReader = new DataReader();
+            string CurrentStatus = string.Empty;
+
+            try
+            {
+                if (clsDB.Open() != false)
+                {
+                    clsReader.Connection = clsDB.Connection;
+                    clsReader.StoredProcedure = SqlObjectsStaticClass.p_GetData_Misc;
+                    clsReader.SqlIdentifier = "GET_CURRENT_STATUS";
+                    clsReader.GetData(ref CurrentStatus);
+                }
+            }
+            catch (Exception Exc)
+            {
+                Information clsInfo = new Information();
+                clsInfo.ErrNum = 5000;
+                clsInfo.ErrStr = Exc.Message;
+                clsInfo.ErrStack = Exc.StackTrace;
+                clsInfo.WindowStyle = "";
+                HttpContext.Current.Server.Transfer(_errPage, true);
+            }
+
+            finally
+            {
+                clsReader.Dispose();
+                clsDB.Dispose();
+            }
+
+            return CurrentStatus;
+        }
+
+        public static bool GetEquityMovementStatus(string Date)
+        {
+            Database clsDB = new Database();
+            DataReader clsReader = new DataReader();
+            string CurrentStatus = "False";
+            string[] SqlCondition = new string[1] { "" };
+
+            try
+            {
+                if (clsDB.Open() != false)
+                {
+                    clsReader.Connection = clsDB.Connection;
+                    clsReader.StoredProcedure = SqlObjectsStaticClass.p_GetData_Reports;
+                    clsReader.SqlIdentifier = "GET_EQUITYMOVEMENTSTATUS";
+                    SqlCondition[0] = Date;
+                    clsReader.GetData(ref CurrentStatus, SqlCondition);
+                }
+            }
+            catch (Exception Exc)
+            {
+                Information clsInfo = new Information();
+                clsInfo.ErrNum = 5000;
+                clsInfo.ErrStr = Exc.Message;
+                clsInfo.ErrStack = Exc.StackTrace;
+                clsInfo.WindowStyle = "";
+                HttpContext.Current.Server.Transfer(_errPage, true);
+            }
+
+            finally
+            {
+                clsReader.Dispose();
+                clsDB.Dispose();
+            }
+
+            return Convert.ToBoolean(CurrentStatus);
+        }
+
+        public static string showUploadStatus()
+        {
+            StringBuilder scriptStr = new StringBuilder();
+
+            if ((Common.CheckUploadStatus().ToUpper() != "END") && (!GlobalVariable.UploadMessagePopUp))
+            {
+                scriptStr.Append("<script language=JavaScript>");
+                scriptStr.Append("alert('Please wait for the upload process to be completed...');");
+                scriptStr.Append("</script>");
+            }
+            return scriptStr.ToString();
+        }
+
+        #region get moduleId
+
+        public static int getModuleId(string ModuleName)
+        {
+            Database clsDB = new Database();
+            DataCommand clsCommand = new DataCommand();
+
+            int moduleid = 0;
+
+            string[] SqlCondition = new string[1];
+
+
+            try
+            {
+
+                SqlCondition[0] = ModuleName.Trim();
+
+                clsDB.IsNewDBSource = true;
+
+                if (clsDB.Open() != false)
+                {
+                    clsCommand.Connection = clsDB.Connection;
+                    clsCommand.StoredProcedure = SqlObjectsStaticClass.p_GetModuleId;
+                    moduleid = clsCommand.getModuleId(SqlCondition);
+                }
+            }
+            catch (Exception Exc)
+            {
+                Information clsInfo = new Information();
+                clsInfo.ErrNum = 5000;
+                clsInfo.ErrStr = Exc.Message;
+                clsInfo.ErrStack = Exc.StackTrace;
+                clsInfo.WindowStyle = "";
+                HttpContext.Current.Server.Transfer(_errPage, true);
+            }
+
+            finally
+            {
+                clsCommand.Dispose();
+                clsDB.Dispose();
+            }
+
+            return moduleid;
+        }
+
+        #endregion
+
+        #region Disable Right Click
+        /// <summary>
+        /// Disable Right Click on the browser.
+        /// </summary>
+        /// <returns></returns>
+        public static string DisableRightClick()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("document.onmousedown = right;");
+            sb.Append("document.onmouseup = right;");
+            sb.Append("if (document.layers) window.captureEvents (Event.MOUSEDOWN);");
+            sb.Append("if (document.layers) window.captureEvents (Event.MOUSEUP);");
+            sb.Append("window.onmousedown = right;");
+            sb.Append("window.onmouseup = right;");
+            return sb.ToString();
+        }
+        #endregion
+
+        #region SQL Injection/LDAP Injection Filters
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="formPostParam"></param>
+        /// <returns></returns>
+        public static void ValidateRequestAgainstInjection(NameValueCollection formPostParam, Uri requestURL)
+        {
+            string configKeySqlInjectionFilter = ConfigurationManager.AppSettings[CONFIG_KEY_SQLINJECTION_FILTER];
+            string configKeyLDAPInjectionFilter = ConfigurationManager.AppSettings[CONFIG_KEY_LDAPINJECTION_FILTER];
+            string configKeyLDAPInjectionControls = ConfigurationManager.AppSettings[CONFIG_KEY_LDAPINJECTION_CONTROLS];
+            string configKeyPageListPeriodCheck = ConfigurationManager.AppSettings[CONFIG_KEY_PAGES_PERIODCHECK];
+            string configKeyPeriodChar = ConfigurationManager.AppSettings[CONFIG_KEY_PERIOD_CHAR];
+
+            string[] arrstrFilterString = null;
+            string[] arrLDAPControls = null;
+            string[] arrLDAPFilters = null;
+            string[] arrPageListPeriodChecks = null;
+            string postValue = "";
+            InjectionError clsError = null;
+            string specialKeyword = "";
+            string prevChar = "";
+            string nextChar = "";
+            char dotchar = ' ';
+
+            try
+            {
+                if (!string.IsNullOrEmpty(configKeySqlInjectionFilter))
+                {
+                    arrstrFilterString = configKeySqlInjectionFilter.Split(',');
+                }
+
+                if (!string.IsNullOrEmpty(configKeyLDAPInjectionFilter))
+                {
+                    arrLDAPFilters = configKeyLDAPInjectionFilter.Split(',');
+                }
+
+                if (!string.IsNullOrEmpty(configKeyLDAPInjectionControls))
+                {
+                    arrLDAPControls = configKeyLDAPInjectionControls.Split(',');
+                }
+
+                if (!string.IsNullOrEmpty(configKeyPageListPeriodCheck))
+                {
+                    arrPageListPeriodChecks = configKeyPageListPeriodCheck.Split(',');
+                }
+
+                if (!string.IsNullOrEmpty(configKeyPeriodChar))
+                {
+                    dotchar = configKeyPeriodChar[0];
+                }
+
+                //Check the Occurrence of "." in the URL. It should be 1 for the valid requests i.e. ".aspx"/".rpt" etc.
+                //If more than 1 Occurrence is detected then redirect to the Error Page.
+                if (requestURL != null)
+                {
+                    //Apply this check only for the pages for which the scan issue was encountered.
+                    if (arrPageListPeriodChecks.Any(requestURL.ToString().Contains))
+                    {
+                        string relativeRequestUrl = requestURL.ToString(); //NOTE: Retrieve only relative URL to ignore dot character of server name
+                        var str = relativeRequestUrl;
+                        var ch = '/';
+                        var n = 3;
+                        var result = str
+                          .Select((c, i) => new { c, i })
+                          .Where(x => x.c == ch)
+                          .Skip(n - 1)
+                          .FirstOrDefault();
+                        relativeRequestUrl = relativeRequestUrl.Substring(result.i);
+                        if (relativeRequestUrl.ToString().IndexOf(dotchar) != relativeRequestUrl.ToString().LastIndexOf(dotchar))
+                        {
+                            //For some of the reports this condition may occur.
+                            //i.e URL would be something like  "AJAXServices/AJAXExcelService.aspx?fileName=JTSBLendingBalanceMonitoring.xls&BatchRunDate=7/06/2020"
+                            //We should allow such cases for report generation i.e. extn like .xls,.xlsx,.rpt,.pdf
+                            if (relativeRequestUrl.ToString().Length >= (relativeRequestUrl.ToString().LastIndexOf(dotchar) + 4))
+                            {
+                                //This is the case where last "." occurance may be followed by an extn .xls,.xlsx,.rpt,.pdf etc. 
+                                //As these are valid extensions and we should allow them.
+                                if (!reportExtn.Contains(relativeRequestUrl.ToString().Substring(relativeRequestUrl.ToString().LastIndexOf(dotchar), 4)))
+                                {
+                                    clsError = new InjectionError();
+                                    clsError.ErrNum = 5000;
+                                    clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.WindowStyle = "";
+                                    _logger.ErrorFormat("Reject1 [PeriodCheck] RelativeUrl={0}", relativeRequestUrl);
+                                    HttpContext.Current.Response.Redirect(_errInjectionPage);
+                                    
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                clsError = new InjectionError();
+                                clsError.ErrNum = 5000;
+                                clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+                                clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+                                clsError.WindowStyle = "";
+                                _logger.ErrorFormat("Reject2 [PeriodCheck] RelativeUrl={0}", relativeRequestUrl);
+                                HttpContext.Current.Response.Redirect(_errInjectionPage);
+
+                                return;
+                            }
+                        }
+                    }
+                }                                
+
+                for (int recform = 0; recform < formPostParam.Count; recform++)
+                {
+                    if (formPostParam.Keys[recform] != null)
+                    {                        
+
+                        if (formPostParam[recform] != null)
+                        {
+                            postValue = formPostParam[recform].ToString().ToLower();
+                            prevChar = nextChar = "";
+
+                            //Check start for LDAP Injections
+                            if (arrLDAPControls.Any(Convert.ToString(formPostParam.Keys[recform]).Contains))
+                            {
+                                if (arrLDAPFilters.Any(postValue.Contains))
+                                {
+                                    clsError = new InjectionError();
+                                    clsError.ErrNum = 5000;
+                                    clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.WindowStyle = "";
+                                    _logger.ErrorFormat("Reject3 [LDAP] Field={0} Value={1}", formPostParam.Keys[recform], postValue);
+                                    HttpContext.Current.Response.Redirect(_errInjectionPage);
+
+                                    return;
+                                }
+                            }
+                            //Check end for LDAP Injections
+
+                            //Check whether the form post parameter contains the strings present in the Web.Config list.
+
+                            string fieldName = formPostParam.Keys[recform];
+                            if (fieldName == "__VIEWSTATE")
+                            {
+                                try
+                                {
+                                    object decoded = new LosFormatter().Deserialize(formPostParam[recform]);
+                                    postValue = decoded.ToString().ToLower();      
+                                                                       
+
+                                    
+                                    try
+                                    {
+                                        string logText = postValue;                
+                                        string kw = arrstrFilterString.FirstOrDefault(f => logText.Contains(f.ToString().ToLower()));
+
+                                        if (kw != null)
+                                        {
+                                            int idx = logText.IndexOf(kw);
+                                            int start = Math.Max(0, idx - 100);
+                                            int end = Math.Min(logText.Length, idx + kw.Length + 100);
+                                            string prev = idx != 0 ? logText.Substring(idx - 1, 1) : "";
+                                            string next = logText.Length > idx + kw.Length ? logText.Substring(idx + kw.Length, 1) : "";
+
+                                            _logger.InfoFormat("VS-DECODED1 Field={0} Keyword={1} Prev={2} Next={3} Len={4} Excerpt={5}",
+                                                fieldName, kw, prev, next, logText.Length, logText.Substring(start, end - start));
+                                        }
+                                        else
+                                        {
+                                            _logger.InfoFormat("VS-DECODED2 Field={0} Keyword=none Len={1} Start={2}",
+                                                fieldName, logText.Length, logText.Substring(0, Math.Min(200, logText.Length)));
+                                        }
+                                    }
+                                    catch (Exception) { }                                    
+                                }
+                                catch (Exception)
+                                {
+                                    continue;
+                                }
+                            }
+                                  
+
+
+
+
+                            //if (formPostParam.Keys[recform] == "__VIEWSTATE")
+                            //{
+                            //    //object decoded = new LosFormatter().Deserialize(formPostParam[recform]);
+                            //    //_logger.Info(decoded);
+                            //    postValue = new LosFormatter().Deserialize(formPostParam[recform]).ToString().ToLower();                                
+                            //}                            
+
+                            if (arrstrFilterString.Any(postValue.Contains))
+                            {
+                                ////If the Keyword mentioned in Web.Config list is found, then fetch the exact Keyword that is found in Post Parameter. 
+                                specialKeyword = arrstrFilterString.FirstOrDefault(filter => postValue.Contains(filter.ToString().ToLower()));
+
+                                if (IsAlphaNumeric(specialKeyword))
+                                {
+                                    //Check the character present before and after this special Keyword, If it is alphanumeric/space 
+                                    //i.e. not special char then Process the request else reject the request and Redirect to Information.aspx page.
+                                    if (postValue.IndexOf(specialKeyword) != 0)
+                                    {
+                                        prevChar = postValue.Substring(postValue.IndexOf(specialKeyword) - 1, 1);
+                                    }
+
+                                    if (postValue.Length > (postValue.IndexOf(specialKeyword) + specialKeyword.Length))
+                                    {
+                                        nextChar = postValue.Substring((postValue.IndexOf(specialKeyword) + specialKeyword.Length), 1);
+                                    }
+
+                                    if ((IsAlphaNumeric(prevChar) || prevChar == BLANK_SPACE) && (IsAlphaNumeric(nextChar) || nextChar == BLANK_SPACE))
+                                    {
+                                        continue;  //goto next posted Value
+                                    }
+                                    else
+                                    {
+                                        clsError = new InjectionError();
+                                        clsError.ErrNum = 5000;
+                                        clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+                                        clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+                                        clsError.WindowStyle = "";
+                                        _logger.ErrorFormat("Reject4 [SQL] Field={0} Keyword={1} Prev={2} Next={3} Value={4}", formPostParam.Keys[recform], specialKeyword, prevChar, nextChar, postValue);
+                                        HttpContext.Current.Response.Redirect(_errInjectionPage);
+
+                                        return;
+                                    }
+                                }
+                                else
+                                {
+                                    clsError = new InjectionError();
+                                    clsError.ErrNum = 5000;
+                                    clsError.ErrStr = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.ErrStack = ERROR_MSG_INVALID_REQUEST;
+                                    clsError.WindowStyle = "";
+                                    _logger.ErrorFormat("Reject5 [SQL] Field={0} Keyword={1} Prev={2} Next={3} Value={4}", formPostParam.Keys[recform], specialKeyword, prevChar, nextChar, postValue);
+                                    HttpContext.Current.Response.Redirect(_errInjectionPage);
+
+                                    return;
+                                }
+
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorFormat("Exception in ValidateRequestAgainstInjection:", ex);
+            }
+            finally
+            {
+                if (clsError != null)
+                {
+                    clsError.Dispose();
+                    clsError = null;
+                }
+            }
+
+        }
+
+        /// <summary>
+        /// Get Next Business Date
+        /// </summary>
+        /// <param name="dtBatchDate"></param>
+        /// <returns></returns>
+        public static string GetNextBusinessDate(string dtBatchDate)
+        {
+            Database clsDB = new Database();
+            DataCommand clsCommand = new DataCommand();
+            string RetVal = "";
+            try
+            {
+                if (clsDB.Open() == false)
+                    return RetVal;
+                clsCommand.Connection = clsDB.Connection;
+                clsCommand.StoredProcedure = SqlObjectsStaticClass.p_GetData_Misc;
+                clsCommand.SqlIdentifier = "GET_BUSINESS_DATE";
+                RetVal = clsCommand.GetBusinessDate(dtBatchDate);
+            }
+            catch (Exception Exc)
+            {
+                Information clsInfo = new Information();
+                clsInfo.ErrNum = 5000;
+                clsInfo.ErrStr = Exc.Message;
+                clsInfo.ErrStack = Exc.StackTrace;
+                clsInfo.WindowStyle = "";
+                HttpContext.Current.Server.Transfer(_errPage, true);
+            }
+            finally
+            {
+                clsDB.Dispose();
+            }
+            return RetVal;
+        }
+        #endregion
+
+        #endregion
+
+        public static string RemoveSpecialCharacters(string str)
+        {
+            return Regex.Replace(str, "[^a-zA-Z0-9_.]+", "", RegexOptions.Compiled);
+        }
+    }
+}
