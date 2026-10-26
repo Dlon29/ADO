@@ -1,18 +1,8 @@
-{INFO} 10/26/2026 06:53:51 [AD\dcolaco] : Successfully accessed module. User: dcolaco, Module: DEFAULT
-{INFO} 10/26/2026 06:59:42 [AD\dcolaco] : Successfully accessed module. User: dcolaco, Module: ACCOUNTGROUP
-{ERROR} 10/26/2026 06:59:52 [AD\dcolaco] : Reject4 [SQL] Field=__VIEWSTATE Keyword=delete Prev=' Next=  Value=javascript: highlightrow2(this, false);alert('delete functionality is not available. please contact production support if you need this functionality.'); return false;
-{ERROR} 10/26/2026 06:59:52 [AD\dcolaco] : Exception in ValidateRequestAgainstInjection:
-System.Threading.ThreadAbortException: Thread was being aborted.
-   at System.Threading.Thread.AbortInternal()
-   at System.Threading.Thread.Abort(Object stateInfo)
-   at System.Web.HttpResponse.AbortCurrentThread()
-   at System.Web.HttpResponse.Redirect(String url, Boolean endResponse, Boolean permanent)
-   at MOBETTER.Common.ValidateRequestAgainstInjection(NameValueCollection formPostParam, Uri requestURL) in C:\Users\dcolaco\TFS\MOBETTER\Branch\Release\Version 11.11.0\Source Code\UI\Includes\Common.cs:line 2111
-{ERROR} 10/26/2026 07:03:28 [AD\dcolaco] : Reject4 [SQL] Field=__VIEWSTATE Keyword=delete Prev=' Next=  Value=javascript: highlightrow2(this, false);alert('delete functionality is not available. please contact production support if you need this functionality.'); return false;
-{ERROR} 10/26/2026 07:03:28 [AD\dcolaco] : Exception in ValidateRequestAgainstInjection:
-System.Threading.ThreadAbortException: Thread was being aborted.
-   at System.Threading.Thread.AbortInternal()
-   at System.Threading.Thread.Abort(Object stateInfo)
-   at System.Web.HttpResponse.AbortCurrentThread()
-   at System.Web.HttpResponse.Redirect(String url, Boolean endResponse, Boolean permanent)
-   at MOBETTER.Common.ValidateRequestAgainstInjection(NameValueCollection formPostParam, Uri requestURL) in C:\Users\dcolaco\TFS\MOBETTER\Branch\Release\Version 11.11.0\Source Code\UI\Includes\Common.cs:line 2111
+{INFO} 10/15/2026 05:27:23 [AD\rpatil] : Successfully accessed module. User: rpatil, Module: EquityMovementSummary
+{ERROR} 10/15/2026 05:27:40 [AD\rpatil] : Reject4 [SQL] Field=__VIEWSTATE Keyword=exec Prev=+ Next=s Value=ygcagtaarljftvpfsg0h4/fi6lpawlmbvxqtplodps/mdorkicni1pn6prbkdocosvi392upvwqz11cowm0jkfumzitdrvx3bheh+g20nkhdqbldtzap4ugyg9i/375umesj/kdboy6oocoywxdxvoi6ooos2owfnbseterbwdtbr3bq/b3ug2ca/luojrlnkjbocb+jok5o5obkepeg0car5yee3oflatzltmbr0kk2psxsv7rtl7ssezedoml7khgknmv07uowfpqpmj0x0rtrm2jahrb/va/9tdgscmahfbkmzougalzmuh7ti2gihb+nctmq5ew2o7ddgarvzw6ygeidzxdu828ody4lexpixsaetmbhnxccw8ildcdmii6hl1zhvk7ry9jrff5el8zdtsvsv5jdnw7zdbte7crjk2swfejswk6kpwnjnha2bcbdlbiqnhltzaqoqwsh15xjrcaq04emwjrzkbxdc7qkaiwtgh+
+
+
+
+bzjfp+execsxd
+
+
