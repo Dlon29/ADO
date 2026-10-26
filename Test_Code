@@ -1,949 +1,329 @@
-CREATE PROCEDURE [dbo].[p_GetEquityMovementReport]
-(
-	@BatchRunDate 		DATETIME,
-	@ReportID			SMALLINT=0,	-- Named Report Id
-	@IsFileExtract		BIT=NULL,	-- 0 = No; 1 = Yes
-	@IsLondonOnly		BIT=NULL,	-- 0 = No; 1 = Yes
-	@IsDetailedCodes	BIT=NULL,	-- 0 = No; 1 = Yes,
-	@IsDisplayResults   BIT = 1 
-)
-AS
-BEGIN 
-	DECLARE @ErrorMessage NVARCHAR(4000)
-	DECLARE @ErrorSeverity INT
-	DECLARE @ErrorState INT
-
-
-	DECLARE @LOAN_STATUS_UNCHECKED  AS CHAR(1)
-	DECLARE @LOAN_STATUS_UNVERIFIED AS CHAR(1)
-	DECLARE @LOAN_STATUS_VERIFIED   AS CHAR(1)
-
-
-	BEGIN TRY
-		SET NOCOUNT ON
-
-			DECLARE @TODAY AS VARCHAR(10), @AcctGrpIDs VARCHAR(20)
-
-			SET @TODAY = CONVERT(VARCHAR(10),GETDATE(),101)
-			SET @BatchRunDate = CONVERT(VARCHAR, @BatchRunDate, 101) -- Eliminate time portion of date
-
-			SET @LOAN_STATUS_UNCHECKED  = '0'
-			SET @LOAN_STATUS_UNVERIFIED = '9'
-			SET @LOAN_STATUS_VERIFIED   = '1'
-
-
-		-- In order to determine which loan/account combinations have face amount changes
-		-- we need to compare today's loans against the previous business day's loans
-			CREATE TABLE #TMP_LOANS_PREV  
-			( 	
-				TxnRefNbr			INT				NULL,
-				AcctNbr				VARCHAR(12)		NULL,
-				Spread				DECIMAL(9,7)	NULL,
-				FaceAmount_Prev		NUMERIC(20)		NULL,
-				FaceAmount_Today	NUMERIC(20)		NULL,
-				IsActive			BIT				NULL, 
-				IsFaceAmtChanged	BIT				
-			)
-
-			CREATE INDEX [IDX1_TMP_LOANS_PREV] ON #TMP_LOANS_PREV
-			(
-				[TxnRefNbr] ASC,
-				[AcctNbr] ASC
-			)
-
-		--================================================================================================================================================================================================
-		--Get all accounts into #TMP_ACCOUNTS
-		--================================================================================================================================================================================================
-			SELECT @AcctGrpIDs = ParameterDefValue 
-			FROM NamedReportParameter 
-			WHERE ( ReportId = @ReportID ) AND ( ParameterName = '@AcctGrpIDs' )
-			
-			SELECT * 
-			INTO #TMP_ACCOUNTS
-			FROM dbo.ACCOUNT  AS TACCT
-			WHERE 
-				( ISNULL(TACCT.IsDeleted, 0 ) = 0 ) AND 
-				( @BatchRunDate BETWEEN TACCT.EffectiveDateBegin AND TACCT.EffectiveDateEnd ) AND 
-				(	
-					TACCT.AcctGrpID IN ( SELECT CONVERT(INT,Parameter) 
-									     FROM dbo.f_ParseParameters(@AcctGrpIDs)) -- Include only CBJTrust Accounts
-				) 
-
-			CREATE INDEX [IDX1_ACCT] ON #TMP_ACCOUNTS
-			(
-				[AcctNbr] ASC 
-			)
-
-			DECLARE @PrevDay	DATETIME
-			SET @PrevDay = dbo.f_GetPrevBizDay(@BatchRunDate)
-
-		-- Get previous business day's Equity loans (excluding collateral)
-
-			INSERT INTO #TMP_LOANS_PREV
-			( 
-				TxnRefNbr, AcctNbr, Spread, FaceAmount_Prev, FaceAmount_Today, IsActive, IsFaceAmtChanged 
-			)
-			SELECT
-				TxnRefNbr, TL.AcctNbr, Spread, FaceAmount, 0, 0, 0 
-			FROM
-				f_IsFutureTable (@PrevDay, NULL, 0, 2, 1, 0) TL  -- 5th parameter to allow the Loaned Securities Service records
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCTS
-					ON ( TL.AcctNbr = TMP_ACCTS.AcctNbr )
-				INNER JOIN ( SELECT BrkNbr 
-							 FROM  Broker 
-							 WHERE ( BusinessInd = 'EQ' ) AND 
-							       ( @PrevDay BETWEEN EffectiveDateBegin AND EffectiveDateEnd	) AND 
-							       ( ISNULL(IsDeleted,0) = 0 ) ) AS TBRK 
-					ON ( TL.BrkNbr = TBRK.BrkNbr )
-			WHERE
-				( TL.SecType != 'L'	)
-			 	
-			DECLARE @TMP_LOANS_TODAY TABLE 
-			( 	
-				TxnRefNbr			INT				NULL,
-				AcctNbr				VARCHAR(12)		NULL,
-				FaceAmount_Today	NUMERIC(20)		NULL,
-				Spread				DECIMAL(9,7)	NULL
-			)
-
-		-- Get today's Equity loans (excluding collateral)
-			INSERT
-				@TMP_LOANS_TODAY
-			SELECT 
-				TxnRefNbr, TL.AcctNbr, FaceAmount, Spread
-			FROM
-				f_IsFutureTable (@BatchRunDate, NULL, 0, 2, 1, 0) TL  -- 5th parameter to allow the Loaned Securities Service records
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCTS
-					ON ( TL.AcctNbr = TMP_ACCTS.AcctNbr )
-				INNER JOIN ( SELECT BrkNbr 
-							 FROM  Broker 
-							 WHERE ( BusinessInd = 'EQ' ) AND 
-							       ( @BatchRunDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd	) AND 
-							       ( ISNULL(IsDeleted,0) = 0 ) ) AS TBRK 
-					ON ( TL.BrkNbr = TBRK.BrkNbr )
-			WHERE
-				( TL.SecType != 'L' ) 	
-
-
-		-- Insert any new loans/accounts (i.e. didn't exist yesterday)
-			INSERT #TMP_LOANS_PREV
-			( 
-				TxnRefNbr, AcctNbr, Spread, FaceAmount_Prev, FaceAmount_Today, IsActive, IsFaceAmtChanged 
-			)
-			SELECT
-				TxnRefNbr, TL.AcctNbr, Spread, FaceAmount_Prev = 0, FaceAmount_Today = 0, IsActive =0, IsFaceAmtChanged = 0 
-			FROM
-				@TMP_LOANS_TODAY AS TL
-				INNER JOIN #TMP_ACCOUNTS TMP_ACCTS
-					ON ( TL.AcctNbr = TMP_ACCTS.AcctNbr )
-			WHERE
-				TxnRefNbr NOT IN ( SELECT TxnRefNbr FROM #TMP_LOANS_PREV PREV
-								   WHERE  ( PREV.TxnRefNbr = TL.TxnRefNbr ) AND
-                                          ( PREV.AcctNbr = TL.AcctNbr )    -- Missing RAL activities for CA loan booked yesterday.
-								  ) 
-
-
-		-- Move the face amounts into a single table so they can be compared
-			UPDATE
-				#TMP_LOANS_PREV
-			SET
-				FaceAmount_Today = TODAY.FaceAmount_Today
-			FROM
-				#TMP_LOANS_PREV AS PREV
-				INNER JOIN @TMP_LOANS_TODAY AS TODAY 
-				ON 
-					( PREV.TxnRefNbr	= TODAY.TxnRefNbr ) AND
-					( PREV.AcctNbr	= TODAY.AcctNbr )
-			 
-
-		-- Remove loan/account combinations which have not changed between yesterday and today
-			DELETE FROM 
-				#TMP_LOANS_PREV
-			WHERE
-				FaceAmount_Prev = FaceAmount_Today
-
-
-
-		-- Mark loan/account combinations which has / has not changed between yesterday and today
-
-			UPDATE #TMP_LOANS_PREV
-			SET IsFaceAmtChanged = CASE WHEN ( FaceAmount_Prev != FaceAmount_Today ) THEN 1 
-										ELSE 0 
-										END 
-
-		-- Create temporary table to hold activity data so breakdowns can be created
-			IF ( OBJECT_ID('tempdb..#TMP_ACTIVITY','U') IS NULL )
-			BEGIN
-				SELECT * 
-				INTO #TMP_ACTIVITY
-				FROM dbo.f_CreateEquityMovementReportActivitySchema() 
-			END	
-
-
-			
-
-		-- Note: Since this report only includes Equity data we do not need to include any manually
-		--   entered data from the FutureSettlementManualEntry table. However, that could change
-		--       in the future.
-
-			INSERT INTO #TMP_ACTIVITY
-			( 
-				TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-				SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate 
-			)
-			SELECT 
-				TACT.TxnRefNbr, TxnSeqNbr, TxnSuffix, 
-				
-				LoanDate = CASE WHEN TOE IN ( 'CPS','CSL') THEN SettleDate 
-								ELSE EffectiveDate 
-								END, 
-				
-				ProcDate, LoanType, TACT.AcctNbr, BrkNbr, NULL, NULL, NULL, 
-
-				TOE = CASE WHEN ( Toe = 'RAL' ) AND ( FaceAmount>0 ) THEN 'OSL'
-						   WHEN ( Toe = 'RAL' ) AND ( FaceAmount<0 ) THEN 'RSL'
-						   ELSE TOE
-						   END, 
-				
-				NewPrice, SecCode, NULL, NULL, SecDesc, NULL, NULL, CCYCode, CollCCYCode, SecType, 
-				FaceAmount, NetAmount, SecLocCode, NULL, CollNbr, FinderNbr, 1, TACT.ClearAgentNbr, TACT.TradeDate
-			FROM 
-				ActivityExtractHist AS TACT
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( TACT.AcctNbr = TMP_ACCT.AcctNbr ) 
-			WHERE 
-				( TACT.ProcDate = @BatchRunDate ) AND
-				( TACT.AcctNbr != 'OMNI'  )       AND
-				( ISNULL(TACT.LoanStatus, '') != @LOAN_STATUS_UNCHECKED  ) AND 
-				( EXISTS ( SELECT * FROM #TMP_LOANS_PREV AS TMP_PREV
-						   WHERE ( TMP_PREV.TxnRefNbr = TACT.TxnRefNbr ) AND 
-						         ( TMP_PREV.IsFaceAmtChanged = 1 ) ) ) 
-
-
-		-- Remove records which don't effect loan face amount
-			DELETE FROM
-				#TMP_ACTIVITY
-			WHERE
-				Toe NOT IN ('OSL', 'RSL', 'RAL', 'RAQ', 'AJQ', 'CSL', 'RSA')
-
-		-- Add loans which have changes but no activities (if any)
-		-- First mark loan records which have activities
-			UPDATE 
-				#TMP_LOANS_PREV
-			SET
-				IsActive = 1
-			FROM
-				#TMP_LOANS_PREV PREV 
-				INNER JOIN #TMP_ACTIVITY TA
-			    ON  ( TA.TxnRefNbr	= PREV.TxnREfNbr ) AND
-				    ( TA.AcctNbr = PREV.AcctNbr )
-				
-		-- Add today's loans which have changes but no activities (if any) 
-			INSERT INTO #TMP_ACTIVITY
-			( 
-				TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-				SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled,  ClearAgentNbr, TradeDate
-			)
-			SELECT 
-				FT.TxnRefNbr, NULL, NULL, FT.LoanDate, '12/31/9999', FT.LoanType, FT.AcctNbr, FT.BrkNbr, NULL, NULL, NULL, 
-				'XXX', FT.TradePrice, FT.SecCode, NULL, NULL, FT.SecDesc, NULL, NULL, FT.CCYCode, FT.CollCCYCode, FT.SecType, 
-				FT.FaceAmount, FT.Principal, FT.SecLocCode, NULL, FT.CollNbr, FT.FinderNbr, 0, FT.ClearAgentNbr, FT.TradeDate
-			FROM 
-				f_IsFutureTable (@BatchRunDate, NULL, 0, 2, 1, 0) AS FT  -- 5th parameter to allow the Loaned Securities Service records
-				
-				INNER JOIN #TMP_LOANS_PREV AS PREV
-					ON ( FT.TxnRefNbr = PREV.TxnRefNbr	) AND
-					   ( FT.AcctNbr = PREV.AcctNbr ) 
-
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( FT.AcctNbr = TMP_ACCT.AcctNbr ) 
-			WHERE 
-				( FT.BatchRunDate = @BatchRunDate )  AND
-				( PREV.IsActive	= 0 ) AND 
-				( PREV.IsFaceAmtChanged = 1 )
-
-		-- Add yesterday's loans which have changes but no activities (if not already added)
-		/* james*/
-			INSERT INTO #TMP_ACTIVITY
-			( 
-				TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-				SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate
-			)
-			SELECT 
-				DISTINCT FT.TxnRefNbr, NULL, NULL, FT.LoanDate, '12/31/9999', FT.LoanType, FT.AcctNbr, FT.BrkNbr, NULL, NULL, NULL, 
-				'XXX', FT.TradePrice, FT.SecCode, NULL, NULL, FT.SecDesc, NULL, NULL, FT.CCYCode, FT.CollCCYCode, FT.SecType, 
-				FT.FaceAmount, FT.Principal, FT.SecLocCode, NULL, FT.CollNbr, FT.FinderNbr, 0, FT.ClearAgentNbr, FT.TradeDate
-			FROM 
-				f_IsFutureTable (@PrevDay, NULL, 0, 2, 1, 0) AS FT  -- 5th parameter to allow the Loaned Securities Service records
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( FT.AcctNbr = TMP_ACCT.AcctNbr ) 
-				INNER JOIN #TMP_LOANS_PREV AS PREV
-					ON ( FT.TxnRefNbr	= PREV.TxnRefNbr ) AND
-					   ( FT.AcctNbr = PREV.AcctNbr ) 
-			WHERE 
-				( BatchRunDate	= @PrevDay ) AND
-				( PREV.IsActive	= 0 ) AND 
-				( PREV.IsFaceAmtChanged = 1 ) AND 
-				( NOT EXISTS ( SELECT TA.TxnRefNbr 
-							   FROM #TMP_ACTIVITY as TA
-							   WHERE ( TA.TxnRefNbr = PREV.TxnRefNbr ) AND ( TA.AcctNbr = PREV.AcctNbr ) ) )
-
-
-			CREATE INDEX [IDX1_TMP_ACTIVITY] ON #TMP_ACTIVITY		
-			(
-				[TxnRefNbr] ASC,
-				[AcctNbr] ASC
-			)
-
-
-		-- Reconcile against Loan Data
-			DECLARE @TMP_RECON TABLE 
-			( 	
-				TxnRefNbr			INT			NULL,
-				AcctNbr				VARCHAR(12)	NULL,
-				FaceAmountChange	NUMERIC(20)	NULL
-			)
-
-		-- Sum up all face amount changes for the loan/account combination
-			INSERT 
-				@TMP_RECON
-			SELECT
-				TxnRefNbr, AcctNbr, SUM(FaceAmtChange)
-			FROM
-				#TMP_ACTIVITY AS TACT												  
-			GROUP BY
-				TxnRefNbr, AcctNbr
-
-
-
-		-- Delete records where the loan file changes match the sum of the activity file changes
-			DELETE
-				TMP_RECON 
-			FROM
-				@TMP_RECON AS TMP_RECON 
-				INNER JOIN #TMP_LOANS_PREV AS TMP_PREV_LN
-			    ON ( TMP_RECON .TxnRefNbr = TMP_PREV_LN.TxnRefNbr	) AND
-				   ( TMP_RECON .AcctNbr	= TMP_PREV_LN.AcctNbr) 
-			WHERE 
-				( TMP_RECON.FaceAmountChange = TMP_PREV_LN.FaceAmount_Today - TMP_PREV_LN.FaceAmount_Prev ) 
-
-		-- Delete records that matches face amounts on today's loan file ( e.g. RAL ) 
-			DELETE
-				TMP_RECON 
-			FROM
-				@TMP_RECON AS TMP_RECON 
-				INNER JOIN @TMP_LOANS_TODAY AS TMP_LN
-			    ON ( TMP_RECON .TxnRefNbr = TMP_LN.TxnRefNbr	) AND
-				   ( TMP_RECON .AcctNbr	= TMP_LN.AcctNbr) 
-			WHERE 
-				( TMP_RECON.FaceAmountChange = TMP_LN.FaceAmount_Today ) 				
-
-		-- Delete activities resulting in 0 face amount change from Recon 
-			DELETE
-				TMP_RECON 
-			FROM
-				@TMP_RECON AS TMP_RECON 
-			WHERE 
-				( TMP_RECON.FaceAmountChange = 0 ) AND 
-				NOT EXISTS ( SELECT TxnRefNbr 
-							 FROM @TMP_LOANS_TODAY AS TMP_TOD
-							 WHERE ( TMP_TOD.TxnRefNbr = TMP_RECON.TxnRefNbr ) AND 
-								   ( TMP_TOD.AcctNbr = TMP_RECON.AcctNbr ) ) 
-
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				IsReconciled = 0
-			FROM
-				#TMP_ACTIVITY TA 
-				INNER JOIN @TMP_RECON TR
-				ON ( TA.TxnRefNbr = TR.TxnRefNbr ) 	AND
-				   ( TA.AcctNbr = TR.AcctNbr )
-
-		-- Switch Trade Date on Cancels to be the original loan trade date
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				ProcDate = TD.TradeDate
-			FROM
-				#TMP_ACTIVITY TA
-				INNER JOIN  (SELECT TxnRefNbr, TradeDate 
-							 FROM #TMP_ACTIVITY
-							 WHERE Toe IN ('CSL', 'CPS') ) TD
-				ON 
-					( TA.TxnRefNbr	= TD.TxnRefNbr ) 
-			WHERE 
-				TA.Toe	IN ('CSL', 'CPS', 'RSL', 'RAQ', 'AJQ')		-- Added re-allocations, Quantity Adjustments or returns which happened on same day as Cancel 
-		
-		
-		
-		-- Handle "pushed" new Equity loans by creating a cancel and then re-add record with new effective date
-		-- Only show "pushes" done on report date irregardless of when they were initially entered, etc
-		-- Note: ActivityExtractHist includes today's activity
-
-		/**** Pushed in WorldLend*************/
-
-			DECLARE @TMP_PUSHED_WL TABLE 
-			( 	
-				ActId			INT			IDENTITY,
-				TxnRefNbr		INT			NULL,
-				AcctNbr			VARCHAR(12)	NULL,
-				TxnSuffix		VARCHAR(3)	NULL,	
-				TxnSeqNbr		INT			NULL,
-				OldEffDate		DATETIME	NULL,
-				NewEffDate		DATETIME	NULL,
-				Flag			BIT			NULL
-			)
-
-		-- Only process the last ASD for a given loan #, account and sequence
-			INSERT
-				@TMP_PUSHED_WL
-			SELECT
-				TxnRefNbr, TACTHIST.AcctNbr, TxnSuffix, MAX(TxnSeqNbr), NULL, NULL, 0
-			FROM
-				ActivityExtractHist TACTHIST
-				INNER JOIN  #TMP_ACCOUNTS TMP_ACCTS
-					ON ( TACTHIST.AcctNbr = TMP_ACCTS.AcctNbr )
-			WHERE
-				ProcDate 	= @BatchRunDate	AND
-				Toe			= 'ASD'		AND				
-				BrkNbr		IN	(SELECT BrkNbr FROM Broker 
-								 WHERE 
-									BusinessInd 		= 'EQ' 				AND
-									EffectiveDateBegin	<= @BatchRunDate	AND
-					 				EffectiveDateEnd	>= @BatchRunDate	AND
-					 				IsDeleted			= 0)  AND 
-				( ISNULL(TACTHIST.LoanStatus, '') != @LOAN_STATUS_UNCHECKED  )
-			GROUP BY
-				TxnRefNbr, TACTHIST.AcctNbr, TxnSuffix
-
-
-			UPDATE
-				@TMP_PUSHED_WL
-			SET
-				OldEffDate = ProcDate,
-				NewEffDate = EffectiveDate
-			FROM
-				ActivityExtractHist EA
-				INNER JOIN @TMP_PUSHED_WL PAM 
-				ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND
-				   ( EA.AcctNbr		= PAM.AcctNbr )   AND
-				   ( EA.TxnSuffix	= PAM.TxnSuffix	) AND
-				   ( EA.TxnSeqNbr	= PAM.TxnSeqNbr )   
-			WHERE
-				( EA.TOE = 'ASD' ) 
-
-
-			DECLARE 	@Id INT
-			WHILE (SELECT COUNT(*) FROM @TMP_PUSHED_WL WHERE Flag = 0) > 0
-			BEGIN
-
-				SELECT @Id = MIN(ActId) FROM @TMP_PUSHED_WL WHERE Flag = 0
-
-				INSERT INTO #TMP_ACTIVITY
-				(
-					TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate,LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-					SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate
-				)
-				SELECT 
-					EA.TxnRefNbr, EA.TxnSeqNbr, EA.TxnSuffix, OldEffDate, 
-					ProcDate = CASE WHEN EXISTS ( SELECT TOP 1 TxnRefNbr FROM LoanPendingHist AS TLPH
-												   WHERE ( TLPH.TxnRefNbr = EA.TxnRefNbr ) AND 
-														 ( TLPH.AcctNbr = EA.AcctNbr ) AND 
-														 ( TLPH.TxnSeqNbr = EA.TxnSeqNbr ) ) THEN EA.TradeDate		--Render original TradeDates for Future Loans 
-									 ELSE 
-										EA.ProcDate
-									 END					
-					,LoanType, EA.AcctNbr, BrkNbr, NULL, NULL, NULL, 
-					'CSL', NewPrice, SecCode, NULL, NULL, SecDesc, NULL, NULL,CCYCode, CollCCYCode, SecType, 
-					(FaceAmount * -1), (NetAmount * -1), SecLocCode, NULL, CollNbr, FinderNbr, 1, EA.ClearAgentNbr, EA.TradeDate
-				FROM 
-					ActivityExtractHist AS EA
-					INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-						ON ( EA.AcctNbr = TMP_ACCT.AcctNbr ) 
-					INNER JOIN @TMP_PUSHED_WL AS PAM
-						ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND
-						   ( EA.AcctNbr = PAM.AcctNbr )	  AND
-						   ( EA.TxnSuffix = PAM.TxnSuffix	) 
-				WHERE
-					( EA.ProcDate != @BatchRunDate )  AND	-- Eliminate same day ASDs
-					( EA.TOE = 'OSL')				  AND
-					( PAM.ActId	 = @Id )			  AND 
-					( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED  )
-
-
-				INSERT INTO #TMP_ACTIVITY
-				( 
-					TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-					SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate 
-				)
-				SELECT 
-					EA.TxnRefNbr, EA.TxnSeqNbr, EA.TxnSuffix, PAM.NewEffDate, 
-					
-					ProcDate = CASE WHEN EXISTS ( SELECT TOP 1 TxnRefNbr FROM LoanPendingHist AS TLPH
-												  WHERE ( TLPH.TxnRefNbr = EA.TxnRefNbr ) AND 
-														( TLPH.AcctNbr = EA.AcctNbr ) AND 
-														( TLPH.TxnSeqNbr = EA.TxnSeqNbr ) ) THEN EA.TradeDate		--Render original TradeDates for Future Loans 
-									ELSE 
-										EA.ProcDate
-									END
-					,LoanType, EA.AcctNbr, BrkNbr, NULL, NULL, NULL, 
-					EA.Toe, NewPrice, SecCode, NULL, NULL, SecDesc, NULL, NULL, CCYCode, CollCCYCode, SecType, 
-					FaceAmount, NetAmount, SecLocCode, NULL, CollNbr, FinderNbr, 1, EA.ClearAgentNbr, EA.TradeDate
-				FROM 
-					ActivityExtractHist EA
-					INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-						ON ( EA.AcctNbr = TMP_ACCT.AcctNbr ) 
-					INNER JOIN @TMP_PUSHED_WL AS PAM
-						ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND
-						   ( EA.AcctNbr = PAM.AcctNbr )	  AND
-						   ( EA.TxnSuffix	= PAM.TxnSuffix	) 
-				WHERE 
-					( EA.ProcDate != @BatchRunDate )  AND	-- Eliminate same day ASDs
-					( EA.TOE = 'OSL' )				  AND
-					( PAM.ActId	= @Id ) AND 
-					( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-
-
-				UPDATE
-					@TMP_PUSHED_WL
-				SET
-					Flag = 1
-				WHERE
-					ActId = @Id
-
-				IF (SELECT COUNT(*) FROM @TMP_PUSHED_WL WHERE Flag = 0) > 0
-					CONTINUE
-				ELSE
-					BREAK
-			END
-
-
-		/**** Pushed in MoBetter*************/
-
-			DECLARE @TMP_PUSHED TABLE 
-			( 	
-				ActId			INT		NULL,
-				Flag			BIT		NULL
-			)
-
-			INSERT 
-				@TMP_PUSHED ( ActID, Flag )
-			SELECT 
-				PAM.ID, 0
-			FROM
-				ProjActMovement AS PAM
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( PAM.AcctNbr = TMP_ACCT.AcctNbr ) 
-				INNER JOIN ActivityExtractHist AS EA
-					ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND
-					   ( EA.AcctNbr		= PAM.AcctNbr )	  AND
-					   ( EA.TxnSuffix	= PAM.TxnSuffix	) AND
-					   ( EA.TxnSeqNbr	= PAM.TxnSeqNbr	)   
-			WHERE
-				( @BatchRunDate >= LastEffDate ) AND ( @BatchRunDate < NewEffDate ) AND
-				( PAM.Toe = 'OSL' )   AND
-				( ISNULL(PAM.IsDeleted,0) = 0 ) AND
-				( EA.BrkNbr	IN	( SELECT BrkNbr FROM [Broker] 
-								  WHERE ( BusinessInd = 'EQ' ) AND 
-										( @BatchRunDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd ) AND
-					 					( IsDeleted		= 0) ) ) AND 
-				( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-					 		    
-			WHILE (SELECT COUNT(*) FROM @TMP_PUSHED WHERE Flag = 0) > 0
-			BEGIN
-		
-				SELECT @Id = MIN(ActId) 
-				FROM @TMP_PUSHED 
-				WHERE Flag = 0
-
-		
-				INSERT INTO #TMP_ACTIVITY
-				( 
-					TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-					SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate
-				)
-				SELECT 
-					EA.TxnRefNbr, EA.TxnSeqNbr, EA.TxnSuffix, 
-
-					CASE WHEN ( @BatchRunDate < @TODAY AND EXISTS(SELECT 1 FROM dbo.ProcessedLoanHist AS TPLH
-																	 WHERE ( TPLH.AsOfDate = @BatchRunDate )  AND 
-																		   ( TPLH.TxnRefNbr = EA.TxnRefNbr) AND  
-																		   ( TPLH.AcctNbr = EA.AcctNbr)		AND  
-																		   ( TPLH.TxnSuffix = EA.TxnSuffix ))) THEN @BatchRunDate
-			   
-						 WHEN ( @BatchRunDate = @TODAY AND EXISTS(SELECT 1 FROM dbo.ProcessedLoan AS TL
-																					 WHERE ( TL.AsOfDate = @BatchRunDate )  AND 
-																						   ( TL.TxnRefNbr = EA.TxnRefNbr) AND  
-																						   ( TL.AcctNbr = EA.AcctNbr)		AND  
-																						   ( TL.TxnSuffix = EA.TxnSuffix ) )) THEN @BatchRunDate
-
-						 ELSE 
-								CASE WHEN EA.TOE IN ( 'CPS', 'CSL') THEN EA.SettleDate 
-									 ELSE EA.EffectiveDate 
-									 END
-						 END AS EffectiveDate, 
-			
-					ProcDate = CASE WHEN EXISTS ( SELECT TOP 1 TxnRefNbr FROM LoanPendingHist AS TLPH
-												  WHERE ( TLPH.TxnRefNbr = EA.TxnRefNbr ) AND 
-														( TLPH.AcctNbr = EA.AcctNbr ) AND 
-														( TLPH.TxnSeqNbr = EA.TxnSeqNbr ) ) THEN EA.TradeDate		--Render original TradeDates for Future Loans 
-									ELSE 
-										EA.ProcDate
-									END
-					, LoanType, EA.AcctNbr, BrkNbr, NULL, NULL, NULL, 
-					'CSL', NewPrice, SecCode, NULL, NULL, SecDesc, NULL, NULL, CCYCode, CollCCYCode, SecType, 
-					(FaceAmount * -1), (NetAmount * -1), SecLocCode, NULL, CollNbr, FinderNbr, 1, EA.ClearAgentNbr, EA.TradeDate
-				FROM 
-					ActivityExtractHist AS EA 
-					INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-						ON ( EA.AcctNbr = TMP_ACCT.AcctNbr ) 
-					INNER JOIN ProjActMovement AS PAM
-						ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND ( EA.AcctNbr = PAM.AcctNbr ) AND
-						   ( EA.TxnSuffix	= PAM.TxnSuffix ) AND ( EA.TxnSeqNbr = PAM.TxnSeqNbr ) 
-				WHERE 
-					( PAM.ID = @Id ) AND ( PAM.IsDeleted = 0 ) AND 
-					( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-
-			
-				INSERT INTO #TMP_ACTIVITY
-				( 
-					TxnRefNbr, TxnSeqNbr, TxnSuffix, LoanDate, ProcDate, LoanType, AcctNbr, BrkNbr, BrkName, SubBroker, BrkGrpName, Toe, NewPrice, SecCode, SecID, SEDOL,
-					SecDesc, Spread, PFID, CCYCode, CollCCYCode, SecType, FaceAmtChange, NetAmount, SecLocCode, AcctCode, CollNbr, FinderNbr, IsReconciled, ClearAgentNbr, TradeDate 
-				)
-				SELECT 
-					EA.TxnRefNbr, EA.TxnSeqNbr, EA.TxnSuffix, 
-					CASE WHEN @BatchRunDate < @TODAY THEN ISNULL(TPLH.AsOfDate, PAM.NewEffDate) 
-						 ELSE PAM.NewEffDate END AS NewEffDate,
-					ProcDate = CASE WHEN EXISTS ( SELECT TOP 1 TxnRefNbr FROM LoanPendingHist AS TLPH
-												  WHERE ( TLPH.TxnRefNbr = EA.TxnRefNbr ) AND 
-														( TLPH.AcctNbr = EA.AcctNbr ) AND 
-														( TLPH.TxnSeqNbr = EA.TxnSeqNbr ) ) THEN EA.TradeDate		--Render original TradeDates for Future Loans 
-									ELSE 
-										EA.ProcDate
-									END 
-					,LoanType, EA.AcctNbr, BrkNbr, NULL, NULL, NULL, 
-					EA.Toe, NewPrice, SecCode, NULL, NULL, SecDesc, NULL, NULL, CCYCode, CollCCYCode, SecType, 
-					FaceAmount, NetAmount, SecLocCode, NULL, CollNbr, FinderNbr, 1, EA.ClearAgentNbr, EA.TradeDate
-				FROM 
-					ActivityExtractHist AS EA 
-					INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-						ON ( EA.AcctNbr = TMP_ACCT.AcctNbr ) 
-					INNER JOIN ProjActMovement AS PAM
-						ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND ( EA.AcctNbr	= PAM.AcctNbr ) AND
-						   ( EA.TxnSuffix	= PAM.TxnSuffix	) AND ( EA.TxnSeqNbr	= PAM.TxnSeqNbr	) 
-					LEFT JOIN (SELECT MIN(AsOfDate) AS AsOfDate, AcctNbr, TxnRefNbr, TxnSuffix
-							   FROM ProcessedLoanHist 
-							   WHERE ( AsOfDate > @BatchRunDate ) 
-							   GROUP BY AcctNbr, TxnRefNbr, TxnSuffix ) AS TPLH 
-					   
-						ON ( TPLH.TxnRefNbr = EA.TxnRefNbr)  AND ( TPLH.AcctNbr = EA.AcctNbr )	 AND 
-						   ( TPLH.TxnSuffix= EA.TxnSuffix )						
-				WHERE 
-					( PAM.ID = @Id  ) AND ( PAM.IsDeleted = 0 ) AND 
-					( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-
-
-				UPDATE @TMP_PUSHED
-				SET Flag = 1
-				WHERE ( ActId = @Id )
-
-				IF (SELECT COUNT(*) FROM @TMP_PUSHED WHERE Flag = 0) > 0
-					CONTINUE
-				ELSE
-					BREAK
-			END
-	
-	
-		-- If a loan is pushed on a previous day and then subsequently cancelled we need to switch the AsOfDate
-		-- to be the date shown previously (i.e. the last good NewEffDate)
-			DELETE FROM @TMP_PUSHED
-
-			INSERT
-				@TMP_PUSHED
-			SELECT
-				PAM.ID, 0
-			FROM
-				ProjActMovement AS PAM
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( PAM.AcctNbr = TMP_ACCT.AcctNbr ) 
-				INNER JOIN ActivityExtractHist EA
-					ON ( EA.TxnRefNbr	= PAM.TxnRefNbr	) AND
-					   ( EA.AcctNbr = PAM.AcctNbr ) AND
-					   ( EA.TxnSuffix	= PAM.TxnSuffix	) AND
-					   ( EA.TxnSeqNbr	= PAM.TxnSeqNbr	) 
-
-			WHERE
-				( NewEffDate = @BatchRunDate	)	AND	-- Note: Looking for NewEffDate (not LastEffDate)
-				( PAM.Toe = 'OSL'	)				AND
-				( ISNULL(PAM.IsDeleted,0) = 0 )				AND
-				( EA.BrkNbr	IN ( SELECT BrkNbr FROM [Broker]
-								 WHERE ( BusinessInd = 'EQ' ) AND
-									   ( @BatchRunDate BETWEEN EffectiveDateBegin AND EffectiveDateEnd ) AND
-					 				   ( IsDeleted = 0 ) ) ) AND 
-				( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-
-	
-			WHILE (SELECT COUNT(*) FROM @TMP_PUSHED WHERE Flag = 0) > 0
-			BEGIN
-				SELECT @Id = MIN(ActId) FROM @TMP_PUSHED WHERE Flag = 0
-
-				UPDATE 
-					#TMP_ACTIVITY
-				SET
-					LoanDate	= NewEffDate
-				FROM 
-					#TMP_ACTIVITY AS TA
-					INNER JOIN ProjActMovement AS PAM
-						ON ( TA.TxnRefNbr = PAM.TxnRefNbr ) AND
-						   ( TA.AcctNbr	  = PAM.AcctNbr)  
-					INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-						ON ( PAM.AcctNbr = TMP_ACCT.AcctNbr ) 
-				WHERE 
-					( TA.Toe IN ('CSL', 'CPS') )	AND
-					( PAM.ID = @Id ) AND
-					( ISNULL(PAM.IsDeleted,0) = 0 ) 
-
-				UPDATE
-					@TMP_PUSHED
-				SET
-					Flag = 1
-				WHERE
-					ActId = @Id
-
-				IF (SELECT COUNT(*) FROM @TMP_PUSHED WHERE Flag = 0) > 0
-					CONTINUE
-				ELSE
-					BREAK
-			END
-
-		-- If any Loan changes without activies (i.e. Toe = 'XXX') then see if its due to late returns
-		-- we added - if so then back-up a day and update the Loan data with activities from the previous day.
-		-- If we don't get an exact match (i.e. there are several activities, etc) the update will fail and the Loan
-		-- will still be marked as "not reconciled"
-
-			CREATE TABLE #TMP_ACTIVITY_LATE_RETURNS  
-			( 	
-				TxnRefNbr		INT				NULL,
-				LoanDate		DATETIME		NULL,
-				ProcDate		DATETIME		NULL,
-				LoanType		CHAR(1)			NULL,
-				AcctNbr			VARCHAR(12)		NULL,
-				BrkNbr			VARCHAR(6)		NULL,
-				BrkGrpCode		VARCHAR(5)		NULL,
-				SubBroker		CHAR(1)			NULL,
-				BrkGrpName		VARCHAR(100)	NULL,
-				Toe				CHAR(3)			NULL,
-				NewPrice		NUMERIC(15,7)	NULL,
-				SecCode			VARCHAR(12)		NULL,
-				SecDesc			VARCHAR(40)		NULL,
-				CCYCode			VARCHAR(3)		NULL,
-				CollCCYCode		VARCHAR(3)		NULL,
-				SecType			VARCHAR(7)		NULL,
-				FaceAmtChange	NUMERIC(13)		NULL,
-				NetAmount		NUMERIC(20)		NULL,
-				SecLocCode		Char(2)			NULL,
-				AcctCode		VARCHAR(3)		NULL,
-				CollNbr			INT				NULL,
-				FinderNbr		VARCHAR(6)		NULL,
-				IsReconciled	BIT				NULL
-			)
-
-			DECLARE @PrevBusDay	DATETIME
-			SET 	@PrevBusDay 	= dbo.f_GetPrevBizDay(@BatchRunDate)
-
-			INSERT INTO 
-				#TMP_ACTIVITY_LATE_RETURNS
-		
-			SELECT 
-				EA.TxnRefNbr, 
-				LoanDate = CASE WHEN EA.TOE IN ( 'CPS', 'CSL') THEN EA.SettleDate 
-								ELSE EA.EffectiveDate 
-								END, 
-				EA.ProcDate, EA.LoanType, EA.AcctNbr, EA.BrkNbr, NULL, NULL, NULL, 
-				EA.Toe, EA.NewPrice, EA.SecCode, EA.SecDesc, EA.CCYCode, EA.CollCCYCode, EA.SecType, 
-				EA.FaceAmount, EA.NetAmount, EA.SecLocCode, NULL, EA.CollNbr, EA.FinderNbr, 1
-			FROM 
-				ActivityExtractHist AS EA
-				INNER JOIN #TMP_ACCOUNTS AS TMP_ACCT
-					ON ( EA.AcctNbr = TMP_ACCT.AcctNbr ) 
-				INNER JOIN #TMP_ACTIVITY AS TA
-					ON ( EA.TxnRefNbr = TA.TxnREfNbr ) AND
-					   ( EA.AcctNbr = TA.AcctNbr )
-			WHERE 
-				( EA.ProcDate = @PrevBusDay )	AND
-				( TA.Toe = 'XXX') AND 
-				( ISNULL(EA.LoanStatus, '') != @LOAN_STATUS_UNCHECKED )
-
-
-			DELETE FROM
-				#TMP_ACTIVITY_LATE_RETURNS
-			WHERE
-				Toe NOT IN ('OSL', 'RSL', 'RAQ', 'AJQ', 'CSL', 'CPS', 'RSA', 'ASD')
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				Toe 			= TALR.Toe,
-				ProcDate		= TALR.ProcDate,
-				Loandate		= TALR.LoanDate,
-				FaceAmtChange	= TALR.FaceAmtChange,
-				NetAmount		= TALR.NetAmount,
-				IsReconciled	= 1
-			FROM
-				#TMP_ACTIVITY AS TA
-				INNER JOIN #TMP_ACTIVITY_LATE_RETURNS AS TALR
-					ON ( TA.TxnRefNbr = TALR.TxnRefNbr ) AND
-					   ( TA.AcctNbr	= TALR.AcctNbr )
-			WHERE
-				( ( TA.FaceAmtChange * -1 )	= TALR.FaceAmtChange ) AND
-				( ( TA.NetAmount * -1 ) = TALR.NetAmount ) AND
-				( TA.NewPrice = TALR.NewPrice ) AND
-				( TA.Toe = 'XXX' )
-
-		-- Switch WorldLend Toes to JTSB codes
-		-- Note: The IsDetailed flag keeps the output codes the same as originally designed
-			IF (@IsDetailedCodes = 1)
-			BEGIN
-
-				UPDATE
-					#TMP_ACTIVITY
-				SET
-					Toe =  CASE LTRIM(RTRIM(Toe))
-						WHEN 'RSL' 	THEN 'RET'	-- Return loans
-						WHEN 'OSL' 	THEN 'NEW'	-- New loans
-						WHEN 'CSL'	THEN 'CSL'	-- Cancel loan
-						WHEN 'CPS'	THEN 'CSL'	-- Cancel loan
-						WHEN 'RAQ'	THEN 'RAQ'	-- Re-allocation
-						WHEN 'AJQ'	THEN 'AJQ'	-- Adjust quantity
-						ELSE LTRIM(RTRIM(Toe))
-						END
-
-			END
-			ELSE /*New JTSB Codes */
-			BEGIN
-
-				UPDATE
-					#TMP_ACTIVITY
-				SET
-					Toe =  CASE
-							WHEN (FaceAmtChange < 0) THEN 'RET'	-- Negative effect is Return
-							ELSE		   				  'NEW'	-- Positive effect is New Loan
-						   END
-			END
-
-		-- Add Account Code
-			UPDATE 
-				#TMP_ACTIVITY
-			SET 
-				AcctCode = TMP_ACCTS.AcctCode
-			FROM 
-				#TMP_ACTIVITY TC
-			INNER JOIN #TMP_ACCOUNTS TMP_ACCTS	
-			ON 
-				(TC.AcctNbr = TMP_ACCTS.AcctNbr)
-			
-
-		-- Remove activity for Partial Shares account
-			DELETE FROM 
-				#TMP_ACTIVITY
-			WHERE
-				AcctNbr = '850000000'		
-
-
-		-- If London Only report
-			IF (ISNULL(@IsLondonOnly, 0) = 1)
-			BEGIN
-				DELETE FROM 
-					#TMP_ACTIVITY
-				WHERE
-					FinderNbr IS NULL		OR
-					FinderNbr != '000LDN'
-			END
-
-			UPDATE	#TMP_ACTIVITY
-			SET
-				SecID = REFERENCE.dbo.f_GetSecID (SecCode)	
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				BrkName = B.BrkName
-			FROM
-				#TMP_ACTIVITY TA
-				INNER JOIN Broker B
-				ON ( TA.BrkNbr = B.BrkNbr ) AND
-  				   ( @BatchRunDate BETWEEN B.EffectiveDateBegin	AND B.EffectiveDateEnd ) AND 
-				   ( ISNULL(B.IsDeleted,0) = 0 ) 					
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				Spread = TLT.Spread
-			FROM
-				#TMP_ACTIVITY TA 
-				INNER JOIN @TMP_LOANS_TODAY TLT
-				ON ( TA.TxnRefNbr	= TLT.TxnRefNbr	) AND
-				   ( TA.AcctNbr		= TLT.AcctNbr )
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				Spread = TLP.Spread
-			FROM
-				#TMP_ACTIVITY TA 
-				INNER JOIN #TMP_LOANS_PREV TLP
-				ON ( TA.TxnRefNbr	= TLP.TxnRefNbr	)   AND
-				   ( TA.AcctNbr		= TLP.AcctNbr )	
-			WHERE
-				( TA.Spread		IS NULL )			AND 
-				( TLP.IsFaceAmtChanged = 1 ) 
-
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				SEDOL = S.SEDOL
-			FROM
-				#TMP_ACTIVITY TA
-			INNER JOIN REFERENCE.dbo.[Security] s
-				ON ( TA.SecID	= S.SecID ) 
-
-		   /************  Update PFID from LBE for sending to MOFeed portal *************/
-			UPDATE
-				#TMP_ACTIVITY
-			SET
-				PfID = ISNULL(LBE.PFID,0)
-			FROM
-				#TMP_ACTIVITY TA 
-				INNER JOIN LendingBalanceEarnings LBE
-				ON ( TA.AcctNbr = LBE.AcctNbr ) AND
-				   ( TA.SecID = LBE.SecID )
-			WHERE	
-				ISNULL(IsWeb, 0) = 1			
-		
-
-			IF ( @IsDisplayResults = 1 )
-			BEGIN
-				
-				SELECT DISTINCT
-					Toe, ProcDate, LoanDate, AcctNbr, AcctCode, CCYCode, CollCCYCode, SecCode, SecDesc, FaceAmtChange, NetAmount, NewPrice, TxnRefNbr, IsReconciled
-				FROM #TMP_ACTIVITY			
-				ORDER BY TxnRefNbr, Toe, SecCode, AcctCode
-
-			END	
-END TRY
-	BEGIN CATCH
-		SET @ErrorMessage = 'Error while trying to returns the data for Equity Movement Report. ' +  ERROR_MESSAGE() 
-		SET @ErrorSeverity = ERROR_SEVERITY()
-		SET @ErrorState = ERROR_STATE()
-
-		EXEC dbo.op_InsertEventLog  @Source = 'SP', @Severity=@ErrorSeverity, @Type = 'E', @ParameterXML=NULL, @EventXML = NULL, @ReMarks = @ErrorMessage, @User =  NULL
-		RAISERROR (@ErrorMessage, @ErrorSeverity, @ErrorState);	
-		RETURN 1 	
-	END CATCH
-END
-
-
-
-			EXEC [p_GetEquityMovementReport] '10/23/2026', 52, 0, 0, 1, 0	
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 13 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 12 ms.
+Table 'NamedReportParameter'. Scan count 0, logical reads 2, physical reads 2, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 8 ms.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Account'. Scan count 1, logical reads 18, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#B9052E78'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 33 ms.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 18 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 0, logical reads 14419, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 4848, logical reads 9696, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Broker'. Scan count 13225, logical reads 54782, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BFB22C07'. Scan count 1, logical reads 1445, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 974 ms.
+Table '#BE3A5CFC'. Scan count 0, logical reads 4787, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 4881, logical reads 9762, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Broker'. Scan count 13320, logical reads 56006, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BFB22C07'. Scan count 1, logical reads 1455, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 963 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 474, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 1, logical reads 295, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 40 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 4797, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 22, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 62 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 9299, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 55 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#AD5CFE34'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 11 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 705, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 689, logical reads 1378, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'ActivityExtractHist'. Scan count 83, logical reads 3421, physical reads 104, page server reads 0, read-ahead reads 14, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 438 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 1 ms.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 309, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 6 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 13320, logical reads 33820, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BFB22C07'. Scan count 1, logical reads 1455, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 773 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 13225, logical reads 33634, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BFB22C07'. Scan count 1, logical reads 1445, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 692 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 14 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 2 ms.
+Table '#BF2E8135'. Scan count 0, logical reads 292, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 6 ms.
+Table '#BF2E8135'. Scan count 1, logical reads 290, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 1156 ms.
+Table '#BF2E8135'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BE3A5CFC'. Scan count 1, logical reads 78, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 2 ms.
+Table '#BF2E8135'. Scan count 1, logical reads 3, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BE3A5CFC'. Scan count 1, logical reads 62, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 5 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 9 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 2, logical reads 8, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BF2E8135'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 14 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#A022A56E'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'ActivityExtractHist'. Scan count 1, logical reads 945, physical reads 0, page server reads 0, read-ahead reads 926, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 20 ms.
+Table '#A022A56E'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#A022A56E'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#A116C9A7'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'ProjActMovement'. Scan count 1, logical reads 588, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 8 ms.
+Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#A116C9A7'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'ProjActMovement'. Scan count 1, logical reads 588, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 8 ms.
+Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 70 ms.
+Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 21 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 5 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 6 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 309, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 1 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 0 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 4, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 21 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 20, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 384, logical reads 1033, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Security'. Scan count 201, logical reads 648, physical reads 55, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 226 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 16 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 384, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Broker'. Scan count 1, logical reads 46, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 8 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 8 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 204, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 18, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 44 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 20 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 180, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 2 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 9 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 398, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Security'. Scan count 0, logical reads 924, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 1198 ms.
+SQL Server parse and compile time: 
+   CPU time = 0 ms, elapsed time = 25 ms.
+Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 5, logical reads 366, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+Table 'LendingBalanceEarnings'. Scan count 5, logical reads 2678711, physical reads 0, page server reads 0, read-ahead reads 2674008, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 175437 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 182496 ms.
+
+ SQL Server Execution Times:
+   CPU time = 0 ms,  elapsed time = 0 ms.
+
+Completion time: 2026-10-26T10:43:52.1591717-04:00
