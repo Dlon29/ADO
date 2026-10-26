@@ -1,174 +1,62 @@
 
-private static void AppendViewStateStrings(
-    object value,
-    StringBuilder output,
-    int depth)
+string rawValue = formPostParam[recform] ?? "";
+string legacyValue = rawValue.ToLowerInvariant();
+
+string legacyKeyword = null;
+
+if (arrstrFilterString != null)
 {
-    // Prevent excessive recursion or output.
-    if (value == null || depth > 40 || output.Length >= 100000)
-        return;
-
-    // If this object is a string, collect its actual contents.
-    string text = value as string;
-
-    if (text != null)
-    {
-        int remaining = 100000 - output.Length;
-
-        if (remaining > 0)
-        {
-            output.Append(
-                text,
-                0,
-                Math.Min(text.Length, remaining));
-            output.AppendLine();
-        }
-
-        return;
-    }
-
-    // Inspect both elements of a Pair.
-    Pair pair = value as Pair;
-
-    if (pair != null)
-    {
-        AppendViewStateStrings(pair.First, output, depth + 1);
-        AppendViewStateStrings(pair.Second, output, depth + 1);
-        return;
-    }
-
-    // Inspect all three elements of a Triplet.
-    Triplet triplet = value as Triplet;
-
-    if (triplet != null)
-    {
-        AppendViewStateStrings(triplet.First, output, depth + 1);
-        AppendViewStateStrings(triplet.Second, output, depth + 1);
-        AppendViewStateStrings(triplet.Third, output, depth + 1);
-        return;
-    }
-
-    // Inspect dictionary keys and values.
-    IDictionary dictionary = value as IDictionary;
-
-    if (dictionary != null)
-    {
-        foreach (DictionaryEntry entry in dictionary)
-        {
-            if (output.Length >= 100000)
-                break;
-
-            AppendViewStateStrings(
-                entry.Key, output, depth + 1);
-
-            AppendViewStateStrings(
-                entry.Value, output, depth + 1);
-        }
-
-        return;
-    }
-
-    // Inspect arrays, lists and other enumerable containers.
-    IEnumerable items = value as IEnumerable;
-
-    if (items != null)
-    {
-        foreach (object item in items)
-        {
-            if (output.Length >= 100000)
-                break;
-
-            AppendViewStateStrings(
-                item, output, depth + 1);
-        }
-    }
+    legacyKeyword = arrstrFilterString.FirstOrDefault(
+        f => !string.IsNullOrEmpty(f)
+             && legacyValue.Contains(f.ToLowerInvariant()));
 }
 
-
-
-
-
-
-
-
-object decoded = new LosFormatter()
-    .Deserialize(formPostParam[recform]);
-
-// Keep the existing behavior unchanged.
-// Reject4 will still inspect this value.
-postValue = decoded == null
-    ? ""
-    : decoded.ToString().ToLowerInvariant();
-
-// ===== TEMPORARY LOGGING =====
-try
+if (legacyKeyword == null)
 {
-    // Extract actual nested strings from the decoded object.
-    StringBuilder decodedStrings = new StringBuilder();
-
-    AppendViewStateStrings(
-        decoded,
-        decodedStrings,
-        0);
-
-    string logText = decodedStrings.ToString()
-        .ToLowerInvariant();
-
-    string kw = null;
-
-    if (arrstrFilterString != null)
-    {
-        kw = arrstrFilterString.FirstOrDefault(
-            f => !string.IsNullOrEmpty(f)
-                 && logText.IndexOf(
-                     f,
-                     StringComparison.OrdinalIgnoreCase) >= 0);
-    }
-
-    if (kw != null)
-    {
-        int idx = logText.IndexOf(
-            kw,
-            StringComparison.OrdinalIgnoreCase);
-
-        int start = Math.Max(0, idx - 100);
-
-        int end = Math.Min(
-            logText.Length,
-            idx + kw.Length + 100);
-
-        string prev = idx > 0
-            ? logText.Substring(idx - 1, 1)
-            : "";
-
-        string next = logText.Length > idx + kw.Length
-            ? logText.Substring(idx + kw.Length, 1)
-            : "";
-
-        _logger.InfoFormat(
-            "VS-DECODED Field={0} RootType={1} " +
-            "Keyword={2} Prev={3} Next={4} Len={5} Excerpt={6}",
-            fieldName,
-            decoded == null ? "null" : decoded.GetType().FullName,
-            kw,
-            prev,
-            next,
-            logText.Length,
-            logText.Substring(start, end - start));
-    }
-    else
-    {
-        _logger.InfoFormat(
-            "VS-DECODED Field={0} RootType={1} " +
-            "Keyword=none Len={2} Start={3}",
-            fieldName,
-            decoded == null ? "null" : decoded.GetType().FullName,
-            logText.Length,
-            logText.Substring(0, Math.Min(500, logText.Length)));
-    }
+    _logger.InfoFormat(
+        "REJECT4-SIM Field={0} WouldReject=false " +
+        "Reason=NoKeywordInRawValue RawLen={1}",
+        fieldName,
+        rawValue.Length);
 }
-catch (Exception)
+else if (!IsAlphaNumeric(legacyKeyword))
 {
-    // Diagnostic logging must never affect the request.
+    // The original logic would enter Reject5, not Reject4.
+    _logger.InfoFormat(
+        "REJECT4-SIM Field={0} WouldReject=true " +
+        "Path=Reject5 Keyword={1} RawLen={2}",
+        fieldName,
+        legacyKeyword,
+        rawValue.Length);
 }
-// ===== END TEMPORARY LOGGING =====
+else
+{
+    int idx = legacyValue.IndexOf(
+        legacyKeyword.ToLowerInvariant(),
+        StringComparison.Ordinal);
+
+    string prev = idx > 0
+        ? legacyValue.Substring(idx - 1, 1)
+        : "";
+
+    int nextIndex = idx + legacyKeyword.Length;
+
+    string next = nextIndex < legacyValue.Length
+        ? legacyValue.Substring(nextIndex, 1)
+        : "";
+
+    bool safeBoundary =
+        (IsAlphaNumeric(prev) || prev == BLANK_SPACE)
+        && (IsAlphaNumeric(next) || next == BLANK_SPACE);
+
+    _logger.InfoFormat(
+        "REJECT4-SIM Field={0} WouldReject={1} " +
+        "Keyword={2} Index={3} PrevCode={4} NextCode={5} RawLen={6}",
+        fieldName,
+        !safeBoundary,
+        legacyKeyword,
+        idx,
+        prev.Length == 0 ? -1 : (int)prev[0],
+        next.Length == 0 ? -1 : (int)next[0],
+        rawValue.Length);
+}
