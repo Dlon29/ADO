@@ -1,62 +1,36 @@
+// Also collect primitive values such as integers,
+// Boolean values and individual characters.
+Type valueType = value.GetType();
 
-string rawValue = formPostParam[recform] ?? "";
-string legacyValue = rawValue.ToLowerInvariant();
-
-string legacyKeyword = null;
-
-if (arrstrFilterString != null)
+if (valueType.IsPrimitive ||
+    valueType.IsEnum ||
+    value is decimal ||
+    value is DateTime ||
+    value is Guid)
 {
-    legacyKeyword = arrstrFilterString.FirstOrDefault(
-        f => !string.IsNullOrEmpty(f)
-             && legacyValue.Contains(f.ToLowerInvariant()));
+    int remaining = 100000 - output.Length;
+
+    if (remaining > 0)
+    {
+        string scalarValue = value.ToString();
+
+        output.Append(
+            scalarValue,
+            0,
+            Math.Min(scalarValue.Length, remaining));
+
+        output.AppendLine();
+    }
+
+    return;
 }
 
-if (legacyKeyword == null)
-{
-    _logger.InfoFormat(
-        "REJECT4-SIM Field={0} WouldReject=false " +
-        "Reason=NoKeywordInRawValue RawLen={1}",
-        fieldName,
-        rawValue.Length);
-}
-else if (!IsAlphaNumeric(legacyKeyword))
-{
-    // The original logic would enter Reject5, not Reject4.
-    _logger.InfoFormat(
-        "REJECT4-SIM Field={0} WouldReject=true " +
-        "Path=Reject5 Keyword={1} RawLen={2}",
-        fieldName,
-        legacyKeyword,
-        rawValue.Length);
-}
-else
-{
-    int idx = legacyValue.IndexOf(
-        legacyKeyword.ToLowerInvariant(),
-        StringComparison.Ordinal);
 
-    string prev = idx > 0
-        ? legacyValue.Substring(idx - 1, 1)
-        : "";
 
-    int nextIndex = idx + legacyKeyword.Length;
 
-    string next = nextIndex < legacyValue.Length
-        ? legacyValue.Substring(nextIndex, 1)
-        : "";
-
-    bool safeBoundary =
-        (IsAlphaNumeric(prev) || prev == BLANK_SPACE)
-        && (IsAlphaNumeric(next) || next == BLANK_SPACE);
-
-    _logger.InfoFormat(
-        "REJECT4-SIM Field={0} WouldReject={1} " +
-        "Keyword={2} Index={3} PrevCode={4} NextCode={5} RawLen={6}",
-        fieldName,
-        !safeBoundary,
-        legacyKeyword,
-        idx,
-        prev.Length == 0 ? -1 : (int)prev[0],
-        next.Length == 0 ? -1 : (int)next[0],
-        rawValue.Length);
-}
+_logger.InfoFormat(
+    "VS-DECODED-DUMP Field={0} RootType={1} Len={2} Text={3}",
+    fieldName,
+    decoded == null ? "null" : decoded.GetType().FullName,
+    logText.Length,
+    logText);
