@@ -1,139 +1,22 @@
-
-private static void CollectViewStateStrings(
-    object value,
-    List<string> values,
-    int depth)
-{
-    if (value == null || depth > 40 || values.Count >= 10000)
-        return;
-
-    // Collect complete strings without combining them.
-    string text = value as string;
-
-    if (text != null)
-    {
-        values.Add(text);
-        return;
-    }
-
-    // Collect primitive and common scalar values.
-    Type valueType = value.GetType();
-
-    if (valueType.IsPrimitive ||
-        valueType.IsEnum ||
-        value is decimal ||
-        value is DateTime ||
-        value is Guid)
-    {
-        values.Add(value.ToString());
-        return;
-    }
-
-    // Traverse Pair.
-    Pair pair = value as Pair;
-
-    if (pair != null)
-    {
-        CollectViewStateStrings(pair.First, values, depth + 1);
-        CollectViewStateStrings(pair.Second, values, depth + 1);
-        return;
-    }
-
-    // Traverse Triplet.
-    Triplet triplet = value as Triplet;
-
-    if (triplet != null)
-    {
-        CollectViewStateStrings(triplet.First, values, depth + 1);
-        CollectViewStateStrings(triplet.Second, values, depth + 1);
-        CollectViewStateStrings(triplet.Third, values, depth + 1);
-        return;
-    }
-
-    // Traverse dictionaries.
-    IDictionary dictionary = value as IDictionary;
-
-    if (dictionary != null)
-    {
-        foreach (DictionaryEntry entry in dictionary)
-        {
-            if (values.Count >= 10000)
-                break;
-
-            CollectViewStateStrings(entry.Key, values, depth + 1);
-            CollectViewStateStrings(entry.Value, values, depth + 1);
-        }
-
-        return;
-    }
-
-    // Traverse collections and arrays.
-    IEnumerable items = value as IEnumerable;
-
-    if (items != null)
-    {
-        foreach (object item in items)
-        {
-            if (values.Count >= 10000)
-                break;
-
-            CollectViewStateStrings(item, values, depth + 1);
-        }
-    }
-}
-
-
-
-
-
-
-
-
-string fieldName = formPostParam.Keys[recform];
-
-List<string> valuesToScan = new List<string>();
-
-if (fieldName == "__VIEWSTATE")
-{
-    try
-    {
-        object decoded = new LosFormatter()
-            .Deserialize(formPostParam[recform]);
-
-        CollectViewStateStrings(
-            decoded,
-            valuesToScan,
-            0);
-
-        // Keep your existing VS-DECODED diagnostic logging.
-        // Build its logText from valuesToScan:
-        string logText = string.Join("\n", valuesToScan)
-            .ToLowerInvariant();
-
-        // Place your existing VS-DECODED [1]/[2]
-        // logging code here, using logText as before.
-    }
-    catch (Exception)
-    {
-        continue;
-    }
-}
-else
-{
-    // Preserve existing behavior for ordinary form fields.
-    valuesToScan.Add(formPostParam[recform]);
-}
-
-// Scan each extracted value separately.
-foreach (string valueToScan in valuesToScan)
-{
-    postValue = (valueToScan ?? "").ToLowerInvariant();
-    prevChar = nextChar = "";
-
-    // MOVE YOUR EXISTING SQL FILTER BLOCK HERE:
-    // if (arrstrFilterString.Any(postValue.Contains))
-    // {
-    //     specialKeyword = ...
-    //     Existing Reject4 / Reject5 logic...
-    // }
-}
+SELECT
+    i.name AS IndexName,
+    i.type_desc AS IndexType,
+    i.is_disabled AS IsDisabled,
+    i.has_filter AS HasFilter,
+    i.filter_definition AS FilterDefinition,
+    c.name AS ColumnName,
+    ic.key_ordinal AS KeyOrdinal,
+    ic.is_included_column AS IsIncludedColumn
+FROM sys.indexes AS i
+INNER JOIN sys.index_columns AS ic
+    ON i.object_id = ic.object_id
+    AND i.index_id = ic.index_id
+INNER JOIN sys.columns AS c
+    ON ic.object_id = c.object_id
+    AND ic.column_id = c.column_id
+WHERE i.object_id = OBJECT_ID(N'dbo.LendingBalanceEarnings')
+  AND i.index_id > 0
+ORDER BY
+    i.index_id,
+    ic.key_ordinal,
+    ic.index_column_id;
