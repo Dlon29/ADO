@@ -1,39 +1,14 @@
-object decoded = new LosFormatter()
-    .Deserialize(formPostParam[recform]);
-
-_logger.InfoFormat(
-    "DecodedType={0}",
-    decoded == null ? "null" : decoded.GetType().FullName
-);
-
-Pair pair = decoded as Pair;
-
-if (pair != null)
-{
-    _logger.InfoFormat(
-        "FirstType={0}, SecondType={1}",
-        pair.First == null ? "null" : pair.First.GetType().FullName,
-        pair.Second == null ? "null" : pair.Second.GetType().FullName
-    );
-}
-
-
-
-using System;
-using System.Collections;
-using System.Text;
-using System.Web.UI;
 
 private static void AppendViewStateStrings(
     object value,
     StringBuilder output,
     int depth)
 {
-    // Diagnostic limits to prevent excessive output or recursion.
+    // Prevent excessive recursion or output.
     if (value == null || depth > 40 || output.Length >= 100000)
         return;
 
-    // Actual string value.
+    // If this object is a string, collect its actual contents.
     string text = value as string;
 
     if (text != null)
@@ -41,13 +16,18 @@ private static void AppendViewStateStrings(
         int remaining = 100000 - output.Length;
 
         if (remaining > 0)
-            output.Append(text, 0, Math.Min(text.Length, remaining));
+        {
+            output.Append(
+                text,
+                0,
+                Math.Min(text.Length, remaining));
+            output.AppendLine();
+        }
 
-        output.Append('\n');
         return;
     }
 
-    // Pair: two objects.
+    // Inspect both elements of a Pair.
     Pair pair = value as Pair;
 
     if (pair != null)
@@ -57,7 +37,7 @@ private static void AppendViewStateStrings(
         return;
     }
 
-    // Triplet: three objects.
+    // Inspect all three elements of a Triplet.
     Triplet triplet = value as Triplet;
 
     if (triplet != null)
@@ -68,7 +48,7 @@ private static void AppendViewStateStrings(
         return;
     }
 
-    // Dictionaries: inspect their keys and values.
+    // Inspect dictionary keys and values.
     IDictionary dictionary = value as IDictionary;
 
     if (dictionary != null)
@@ -78,14 +58,17 @@ private static void AppendViewStateStrings(
             if (output.Length >= 100000)
                 break;
 
-            AppendViewStateStrings(entry.Key, output, depth + 1);
-            AppendViewStateStrings(entry.Value, output, depth + 1);
+            AppendViewStateStrings(
+                entry.Key, output, depth + 1);
+
+            AppendViewStateStrings(
+                entry.Value, output, depth + 1);
         }
 
         return;
     }
 
-    // Arrays, lists and other enumerable containers.
+    // Inspect arrays, lists and other enumerable containers.
     IEnumerable items = value as IEnumerable;
 
     if (items != null)
@@ -95,22 +78,97 @@ private static void AppendViewStateStrings(
             if (output.Length >= 100000)
                 break;
 
-            AppendViewStateStrings(item, output, depth + 1);
+            AppendViewStateStrings(
+                item, output, depth + 1);
         }
     }
 }
 
 
 
+
+
+
+
+
 object decoded = new LosFormatter()
     .Deserialize(formPostParam[recform]);
 
-StringBuilder sb = new StringBuilder();
+// Keep the existing behavior unchanged.
+// Reject4 will still inspect this value.
+postValue = decoded == null
+    ? ""
+    : decoded.ToString().ToLowerInvariant();
 
-AppendViewStateStrings(decoded, sb, 0);
+// ===== TEMPORARY LOGGING =====
+try
+{
+    // Extract actual nested strings from the decoded object.
+    StringBuilder decodedStrings = new StringBuilder();
 
-string logText = sb.ToString().ToLowerInvariant();
+    AppendViewStateStrings(
+        decoded,
+        decodedStrings,
+        0);
 
+    string logText = decodedStrings.ToString()
+        .ToLowerInvariant();
 
+    string kw = null;
 
-string rawViewState = formPostParam[recform];
+    if (arrstrFilterString != null)
+    {
+        kw = arrstrFilterString.FirstOrDefault(
+            f => !string.IsNullOrEmpty(f)
+                 && logText.IndexOf(
+                     f,
+                     StringComparison.OrdinalIgnoreCase) >= 0);
+    }
+
+    if (kw != null)
+    {
+        int idx = logText.IndexOf(
+            kw,
+            StringComparison.OrdinalIgnoreCase);
+
+        int start = Math.Max(0, idx - 100);
+
+        int end = Math.Min(
+            logText.Length,
+            idx + kw.Length + 100);
+
+        string prev = idx > 0
+            ? logText.Substring(idx - 1, 1)
+            : "";
+
+        string next = logText.Length > idx + kw.Length
+            ? logText.Substring(idx + kw.Length, 1)
+            : "";
+
+        _logger.InfoFormat(
+            "VS-DECODED Field={0} RootType={1} " +
+            "Keyword={2} Prev={3} Next={4} Len={5} Excerpt={6}",
+            fieldName,
+            decoded == null ? "null" : decoded.GetType().FullName,
+            kw,
+            prev,
+            next,
+            logText.Length,
+            logText.Substring(start, end - start));
+    }
+    else
+    {
+        _logger.InfoFormat(
+            "VS-DECODED Field={0} RootType={1} " +
+            "Keyword=none Len={2} Start={3}",
+            fieldName,
+            decoded == null ? "null" : decoded.GetType().FullName,
+            logText.Length,
+            logText.Substring(0, Math.Min(500, logText.Length)));
+    }
+}
+catch (Exception)
+{
+    // Diagnostic logging must never affect the request.
+}
+// ===== END TEMPORARY LOGGING =====
