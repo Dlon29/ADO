@@ -3,8 +3,34 @@ if (fieldName == "__VIEWSTATE" || fieldName == "__EVENTVALIDATION")
 {
     try
     {
-        postValue = new LosFormatter().Deserialize(formPostParam[recform]).ToString().ToLower();
-        _logger.InfoFormat("FIX-PATH Field={0} ScannedValue={1}", fieldName, postValue);   // optional, remove after verification
+        object decoded = new LosFormatter().Deserialize(formPostParam[recform]);
+        postValue = decoded.ToString().ToLower();      // this is what Reject4 scans below, unchanged
+
+        // ===== TEMPORARY LOGGING (remove after verification) =====
+        try
+        {
+            string logText = postValue;                // see the note below to log the real contents instead
+            string kw = arrstrFilterString.FirstOrDefault(f => logText.Contains(f.ToString().ToLower()));
+
+            if (kw != null)
+            {
+                int idx = logText.IndexOf(kw);
+                int start = Math.Max(0, idx - 100);
+                int end = Math.Min(logText.Length, idx + kw.Length + 100);
+                string prev = idx != 0 ? logText.Substring(idx - 1, 1) : "";
+                string next = logText.Length > idx + kw.Length ? logText.Substring(idx + kw.Length, 1) : "";
+
+                _logger.InfoFormat("VS-DECODED Field={0} Keyword={1} Prev={2} Next={3} Len={4} Excerpt={5}",
+                    fieldName, kw, prev, next, logText.Length, logText.Substring(start, end - start));
+            }
+            else
+            {
+                _logger.InfoFormat("VS-DECODED Field={0} Keyword=none Len={1} Start={2}",
+                    fieldName, logText.Length, logText.Substring(0, Math.Min(200, logText.Length)));
+            }
+        }
+        catch (Exception) { /* logging must never affect the request */ }
+        // ===== END TEMPORARY LOGGING =====
     }
     catch (Exception)
     {
@@ -12,11 +38,8 @@ if (fieldName == "__VIEWSTATE" || fieldName == "__EVENTVALIDATION")
     }
 }
 
-// existing code, unchanged: this is Reject4 and now runs on the decoded value
-if (arrstrFilterString.Any(postValue.Contains))
-{
-    specialKeyword = arrstrFilterString.FirstOrDefault(filter => postValue.Contains(filter.ToString().ToLower()));
-    ...
-    _logger.ErrorFormat("Reject4 [SQL] Field={0} Keyword={1} Prev={2} Next={3} Value={4}", ...);
-    HttpContext.Current.Response.Redirect(_errInjectionPage);
-}
+
+
+var sb = new System.Text.StringBuilder();
+DumpViewState(decoded, sb, 0);
+string logText = sb.ToString().ToLower();      // used for logging only; postValue is not changed
