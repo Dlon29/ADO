@@ -1,45 +1,116 @@
-string fieldName = formPostParam.Keys[recform];
-if (fieldName == "__VIEWSTATE" || fieldName == "__EVENTVALIDATION")
+object decoded = new LosFormatter()
+    .Deserialize(formPostParam[recform]);
+
+_logger.InfoFormat(
+    "DecodedType={0}",
+    decoded == null ? "null" : decoded.GetType().FullName
+);
+
+Pair pair = decoded as Pair;
+
+if (pair != null)
 {
-    try
+    _logger.InfoFormat(
+        "FirstType={0}, SecondType={1}",
+        pair.First == null ? "null" : pair.First.GetType().FullName,
+        pair.Second == null ? "null" : pair.Second.GetType().FullName
+    );
+}
+
+
+
+using System;
+using System.Collections;
+using System.Text;
+using System.Web.UI;
+
+private static void AppendViewStateStrings(
+    object value,
+    StringBuilder output,
+    int depth)
+{
+    // Diagnostic limits to prevent excessive output or recursion.
+    if (value == null || depth > 40 || output.Length >= 100000)
+        return;
+
+    // Actual string value.
+    string text = value as string;
+
+    if (text != null)
     {
-        object decoded = new LosFormatter().Deserialize(formPostParam[recform]);
-        postValue = decoded.ToString().ToLower();      // this is what Reject4 scans below, unchanged
+        int remaining = 100000 - output.Length;
 
-        // ===== TEMPORARY LOGGING (remove after verification) =====
-        try
-        {
-            string logText = postValue;                // see the note below to log the real contents instead
-            string kw = arrstrFilterString.FirstOrDefault(f => logText.Contains(f.ToString().ToLower()));
+        if (remaining > 0)
+            output.Append(text, 0, Math.Min(text.Length, remaining));
 
-            if (kw != null)
-            {
-                int idx = logText.IndexOf(kw);
-                int start = Math.Max(0, idx - 100);
-                int end = Math.Min(logText.Length, idx + kw.Length + 100);
-                string prev = idx != 0 ? logText.Substring(idx - 1, 1) : "";
-                string next = logText.Length > idx + kw.Length ? logText.Substring(idx + kw.Length, 1) : "";
-
-                _logger.InfoFormat("VS-DECODED Field={0} Keyword={1} Prev={2} Next={3} Len={4} Excerpt={5}",
-                    fieldName, kw, prev, next, logText.Length, logText.Substring(start, end - start));
-            }
-            else
-            {
-                _logger.InfoFormat("VS-DECODED Field={0} Keyword=none Len={1} Start={2}",
-                    fieldName, logText.Length, logText.Substring(0, Math.Min(200, logText.Length)));
-            }
-        }
-        catch (Exception) { /* logging must never affect the request */ }
-        // ===== END TEMPORARY LOGGING =====
+        output.Append('\n');
+        return;
     }
-    catch (Exception)
+
+    // Pair: two objects.
+    Pair pair = value as Pair;
+
+    if (pair != null)
     {
-        continue;
+        AppendViewStateStrings(pair.First, output, depth + 1);
+        AppendViewStateStrings(pair.Second, output, depth + 1);
+        return;
+    }
+
+    // Triplet: three objects.
+    Triplet triplet = value as Triplet;
+
+    if (triplet != null)
+    {
+        AppendViewStateStrings(triplet.First, output, depth + 1);
+        AppendViewStateStrings(triplet.Second, output, depth + 1);
+        AppendViewStateStrings(triplet.Third, output, depth + 1);
+        return;
+    }
+
+    // Dictionaries: inspect their keys and values.
+    IDictionary dictionary = value as IDictionary;
+
+    if (dictionary != null)
+    {
+        foreach (DictionaryEntry entry in dictionary)
+        {
+            if (output.Length >= 100000)
+                break;
+
+            AppendViewStateStrings(entry.Key, output, depth + 1);
+            AppendViewStateStrings(entry.Value, output, depth + 1);
+        }
+
+        return;
+    }
+
+    // Arrays, lists and other enumerable containers.
+    IEnumerable items = value as IEnumerable;
+
+    if (items != null)
+    {
+        foreach (object item in items)
+        {
+            if (output.Length >= 100000)
+                break;
+
+            AppendViewStateStrings(item, output, depth + 1);
+        }
     }
 }
 
 
 
-var sb = new System.Text.StringBuilder();
-DumpViewState(decoded, sb, 0);
-string logText = sb.ToString().ToLower();      // used for logging only; postValue is not changed
+object decoded = new LosFormatter()
+    .Deserialize(formPostParam[recform]);
+
+StringBuilder sb = new StringBuilder();
+
+AppendViewStateStrings(decoded, sb, 0);
+
+string logText = sb.ToString().ToLowerInvariant();
+
+
+
+string rawViewState = formPostParam[recform];
