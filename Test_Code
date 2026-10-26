@@ -943,3 +943,7 @@ END TRY
 		RETURN 1 	
 	END CATCH
 END
+
+
+
+			EXEC [p_GetEquityMovementReport] '10/23/2026', 52, 0, 0, 1, 0	
