@@ -1,3 +1,8 @@
+The MTM report is sent for the previous day’s loans. The report currently shows the right Principal Balance and Market Value. However, when allocating the tri-party collateral, instead of using the market value as of previous business day, the report logic uses the most current updated market value. This causes the report to display incorrect data.
+
+
+
+
 exec p_GetCollateralMonitoringReport_CRMM @pReportSetupID=62,@pBatchRunDate='2026-10-09 00:00:00',@pSource=N'0'
 
 
