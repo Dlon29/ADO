@@ -1,329 +1,2503 @@
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 0 ms.
+exec p_GetCollateralMonitoringReport_CRMM @pReportSetupID=62,@pBatchRunDate='2026-10-09 00:00:00',@pSource=N'0'
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+CREATE PROCEDURE [dbo].[p_GetCollateralMonitoringReport_CRMM]         
+(             
+  @pBatchRunDate DATETIME,      
+  @pReportSetupID  SMALLINT=0,    
+  @pSource   VARCHAR(10)='0',--0:UI, 1:Package   
+  @isInternal BIT = 0  
+)        
+        
+        
+AS        
+BEGIN        
+        
+SET NOCOUNT ON        
+       
+ DECLARE @AsOfStartDate  DATETIME= @pBatchRunDate -- P2422 SET @pBatchRunDate TO @AsOfStartDate AND @AsOfEndDate      
+ DECLARE @AsOfEndDate  DATETIME = @pBatchRunDate      
+      
+ DECLARE @REFERENCE_REPORTID  AS INT        
+ DECLARE @EQUITY_BUSINESS_IND AS VARCHAR (2)        
+ --DECLARE @BusinessInd VARCHAR(2)        
+ DECLARE @IncludeProcessedLoans BIT      
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+ SET @REFERENCE_REPORTID = 163        
+ SET @EQUITY_BUSINESS_IND = 'EQ'        
+         
+   --P2422 remove report specific parameter which is no longer nedded.      
+--SET @BusinessInd = dbo.f_GetReportParameterValue(@ReportID, '@CollateralBusinessInd')        
+--SET @IncludeProcessedLoans = CONVERT(BIT, ISNULL(dbo.f_GetReportParameterValue(164, '@IncludeProcessedLoanSummary'),0))        
+       
+ SET @IncludeProcessedLoans = 1 --P2422 Set IncludeProcessedLoan 1 to get the data for EQ.               
+         
+--==================CRMM DATA START=======================================================          
+ DECLARE @CurrentDate DATETIME = GETDATE(),          
+  @ProductType VARCHAR(50),          
+  @ReportProfileID INT,          
+  @ProductLine VARCHAR(50) ,        
+  @PackageID INT,          
+  @Frequency CHAR(1)='' ,      
+  @Format VARCHAR(5),      
+ -- @IsOwnRepo BIT,       
+ -- @IsIndemnified BIT = 0,      
+  @CurrencyList VARCHAR(100),      
+  @BatchRunDateEnd DATETIME = @pBatchRunDate    
+ -- @INCLUDE_AGENT_DIRECT_LENDING_LOANS BIT      
+        
+ --GENERATE REPORT SETUP DATA           
+ IF OBJECT_ID('tempdb..#TMP_REPORT_SETUP') IS NULL           
+ BEGIN          
+  SELECT *           
+  INTO           
+   #TMP_REPORT_SETUP          
+  FROM           
+  MOBETTER.dbo.f_CreateReportSetupSchema()          
+ END          
+          
+ IF OBJECT_ID('tempdb..#TMP_REPORT_SETUP_DATA') IS NULL           
+ BEGIN          
+  SELECT *   
+  INTO           
+   #TMP_REPORT_SETUP_DATA          
+  FROM           
+   MOBETTER.dbo.f_CreateReportSetupDataSchema()          
+ END          
+          
+ EXEC p_GenerateReportSetupData @BatchRunDate = @pBatchRunDate, @ReportID = @pReportSetupID          
+ --EXEC p_GenerateReportSetupData @BatchRunDate = @CurrentDate, @ReportID = @pReportSetupID --TODO: Remove this and uncomment above line          
+          
+ --select * from #TMP_REPORT_SETUP          
+ --select * from #TMP_REPORT_SETUP_DATA          
+--GENERATE REPORT SETUP DATA END          
+ SET @ReportProfileID = (SELECT ReportProfileID FROM #TMP_REPORT_SETUP)          
+--GET REPORT PARAMETERS START          
+           
+ DECLARE @TestParam int = (select dbo.f_GetReportAttributeValue(@ReportProfileID,'TestParam'))          
+ --SELECT @TestParam          
+       SELECT @ProductType = ISNULL(ProductType, ''), @ReportProfileID = ISNULL(ReportProfileID, 0), @ProductLine = ISNULL(ProductLine, ''),@PackageID = PackageID ,@Format=Format      
+   FROM #TMP_REPORT_SETUP      
+         
+  -- SET @IsOwnRepo = CASE WHEN @ProductType = 'OWN' THEN 1 ELSE 0 END       
+  --IF @ProductType = 'ADL-SMTBUSA Indem' OR @ProductType = 'ADL-SMTBUSA Non-Indem'        
+  --BEGIN        
+  -- SET @INCLUDE_AGENT_DIRECT_LENDING_LOANS = 1        
+  -- IF @ProductType = 'ADL-SMTBUSA Indem'        
+  -- BEGIN        
+  --  SET @IsIndemnified = 1        
+  -- END        
+  --END       
+      
+  --P2422: Check Package Frequency          
+  IF(@pSource = '1')          
+  BEGIN          
+   SELECT @Frequency = Frequency       
+   FROM NamedPackageHeader       
+   WHERE PackageID = @PackageID          
+          
+   IF @Frequency = 'M'      
+   BEGIN     
+   DECLARE @BRD DATETIME = @AsOfStartDate 
+              SET @AsOfStartDate = DATEADD(MONTH,DATEDIFF(MONTH,0,DATEADD(MONTH,-1,@BRD)),0)      
+              SET @BatchRunDateEnd = DATEADD(MONTH,DATEDIFF(MONTH,0,@BRD),-1)      
+			  set @AsOfEndDate = @BatchRunDateEnd
+   END      
+  END       
+--==================CRMM DATA END=======================================================        
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+ SET @AsOfEndDate = dbo.f_GetPrevBizDayIfHoliday(@AsOfEndDate)        
+ IF ( @AsOfStartDate > @AsOfEndDate )         
+ BEGIN        
+  SET @AsOfStartDate = @AsOfEndDate        
+ END
+      
+--Sheet1Section1 RS 1       
+ IF (@Format != 'PDF')      
+ BEGIN      
+  SELECT TS.CustomerReportTo AS [To]      
+              ,CONVERT(VARCHAR, @BatchRunDateEnd, 101) AS ToDate                
+              ,'Customer Report\' + TemplateFileName AS TemplateFileName                    
+              --,'Customer Report\' + (SELECT TOP 1 VALUE FROM lava.dbo.fn_SplitStringWithDelimiter('|',TemplateFileName)           
+              --            WHERE VALUE LIKE CASE @Format WHEN  'PDF' THEN '%.RPT' WHEN  'XLSX' THEN '%.XLSX' ELSE '%%'END) AS TemplateFileName      
+         ,PackageFileName AS [FileName]                
+         ,PackageFileName AS [PackageFileName]                
+         , TS.[Format]      
+         --, OptionalWS1       
+         --, OptionalWS2        
+         ,ISNULL(TS.WinZip,0) AS Zip      
+         ,TS.Code       
+   FROM #TMP_REPORT_SETUP TS         
+  END         
+    
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+ --Broker groups         
+ IF OBJECT_ID('tempdb..#TMP_LATEST_BRKGROUPS','U') IS NULL        
+ BEGIN        
+  SELECT BrkGrpID, BrkGrpCode, BrkGrpName           
+  INTO #TMP_LATEST_BRKGROUPS        
+  FROM dbo.f_GetLatestBrokerGroups()         
+  WHERE ( CLReportBrkGrpID IS NULL  )        
+ END         
+         
+ --Indemnified accounts         
+ IF ( OBJECT_ID('tempdb..#TMP_RWA_REPORT_ALL_ACCTS','U') IS NULL )         
+ BEGIN      SELECT *         
+  INTO #TMP_RWA_REPORT_ALL_ACCTS        
+  FROM dbo.f_CreateRWAReportAccountsSchema()         
+ END        
+       
+ /* P2422: commenting this as we have Filter Accounts based on Report Setup Data         
+ IF ( OBJECT_ID('tempdb..#TMP_REPORT_ACCTS','U') IS NULL )         
+ BEGIN        
+SELECT CONVERT(VARCHAR(12), AcctNbr) AS AcctNbr        
+  INTO #TMP_REPORT_ACCTS        
+  FROM dbo.f_GetReportAcctNumberParams(163,'@AcctList')        
+ END        
+  SELECT * FROM #TMP_REPORT_ACCTS      
+  */      
+      
+ --Collaterals         
+ IF OBJECT_ID('tempdb..#TMP_COLLATERALS','U') IS NULL           
+ BEGIN        
+  SELECT *         
+  INTO #TMP_COLLATERALS        
+  FROM dbo.f_CreateCollateralsSchema()         
+ END        
+        
+ --Allocations        
+ IF OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS','U') IS NULL  -- Allocated Collaterals        
+ BEGIN        
+  SELECT *         
+  INTO #TMP_COLLATERAL_DETAILS        
+  FROM dbo.f_CreateCollateralDetailsSchema()         
+ END        
+    
+ --P2422    
+ DECLARE @AcctNbrList   NVARCHAR(max) = NULL    
+   select @AcctNbrList =     
+   CONVERT(NVARCHAR(MAX),(select    
+    (    
+        select    
+        t2.AcctID AS 'acct/@ID'    
+        --t2.AcctNbr AS 'acct/@Number'    
+        from #TMP_REPORT_SETUP_DATA as t2    
+        --where t2.Acctnbr <> '100027076'    
+        for xml path(''), type    
+    )    
+	for xml path ('root'),type))    
+             
+   --EXEC p_GetLoansAndCollateralAllocations @AsOfStartDate, @AsOfEndDate,NULL,164    
+   EXEC p_GetLoansAndCollateralAllocations @AsOfEndDate, @AsOfEndDate,NULL,@REFERENCE_REPORTID    
+   --SELECT * FROM #TMP_COLLATERAL_DETAILS     
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 13 ms.
+ --Aggregate loans by broker          
+ CREATE TABLE #TMP_PROCESSED_LOAN_SUMMARY           
+ (          
+	  BusinessInd   VARCHAR(2),          
+	  TripartyGrpID INT,          
+	  BrkGrpID   INT,          
+	  BrkGrpName   VARCHAR(100),  
+	  CollCCYCode CHAR(3),        
+	  Principal  DECIMAL(25,10)          
+ )          
+           
+ DECLARE @TMP_CURRENCY_CONV TABLE          
+ (          
+  AsOfDate  DATETIME,          
+  FromCCY   VARCHAR(3),           
+  ConversionRatio FLOAT           
+ )          
+           
+ IF ( @IncludeProcessedLoans = 1 )          
+ BEGIN          
+  DECLARE @EQ_GLOBAL_USD AS INT           
+  DECLARE @EQ_GLOBAL_EUR AS INT           
+            
+  SET @EQ_GLOBAL_EUR = 4          
+  SET @EQ_GLOBAL_USD = 5          
+            
+  --Aggregate equity loans from MTMTripartyBalance          
+  INSERT INTO #TMP_PROCESSED_LOAN_SUMMARY           
+  (           
+	 BusinessInd, TripartyGrpID, BrkGrpID, BrkGrpName, CollCCYCode,Principal           
+  )          
+  SELECT           
+   BusinessIND = 'EQ',           
+   TPBANK.TripartyGrpID,           
+   TBRKGRP.BrkGrpID,           
+   TBRKGRP.BrkGrpName,
+   TTPBAL.CollCCYCode,           
+   Principal = SUM(TTPBAL.BalanceAmount)
+   --TTPBAL.BalanceAmount
+  FROM           
+   LAVA.dbo.MTMTripartyBalance AS TTPBAL          
+   INNER JOIN [Broker] AS TBRK           
+    ON ( TTPBAL.BrkNbr = TBRK.BrkNbr ) AND           
+       ( TTPBAL.AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd  ) AND           
+       ( ISNULL(TBRK.IsDeleted,0) = 0 ) AND           
+       ( ISNULL(TBRK.TriPartyID ,0) > 0 )           
+   INNER JOIN dbo.[BrokerGroup] AS BG           
+    ON ( TBRK.BrkGrpID = BG.BrkGrpID ) AND           
+       ( TTPBAL.AsOfDate BETWEEN BG.EffectiveDateBegin AND BG.EffectiveDateEnd  ) AND           
+       ( ISNULL(BG.IsDeleted,0) = 0 ) AND           
+       ( ISNULL(BG.IsAgentDirectLending, 0 ) = 0 ) --#TMP_LATEST_BRKGROUPS not to be used here          
+   INNER JOIN TriPartyBank AS TPBANK          
+    ON ( TBRK.TriPartyID = TPBANK.TriPartyID ) AND           
+       ( TTPBAL.AsOfDate BETWEEN TPBANK.EffectiveDateBegin AND TPBANK.EffectiveDateEnd ) AND           
+ ( ISNULL(TPBANK.IsDeleted,0) = 0 )           
+   INNER JOIN #TMP_LATEST_BRKGROUPS AS TBRKGRP          
+    ON ( TBRK.BrkGrpID = TBRKGRP.BrkGrpID )          
+  WHERE           
+   ( TBRK.BusinessInd= 'EQ' ) AND           
+   ( TTPBAL.AsOfDate BETWEEN @AsOfStartDate AND @AsOfEndDate ) AND           
+   ( ISNULL(TTPBAL.IsDeleted,0) = 0  )   AND
+   ( TTPBAL.IsLocked = 1)         
+  GROUP BY           
+	TPBANK.TripartyGrpID, TBRKGRP.BrkGrpID, TBRKGRP.BrkGrpName, TTPBAL.CollCCYCode         
+          
+     
+  --Aggregate fixed income loans from ProcessedLoans         
+  /* P422 TODO: replaced #TMP_REPORT_ACCTS with #TMP_REPORT_SETUP_DATA        
+        
+  SELECT TPL.*, CONVERT(DECIMAL(17,4),0) AS PrincipalUSD           
+ INTO #TMP_PROCESSED_LOANS          
+  FROM           
+   dbo.f_IsFutureTableDateRange(@AsOfStartDate, @AsOfEndDate, 0, 0, 0) AS TPL -- 5th parameter to block the Loaned Securities Service records          
+   INNER JOIN #TMP_REPORT_ACCTS AS TMP_RPT_ACCTS          
+    ON ( TPL.AcctNbr = TMP_RPT_ACCTS.AcctNbr )          
+   INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS AS TACCTS          
+    ON ( TMP_RPT_ACCTS.AcctNbr = TACCTS.AcctNbr )          
+  WHERE           
+   ( dbo.f_IsLoan( SecType , AllocFlag, TxnType ) = 1 ) AND           
+   ( TPL.BucketSecType = 'FI' )       AND           
+   ( TPL.IsFutureOverride = 0 )         
+     */     
+        
+  SELECT TPL.*, CONVERT(DECIMAL(17,4),0) AS PrincipalUSD           
+  INTO #TMP_PROCESSED_LOANS          
+  FROM           
+   dbo.f_IsFutureTableDateRange(@AsOfStartDate, @AsOfEndDate, 0, 0, 0) AS TPL -- 5th parameter to block the Loaned Securities Service records          
+   INNER JOIN #TMP_REPORT_SETUP_DATA AS TRSD          
+    ON ( TPL.AcctNbr = TRSD.AcctNbr )          
+   INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS AS TACCTS          
+    ON ( TRSD.AcctNbr = TACCTS.AcctNbr )          
+  WHERE           
+   ( dbo.f_IsLoan( SecType , AllocFlag, TxnType ) = 1 ) AND           
+   ( TPL.BucketSecType = 'FI' )       AND           
+   ( TPL.IsFutureOverride = 0 )        
+          
+            
+  INSERT INTO @TMP_CURRENCY_CONV  ( AsOfDate, FromCCY, ConversionRatio )           
+  SELECT AsOfDate, FromCCY, dbo.f_GetCurrencyConversion(dbo.f_GetFlwnBizDay(AsOfDate), CONVERT(CHAR(3),FromCCY), 'USD')          
+  FROM ( SELECT DISTINCT AsOfDate, CollCCYCode AS FromCCY FROM #TMP_PROCESSED_LOANS ) TPL          
+  UNION            
+  SELECT DISTINCT AsOfDate, 'USD', 1 FROM #TMP_PROCESSED_LOANS TPL --For USD currencies, there nothing to convert - ratio is 1.          
+            
+  UPDATE #TMP_PROCESSED_LOANS          
+  SET PrincipalUSD = ( TPL.Principal * TCUR.ConversionRatio )           
+  FROM           
+   #TMP_PROCESSED_LOANS TPL INNER JOIN @TMP_CURRENCY_CONV TCUR            
+   ON ( TPL.AsOfDate = TCUR.AsOfDate ) AND ( TPL.CollCCYCode = TCUR.FromCCY )             
+            
+  INSERT INTO #TMP_PROCESSED_LOAN_SUMMARY ( BusinessInd, TripartyGrpID, BrkGrpID, BrkGrpName, CollCCYCode, Principal)            
+  SELECT 'FI' AS BusinessInd, TPL.TripartyGrpID, TBRKGRP.BrkGrpID, TBRKGRP.BrkGrpName, TPL.CollCCYCode, SUM(Principal)          
+  FROM           
+      #TMP_PROCESSED_LOANS AS TPL          
+   INNER JOIN [BROKER] AS TBRK           
+    ON ( TPL.BrkNbr = TBRK.BrkNbr ) AND ( TPL.AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd  )            
+   INNER JOIN dbo.[BrokerGroup] AS BG           
+    ON ( TBRK.BrkGrpID = BG.BrkGrpID ) AND           
+       ( TPL.AsOfDate BETWEEN BG.EffectiveDateBegin AND BG.EffectiveDateEnd  ) AND           
+       ( ISNULL(BG.IsDeleted,0) = 0 ) AND           
+       ( ISNULL(BG.IsAgentDirectLending, 0 ) = 0 ) --#TMP_LATEST_BRKGROUPS not to be used here          
+   INNER JOIN #TMP_LATEST_BRKGROUPS AS TBRKGRP           
+    ON ( TBRK.BrkGrpID = TBRKGRP.BrkGrpID )          
+  GROUP BY            
+   TPL.TriPartyGrpID, TBRKGRP.BrkGrpID, TBRKGRP.BrkGrpName, TPL.CollCCYCode          
+    
+ END           
+          
+          
+ --Collaterals ( P1330 BRD 5.1 This report for JTSB shows only Triparty Equity Collateral (but for both fixed income and equity loans) with information derived from Triparty           
+ --         reports which are delivered to SMTBUSA daily either via FTP or uploaded by the user into MoBetter (Euroclear) )                      
+         
+ SELECT TACCTS.AcctName, TCOL.*, TCLS.Description,        
+ CASE WHEN TCLS.Description = 'Equities'  THEN 'EQ'           
+    ELSE 'FI' END AS CollateralBusinessIndicator        
+ INTO #TMP_ALLOCATIONS          
+ FROM           
+  #TMP_COLLATERAL_DETAILS AS TCOL           
+  INNER JOIN CollateralClassAssetTypes TCLSAT           
+   ON ( TCOL.TripartyGrpID = TCLSAT.TripartyGrpID ) AND ( TCOL.IssuerType = TCLSAT.IssuerType ) AND           
+      ( TCOL.AsOfDate BETWEEN TCLSAT.EffectiveDateBegin AND TCLSAT.EffectiveDateEnd )           
+  INNER JOIN CollateralClass TCLS           
+   ON ( TCLSAT.CollateralClassID = TCLS.CollateralClassID ) AND           
+      ( TCOL.AsOfDate BETWEEN TCLS.EffectiveDateBegin AND TCLS.EffectiveDateEnd )  
+-- INNER JOIN #TMP_REPORT_ACCTS AS TRPTACCTS
+  INNER JOIN #TMP_REPORT_SETUP_DATA AS TRSD     --P2422: replaced #TMP_REPORT_ACCTS with #TMP_REPORT_SETUP_DATA     
+   ON ( TCOL.AcctNbr = TRSD.AcctNbr )             
+  INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS AS TACCTS          
+   ON ( TRSD.AcctNbr = TACCTS.AcctNbr )          
+  LEFT JOIN REFERENCE.dbo.Security AS TSEC           
+   ON ( TCOL.SecID = TSEC.SecID )          
+  LEFT JOIN SecurityStatistics AS TSECSTAT           
+   ON (TSEC.TickSymb = TSECSTAT.TickerSymbol )          
+   AND (TCOL.AsOfDate BETWEEN TSECSTAT.EffectiveDateBegin AND TSECSTAT.EffectiveDateEnd )          
+ WHERE           
+    (( TCLS.Description != 'CASH' )         
+   --AND  (( TCLS.Description  = 'Equities' AND @BusinessInd = 'EQ' ) OR   --P2422 Commenting some filter conditions here becuase we need data for both EQ and FI here.        
+            --( TCLS.Description != 'Equities' AND @BusinessInd = 'FI' ) OR           
+            --( @BusinessInd IS NULL ))        
+   )  AND           
+     ( TCOL.CollValue IS NOT NULL )          
+               
+          
+ --======================================================================================================================================================================================================          
+ --Resultset           
+ --======================================================================================================================================================================================================          
+ --Processed loan summary        
+ -- P2422 This result set is used to get the Principal for EQ.       
+ /*      
+ SELECT TLSUM.*           
+ FROM #TMP_PROCESSED_LOAN_SUMMARY AS TLSUM          
+ WHERE EXISTS ( SELECT * FROM #TMP_ALLOCATIONS AS TALLOC           
+       WHERE ( TLSUM.TripartyGrpID = TALLOC.TripartyGrpID ) AND           
+          ( TLSUM.BrkGrpID = TALLOC.BrkGrpID ) AND          
+          ( TLSUM.BusinessInd = TALLOC.BucketSecType ) )          
+   */        
+         
+      
+   --Security monthly average volume      
+  SELECT DISTINCT           
+  TALLOC.SecCode, COALESCE(TALLOC.ISIN, TSEC.ISIN) AS ISIN, COALESCE(TSECINFO.TickerSymbol, TSEC.TickSymb) AS TickerSymbol, TALLOC.SecurityDesc, 
+  TSECSTAT.MonthlyAvgVolume30D, ROUND(TSECSTAT.MonthlyAvgVolume30D*0.3,0) AS MonthlyAvgVolume30Per30D      
+  INTO #TMP_SecADV      
+  FROM           
+  ( SELECT DISTINCT AsOfDate,SecCode, SecID, ISIN, SecurityDesc            
+    FROM #TMP_ALLOCATIONS           
+    WHERE ( CollateralBusinessIndicator = @EQUITY_BUSINESS_IND )) AS TALLOC          
+  LEFT JOIN REFERENCE.dbo.Security AS TSEC           
+  ON ( TALLOC.SecID = TSEC.SecID )          
+  LEFT JOIN SecurityInfo AS TSECINFO          
+  ON ((TALLOC.ISIN = TSECINFO.ISIN ) OR ( TSEC.ISIN = TSECINFO.ISIN ))          
+  LEFT JOIN SecurityStatistics AS TSECSTAT           
+  ON  (( TSEC.TickSymb = TSECSTAT.TickerSymbol ) OR (TSECINFO.TickerSymbol = TSECSTAT.TickerSymbol ))          
+  AND (TALLOC.AsOfDate BETWEEN TSECSTAT.EffectiveDateBegin AND TSECSTAT.EffectiveDateEnd )       
+           
+ --Collateral allocations (FI)                 
+ SELECT      
+	'COLLATERAL' AS TxnType,       
+	ReceivedOrDelivered,  
+	BucketSecType,
+	CollateralBusinessIndicator,      
+	SecCode,        
+	SecurityDesc,        
+	CollCCYCode,        
+	BrkGrpName,        
+	Quantity,        
+	SecurityPrice,        
+	CollValue as MarketValue,  --Collateral Market Value      
+	CollValueWithoutMargin As CollateralValue,--Collateral Required Value          
+	CASE WHEN CollateralType = 'T' THEN 'Triparty'        
+	ELSE 'Bilateral' END AS LoanType       
+ FROM 
+	#TMP_ALLOCATIONS        
+ WHERE 
+	( [Description] != 'Equities'  ) -- P2422 Flter data for FI for sheet 1            
+ ORDER BY 
+	BrkGrpName      
+      
+--Collateral allocations (EQ) 
+ SELECT   
+	TA.BrkGrpID,
+	'COLLATERAL' AS TxnType,       
+	ReceivedOrDelivered,      
+	BucketSecType,
+	CollateralBusinessIndicator,      
+	TA.SecCode,        
+	TA.SecurityDesc,        
+	TA.CollCCYCode,       
+	TA.BrkGrpName,        
+	TLSUM.Principal AS LoanAmount,
+	MAX(TA.SecurityPrice) AS SecurityPrice,            
+	SUM(Quantity) AS Quantity,    
+	SUM(CollValue) as MarketValue,  --Collateral Market Value      
+	SUM(CollValueWithoutMargin) As CollateralValue, --Collateral Required Value      
+	SUM(CollValue)/NULLIF(SUM(CollValueWithoutMargin),0) AS PercentMarginHairCut,      
+	SUM(CollValueWithoutMargin)/NULLIF(TLSUM.Principal,0) AS PercentConcentration,      
+	SA.MonthlyAvgVolume30D,      
+	SA.MonthlyAvgVolume30Per30D,      
+	CASE WHEN SUM(Quantity) < SA.MonthlyAvgVolume30Per30D THEN 'Yes' ELSE 'No' END AS 'UnitPledged30Per30ADV',
+	'' AS '30DADV',
+	'' AS '30%DADV',
+	'No' AS 'UnitPledgedwithin30DATV',
+	CONVERT(VARCHAR,TA.BrkGrpID)+BucketSecType+TA.CollCCYcode AS BrkGrpSecType
+ FROM 
+	#TMP_ALLOCATIONS TA 
+ INNER JOIN
+	(
+		SELECT TLS.BusinessInd, TLS.BrkGrpID, TLS.CollCCYCode, SUM(TLS.Principal) AS Principal
+		FROM #TMP_PROCESSED_LOAN_SUMMARY AS TLS
+		WHERE EXISTS ( SELECT * FROM #TMP_ALLOCATIONS AS TALLOC 
+						 WHERE ( TLS.TripartyGrpID = TALLOC.TripartyGrpID ) AND 
+							   ( TLS.BrkGrpID = TALLOC.BrkGrpID ) AND
+					           ( TLS.BusinessInd = TALLOC.BucketSecType ) AND
+							   ( TLS.CollCCYcode = TALLOC.CollCCYcode ) AND 	
+							   ( TALLOC.CollateralBusinessIndicator = 'EQ' ))
+		GROUP BY
+			TLS.BusinessInd, TLS.BrkGrpID, TLS.CollCCYCode  -- Group By logic fixed excludes TripartyGrpID for LoanAmount
+	) TLSUM 
+	ON
+		 ( TLSUM.BrkGrpID = TA.BrkGrpID ) AND
+		 ( TLSUM.BusinessInd = TA.BucketSecType ) AND
+		 ( TLSUM.CollCCYCode = TA.CollCCYCode) 
+ LEFT JOIN (SELECT DISTINCT SecCode,MonthlyAvgVolume30D,MonthlyAvgVolume30Per30D FROM #TMP_SecADV) SA 
+	ON TA.SecCode=SA.SecCode      
+ WHERE 
+	( [Description] = 'Equities'  ) -- P2422 Flter data for EQ for sheet 2    
+	--AND TA.BucketSecType != 'FI'  
+	AND  CollateralType NOT IN ('S','P')--Excluding Bilaterals for EQ 3/11 
+ GROUP BY 
+	TA.BrkGrpID,ReceivedOrDelivered,BucketSecType,CollateralBusinessIndicator,TA.SecCode,SecurityDesc,TA.CollCCYCode,TA.BrkGrpName,TLSUM.Principal,
+	SA.MonthlyAvgVolume30D,SA.MonthlyAvgVolume30Per30D
+ ORDER BY 
+	TA.BrkGrpName,BucketSecType,TA.CollCCYCode DESC  
+    
+ --Cleanup         
+ TRUNCATE TABLE #TMP_COLLATERALS        
+ TRUNCATE TABLE #TMP_COLLATERAL_DETAILS   
+ TRUNCATE TABLE #TMP_ALLOCATIONS        
+        
+SET NOCOUNT OFF        
+         
+END 
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 12 ms.
-Table 'NamedReportParameter'. Scan count 0, logical reads 2, physical reads 2, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 8 ms.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Account'. Scan count 1, logical reads 18, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#B9052E78'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 33 ms.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 18 ms.
+CREATE PROCEDURE [dbo].[p_GetLoansAndCollateralAllocations] 
+(
+	@AsOfStartDate 	   DATETIME,
+	@AsOfEndDate 	   DATETIME,
+	@AcctNbrList	   VARCHAR(MAX) = NULL,
+	@ReportID		   SMALLINT = 0, 
+	@BucketLoanType    CHAR(2) = 'NC',		-- 'NC' ( NON-CASH ), NULL ( ALL ), 'C' ( CASH )
+	@TargetCurrency	   VARCHAR(3) = NULL,
+	@Source			   VARCHAR(10) = NULL,	 --LOAN / MARK (AS DEFAULT )
+	@IsFICCOnly		   BIT = 0, -- To get FICC traded data only,
+	@RollupFICCBrokers BIT = 0
+)
+AS
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 0, logical reads 14419, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 4848, logical reads 9696, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Broker'. Scan count 13225, logical reads 54782, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BFB22C07'. Scan count 1, logical reads 1445, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+BEGIN 
+	SET NOCOUNT ON
+	DECLARE @OfficialStartDate DATETIME
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 974 ms.
-Table '#BE3A5CFC'. Scan count 0, logical reads 4787, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 4881, logical reads 9762, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Broker'. Scan count 13320, logical reads 56006, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BFB22C07'. Scan count 1, logical reads 1455, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	DECLARE @DAY_CTR INT
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 963 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 474, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 1, logical reads 295, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	DECLARE @INCLUDE_BILATERALS AS BIT
+	DECLARE @INCLUDE_TRIPARTIES AS BIT
+	DECLARE @INCLUDE_REPOS AS BIT
+	DECLARE @INCLUDE_RIGHTS AS BIT
+	DECLARE @INCLUDE_FUTURE_COLLATERALS AS BIT
+	DECLARE @INCLUDE_AGENT_DIRECT_LENDING_LOANS AS BIT
+	DECLARE @INCLUDE_MTM_PENDING AS BIT
+	DECLARE @USE_ACTUAL_RISK_WEIGHTS AS BIT
+	DECLARE @INCLUDE_FUTURE_LOANS AS BIT
+	DECLARE @IGNORE_MTM_CYCLE AS BIT	
+	
+	DECLARE @RPTID_RWA_FA_ACTUAL	AS INT
+	DECLARE @RPTID_RWA_FA_WORSTCASE AS INT
+	DECLARE @RPTID_RWA_BPP	 AS INT
+	DECLARE @RPTID_RWA_FO	 AS INT
+	DECLARE @RPTID_RWA_RECON AS INT
+	DECLARE @RPTID_MOAR_RECON AS INT
+	DECLARE @RPTID_RWA_BPP_WORSTCASE AS INT
+	DECLARE @RPTID_RWA_FO_WORSTCASE AS INT
+	DECLARE @RPTID_RWA_INDEMNITY AS INT
+	DECLARE @RPTID_RWA_INDEMNITY_LOANS AS INT
+	DECLARE @RPTID_RWA_INDEMNITY_COLLATERALS AS INT
+	DECLARE @RPTID_EQUITY_COLLATERAL_MONITORING	 AS INT
+	DECLARE @RPTID_FIXEDINCOME_COLLATERAL_MONITORING AS INT
+	DECLARE @RPTID_RWA_MOAR AS INT
+	DECLARE @RPTID_RWA_MOAR_RECON AS INT	
+	DECLARE @RPTID_CBJ_MTM AS INT	
+	DECLARE @RPTID_RWA_HAIRCUT_FA_ACTUAL AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_FA_WORSTCASE AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_FO_ACTUAL AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_FO_WORSTCASE AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_FO_WORSTCASE_CAPPED AS INT	
+	DECLARE @RPTID_RWA_HAIRCUT_FO_ACTUAL_REALTIME AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_FO_WORSTCASE_REALTIME AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_BPP_ACTUAL	 AS INT
+	DECLARE @RPTID_RWA_HAIRCUT_BPP_WORSTCASE AS INT
+	DECLARE @RPTID_DIRECT_REPO_CUST AS INT
+	
+	DECLARE @CLASSID_US_TREASURIES AS INT
+	DECLARE @CLASSID_FDIC_GUARENTEED_DEBT_UNDER_TLGP AS INT
+	DECLARE @CLASSID_GNMA_0PCT AS INT
+	DECLARE @CLASSID_Agency_MBS_REMICS_CMOS AS INT
+	
+	DECLARE @LENDING_TYPE_SECLENDING AS VARCHAR(10)
+	DECLARE @LENDING_TYPE_REPO AS VARCHAR(10)
+	DECLARE @LOAN_TYPE_TRIPARTY AS VARCHAR(10)
+	DECLARE @TRAN_TYPE_BORROW AS VARCHAR(10)
+	
+	DECLARE @COLLATERAL_DELIVERED AS VARCHAR(9)
+	DECLARE @COLLATERAL_RECEIVED  AS VARCHAR(9)
+	
+	DECLARE @EXPOSURE_TYPE_MARGIN_CALL AS VARCHAR(15) 
+	DECLARE @EXPOSURE_TYPE_DELIVER	   AS VARCHAR(15) 
+	DECLARE @EXPOSURE_TYPE_NA		   AS VARCHAR(15) 	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 40 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 4797, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 22, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 62 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 9299, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	DECLARE @LOAN_STATUS_UNCHECKED   AS CHAR(1) 
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 55 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	DECLARE @ITERATION INT		-- Number of iterations allocation is being done. For REPOS, we have to reallocate unallocated collaterals ( if any ).
+	
+	
+	SET @ITERATION = 0
+	SET @EXPOSURE_TYPE_DELIVER     = 'DELIVER'
+	SET @EXPOSURE_TYPE_MARGIN_CALL = 'MARGIN CALL' 
+	SET @EXPOSURE_TYPE_NA		   = 'N/A'
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+	SET @LENDING_TYPE_SECLENDING = 'SECLENDING'
+	SET @LENDING_TYPE_REPO = 'REPO'
+	SET @LOAN_TYPE_TRIPARTY = 'T'
+	SET @TRAN_TYPE_BORROW = 'B'
+	
+	SET @COLLATERAL_DELIVERED = 'DELIVERED'
+	SET @COLLATERAL_RECEIVED = 'RECEIVED'
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#AD5CFE34'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @CLASSID_US_TREASURIES  = 1 
+	SET @CLASSID_FDIC_GUARENTEED_DEBT_UNDER_TLGP = 4
+	SET @CLASSID_GNMA_0PCT = 6
+	SET @CLASSID_Agency_MBS_REMICS_CMOS  = 7
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 11 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 705, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 689, logical reads 1378, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'ActivityExtractHist'. Scan count 83, logical reads 3421, physical reads 104, page server reads 0, read-ahead reads 14, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @RPTID_RWA_FA_ACTUAL = 141
+	SET @RPTID_RWA_FA_WORSTCASE = 142
+	SET @RPTID_RWA_BPP = 145
+	SET @RPTID_RWA_FO = 146
+	SET @RPTID_RWA_RECON = 153
+	SET @RPTID_MOAR_RECON = 185
+	SET @RPTID_RWA_BPP_WORSTCASE = 156
+	SET @RPTID_RWA_FO_WORSTCASE = 157
+	SET @RPTID_RWA_INDEMNITY = 158
+	SET @RPTID_RWA_INDEMNITY_LOANS = 159 
+	SET @RPTID_RWA_INDEMNITY_COLLATERALS = 160
+	SET @RPTID_EQUITY_COLLATERAL_MONITORING = 164	
+	SET @RPTID_FIXEDINCOME_COLLATERAL_MONITORING = 163
+	SET @RPTID_RWA_MOAR_RECON = 185
+	SET @RPTID_RWA_MOAR = 186	
+	SET @RPTID_CBJ_MTM = 190
+	SET @RPTID_DIRECT_REPO_CUST = 540
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 438 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 1 ms.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 309, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @RPTID_RWA_HAIRCUT_FA_ACTUAL	= 244	
+	SET @RPTID_RWA_HAIRCUT_FA_WORSTCASE	= 247
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 6 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 13320, logical reads 33820, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BFB22C07'. Scan count 1, logical reads 1455, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @RPTID_RWA_HAIRCUT_FO_ACTUAL    = 245	
+	SET @RPTID_RWA_HAIRCUT_FO_WORSTCASE = 246
+	SET @RPTID_RWA_HAIRCUT_FO_WORSTCASE_CAPPED = 268
+	SET @RPTID_RWA_HAIRCUT_FO_ACTUAL_REALTIME    = 248	
+	SET @RPTID_RWA_HAIRCUT_FO_WORSTCASE_REALTIME = 251	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 773 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 13225, logical reads 33634, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BFB22C07'. Scan count 1, logical reads 1445, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @RPTID_RWA_HAIRCUT_BPP_ACTUAL = 252
+	SET @RPTID_RWA_HAIRCUT_BPP_WORSTCASE = 253
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 692 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @OfficialStartDate  = @AsOfStartDate
+	IF ( @OfficialStartDate != @AsOfEndDate )		--Take previous working day if starting day is a weekend or a holiday
+	BEGIN
+		SET @OfficialStartDate = dbo.f_GetPrevBizDayIfHoliday(@AsOfStartDate)
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 14 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 2 ms.
-Table '#BF2E8135'. Scan count 0, logical reads 292, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 6 ms.
-Table '#BF2E8135'. Scan count 1, logical reads 290, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @LOAN_STATUS_UNCHECKED = '0'
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 1156 ms.
-Table '#BF2E8135'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BE3A5CFC'. Scan count 1, logical reads 78, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--====================================================================================================================================================================================================
+	-- INPUT
+	--====================================================================================================================================================================================================
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 2 ms.
-Table '#BF2E8135'. Scan count 1, logical reads 3, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BE3A5CFC'. Scan count 1, logical reads 62, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--Get preset report parameters
+	SET @INCLUDE_BILATERALS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeBilaterals'), 1)
+	SET @INCLUDE_TRIPARTIES = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeTriParties'), 1)
+	SET @INCLUDE_REPOS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeRepos'), 0)
+	SET @INCLUDE_FUTURE_COLLATERALS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeFutureCollaterals'), 0)
+	SET @INCLUDE_RIGHTS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeRights'), 0)
+	SET @INCLUDE_AGENT_DIRECT_LENDING_LOANS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeAgentDirectLendingLoans'), 1)		
+	SET @INCLUDE_MTM_PENDING = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeMTMPending'), 0)		
+	SET @USE_ACTUAL_RISK_WEIGHTS = CONVERT(BIT,ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@UseActualRiskWeights'), 0))
+	SET @INCLUDE_FUTURE_LOANS = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IncludeFutureLoans'), 0)
+	SET @IGNORE_MTM_CYCLE = ISNULL(dbo.f_GetReportParameterValue(@ReportID, '@IgnoreMTMCycle'), 0)
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 5 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 9 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 2, logical reads 8, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BF2E8135'. Scan count 1, logical reads 2, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SET @Source = ISNULL(@Source,'MARK')
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 14 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#A022A56E'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'ActivityExtractHist'. Scan count 1, logical reads 945, physical reads 0, page server reads 0, read-ahead reads 926, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--Get accounts 
+	IF ( OBJECT_ID('tempdb..#TMP_RWA_REPORT_ALL_ACCTS','U') IS NULL ) 
+	BEGIN
+		SELECT * 
+		INTO #TMP_RWA_REPORT_ALL_ACCTS
+		FROM dbo.f_CreateRWAReportAccountsSchema() 
+	END
+	
+	IF ( OBJECT_ID('tempdb..#TMP_RWA_REPORT_ACCTS','U') IS NULL )
+	BEGIN
+		SELECT * 
+		INTO #TMP_RWA_REPORT_ACCTS
+		FROM dbo.f_CreateRWAReportAccountsSchema() 
+	END
+		
+	
+	EXEC p_RWAGetAccounts @OfficialStartDate, @AsOfEndDate, @AcctNbrList, @ReportID
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 20 ms.
-Table '#A022A56E'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	
+	--Get broker groups	
+	IF OBJECT_ID('tempdb..#TMP_LATEST_BRKGROUPS','U') IS NULL
+	BEGIN
+		SELECT BrkGrpID, BrkGrpCode, BrkGrpName			
+		INTO #TMP_LATEST_BRKGROUPS
+		FROM dbo.f_GetLatestBrokerGroups() 
+		WHERE ISNULL(IsLoanedSecuritiesService,0) = 0 -- To block Loaned Securities Service records
+	END	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#A022A56E'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--Get brokers 
+	IF (OBJECT_ID('tempdb..#TMP_BROKERS') IS NULL) 
+	BEGIN
+		SELECT B.* 
+		INTO #TMP_BROKERS 
+		FROM dbo.Broker B
+			INNER JOIN dbo.BrokerGroup BG ON B.BrkGrpID = BG.BrkGrpID
+			AND (
+					@OfficialStartDate BETWEEN BG.EffectiveDateBegin AND BG.EffectiveDateEnd --P2422
+					AND
+					@AsOfEndDate BETWEEN BG.EffectiveDateBegin AND BG.EffectiveDateEnd
+				)
+		WHERE 
+			( 
+				( ISNULL(BG.IsAgentDirectLending,0) = 0 ) OR 
+				( ISNULL(BG.IsAgentDirectLending,0) = @INCLUDE_AGENT_DIRECT_LENDING_LOANS ) 
+			) AND
+			( ISNULL(BG.IsDeleted, 0) = 0 ) 
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#A116C9A7'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'ProjActMovement'. Scan count 1, logical reads 588, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--====================================================================================================================================================================================================
+	-- OUTPUT
+	--====================================================================================================================================================================================================
+	IF OBJECT_ID('tempdb..#TMP_COLL_CLS_RISK_WT','U') IS NULL		-- Collateral Class Risk Weight
+	BEGIN
+		SELECT *
+		INTO #TMP_COLL_CLS_RISK_WT
+		FROM dbo.f_CreateCollateralClassRiskWeightSchema() 
+	END	
+	
+	IF OBJECT_ID('tempdb..#TMP_ALL_LOANS','U') IS NULL				-- Bilateral / Triparty  / Repo Loans
+	BEGIN
+		SELECT * 
+		INTO #TMP_ALL_LOANS
+		FROM dbo.f_CreateLoanDetailsSchema() 
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 8 ms.
-Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#A116C9A7'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'ProjActMovement'. Scan count 1, logical reads 588, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	IF OBJECT_ID('tempdb..#TMP_LOAN_SUMMARY','U') IS NULL			-- Loan Summary
+	BEGIN
+		SELECT * 
+		INTO #TMP_LOAN_SUMMARY
+		FROM dbo.f_CreateLoanSummarySchema() 
+	END
+	
+	IF OBJECT_ID('tempdb..#TMP_REPO_LOANS','U') IS NULL				-- Repo Loans
+	BEGIN
+		SELECT * 
+		INTO #TMP_REPO_LOANS
+		FROM dbo.f_CreateLoanDetailsSchema() 
+	END
+	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 8 ms.
-Table '#A116C9A7'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	IF OBJECT_ID('tempdb..#TMP_COLLATERALS','U') IS NULL			-- Bilateral / Triparty Collaterals
+	BEGIN
+		SELECT * 
+		INTO #TMP_COLLATERALS
+		FROM dbo.f_CreateCollateralsSchema() 
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+	IF OBJECT_ID('tempdb..#TMP_BILATERAL_COLLATERALS','U') IS NULL		-- Repo Collaterals
+	BEGIN
+		SELECT * 
+		INTO #TMP_BILATERAL_COLLATERALS
+		FROM dbo.f_CreateCollateralsSchema() 
+	END	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 70 ms.
-Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	IF OBJECT_ID('tempdb..#TMP_REPO_COLLATERALS','U') IS NULL		-- Repo Collaterals
+	BEGIN
+		SELECT * 
+		INTO #TMP_REPO_COLLATERALS
+		FROM dbo.f_CreateCollateralsSchema() 
+	END	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 21 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACTIVITY_LATE_RETURNS__________________________________________________________________________________________00000001AC5F'. Scan count 1, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	IF OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS','U') IS NULL		-- Allocated Collaterals
+	BEGIN
+		SELECT * 
+		INTO #TMP_COLLATERAL_DETAILS
+		FROM dbo.f_CreateCollateralDetailsSchema() 
+	END
+	
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+	IF OBJECT_ID('tempdb..#TMP_COLLATERAL_SUMMARY','U') IS NULL		-- Collateral Summary
+	BEGIN
+		SELECT * 
+		INTO #TMP_COLLATERAL_SUMMARY
+		FROM dbo.f_CreateCollateralSummarySchema() 
+	END	
+	
+	IF OBJECT_ID('tempdb..#TMP_LOAN_COLLATERAL_DIST','U') IS NULL	-- Collateral Distribution by Loan
+	BEGIN
+		SELECT AsOfDate, TxnRefNbr, AcctGrpID, AcctNbr, BrkGrpID, TripartyGrpID, CollSchedID, CollCCYCode, 
+			  LoanValue, LoanValueFX, LoanValueUSD, CollValue, CollValueFX, CollValueUSD, 
+			  CollValue AS CollDist, CollValueFX AS CollDistFX,  CollValueUSD AS CollDistUSD, 
+			  AdjMktValue AS AdjMktValueDist, AdjMktValueFX AS AdjMktValueDistFX,  AdjMktValueUSD AS AdjMktValueDistUSD, 
+			  FinalExposure, FinalExposureFX, FinalExposureUSD, BucketSecType,
+			  LendingType, ClientFICCID, IsFICCMatched
+		INTO #TMP_LOAN_COLLATERAL_DIST
+		FROM dbo.f_CreateCollateralDetailsSchema() 
+	END	
+	
+	IF (OBJECT_ID('tempdb..#TMP_CLEARING_AGENT') IS NULL) 
+	BEGIN
+		SELECT * 
+		INTO #TMP_CLEARING_AGENT
+		FROM dbo.f_CreateClearingAgentSchema()
+		
+		EXEC p_GetClearingAgent NULL
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 5 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 17, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 6 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 309, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_ACCOUNTS_______________________________________________________________________________________________________00000001AC61'. Scan count 1, logical reads 1, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--====================================================================================================================================================================================================
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 1 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 0 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 4, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	CREATE TABLE #TMP_MOVEMENTS  
+	(
+		TxnRefNbr		INT			NULL,
+		AcctNbr			VARCHAR(12)	NULL,
+		LastEffDate		DATETIME	NULL,
+		NewEffDate		DATETIME	NULL
+	)
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+	
+	INSERT INTO #TMP_MOVEMENTS  (TxnRefNbr,AcctNbr,LastEffDate,NewEffDate) 
+	SELECT DISTINCT TxnRefNbr, AcctNbr, LastEffDate, NewEffDate 
+	FROM PROJACTMOVEMENT
+	WHERE ( LastEffDate	BETWEEN @OfficialStartDate AND @AsOfEndDate	) AND 
+	  ( NewEffDate > LastEffDate ) AND
+	  ( TOE IN ('OSL', 'GPL') ) AND	-- exclude PSLs
+	  ( IsDeleted = 0 )
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 21 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 20, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 384, logical reads 1033, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Security'. Scan count 201, logical reads 648, physical reads 55, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--====================================================================================================================================================================================================
+	-- Weighted Collateral Details 
+	--====================================================================================================================================================================================================
+	--BILATERALS will always use ACTUAL risk weights regardless of Report ID  ( Business Requirement ) 
+	INSERT INTO #TMP_COLL_CLS_RISK_WT ( CollateralClassID, RiskID, RiskWeight, EffectiveDateBegin, EffectiveDateEnd, IsTriParty ) 
+	SELECT CollateralClassID, TCLSRW.RiskID, RiskWeight, EffectiveDateBegin, EffectiveDateEnd, 0 AS IsTriParty 
+	FROM CollateralClassRiskWeights  TCLSRW
+	INNER JOIN CollateralRiskWeights TCRW ON ( TCLSRW.RiskID = TCRW.RiskID )
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 226 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 16 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 384, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Broker'. Scan count 1, logical reads 46, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	--TRIPARTIES 
+	IF ( @USE_ACTUAL_RISK_WEIGHTS = 1 )
+	BEGIN 
+		INSERT INTO #TMP_COLL_CLS_RISK_WT ( CollateralClassID, RiskID, RiskWeight, EffectiveDateBegin, EffectiveDateEnd, IsTriParty ) 
+		SELECT CollateralClassID, TCLSRW.RiskID, RiskWeight, TCLSRW.EffectiveDateBegin, TCLSRW.EffectiveDateEnd, 1 AS IsTriParty
+		FROM CollateralClassRiskWeights  TCLSRW
+		INNER JOIN CollateralRiskWeights TCRW ON TCLSRW.RiskID = TCRW.RiskID
+	END
+	ELSE										--TRADED 
+	BEGIN
+		INSERT INTO #TMP_COLL_CLS_RISK_WT ( CollateralClassID, RiskID, RiskWeight, EffectiveDateBegin, EffectiveDateEnd, IsTriParty) 
+		SELECT CollateralClassID, RiskID, RiskWeight, TCLSRW.EffectiveDateBegin, TCLSRW.EffectiveDateEnd, 1 AS IsTriParty
+		FROM CollateralClass TCCLS
+	    CROSS JOIN 
+			( SELECT TWHATIF.RiskID, TCRW.RiskWeight, TWHATIF.EffectiveDateBegin, TWHATIF.EffectiveDateEnd 
+			  FROM CollateralWhatIfRiskWeights TWHATIF
+			  INNER JOIN CollateralRiskWeights TCRW ON TWHATIF.RiskID = TCRW.RiskID ) AS TCLSRW
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 8 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 8 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 204, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 18, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#BE3A5CFC'. Scan count 1, logical reads 26, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 44 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 20 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 180, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table '#TMP_LOANS_PREV_____________________________________________________________________________________________________00000001AC60'. Scan count 1, logical reads 23, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	SELECT * 
+	INTO #TMP_LENDING_BALANCE_EARNINGS 
+	FROM LendingBalanceEarnings 
+	WHERE ( AsOfDate BETWEEN @OfficialStartDate AND @AsOfEndDate )
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 2 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 9 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 1, logical reads 398, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Security'. Scan count 0, logical reads 924, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 1198 ms.
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 25 ms.
-Table '#TMP_ACTIVITY_______________________________________________________________________________________________________00000001AC62'. Scan count 5, logical reads 366, physical reads 1, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Workfile'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'LendingBalanceEarnings'. Scan count 5, logical reads 2678711, physical reads 0, page server reads 0, read-ahead reads 2674008, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_LENDING_BALANCE_EARNINGS') ) AND ( name IS NOT NULL ))
+	BEGIN				   
+		--Create indexes on #TMP_ALL_LOANS
+		CREATE INDEX IDX_LBE_1 ON #TMP_LENDING_BALANCE_EARNINGS ( AsOfDate, TxnRefNbr, AcctNbr ) 	
+	END
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 175437 ms.
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+	--====================================================================================================================================================================================================
+	--Get BILATERAL / TRIPARTY loans 
+	--====================================================================================================================================================================================================						
+	IF ( @INCLUDE_BILATERALS = 1 ) AND ( @IsFICCOnly = 0 ) 
+	BEGIN
+		INSERT INTO #TMP_ALL_LOANS ( [AsOfDate], [TxnRefNbr], [AcctNbr], [AcctGrpID], [BrkNbr], [BrkGrpId], [CollSchedID], [TriPartyGrpID], [LoanType], [LoanStatus], [CouponRate], [BookingCouponRate],
+										[SecID], [CountryID], [SecCode], [ISIN], [CUSIP], [SEDOL], [SecCCYCode], [SecurityDesc], [SecurityDesc2], [ISOCountry], [CountryName], [MaturityDate],
+										[CollCCYCode], [LoanValue], [LoanValueUSD], [Principal], [PrincipalUSD], [AdjMktValue], [AdjMktValueUSD], [TripartyBalance], [ExposureType], [Exposure], [ExposureUSD], [GrossRevCCYCode], [GrossRevenue], [GrossRevenueUSD],
+										[NetRevenue], [NetRevenueUSD], [RevDays], [FaceAmount], [TradePrice], [MarkPrice], [MktPrice], [RebPremAmtAcc], [FinderNbr], [Spread],  [ProductCategory], 
+										[LoanDate], [SettleDate], [RepoDueDate], [SecType], [BucketLoanType], [BucketSecType], [ClearAgentNbr], [Remarks], [IsFutureOverride], [LoanOrigin], 
+										[BucketCollCCY], [CCYCode], [LendingType], [ClientFICCID], [IsFICCMatched], [FactorAtBooking], [RepoRate], [InvRate], [Haircut] )
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+		SELECT  
+				TBL.AsOfDate, TBL.TxnRefNbr, TBL.AcctNbr, 0 AS [AcctGrpID], TBL.BrkNbr, TBL.BrkGrpId, TBL.CollSchedID, TBL.TriPartyGrpID, TBL.LoanType, TBL.LoanStatus, TBL.CouponRate, TBL.BookingCouponRate,
+				Reference.dbo.f_GetSecID (TBL.SecCode) SecID, TSEC.CountryID,
+				TBL.SecCode, TSEC.ISIN, TSEC.CUSIP, TSEC.SEDOL, TBL.SecCCYCode, TSEC.SecurityDesc1 AS SecurityDesc, TSEC.SecurityDesc2 AS SecurityDesc2,
+				TSEC.ISOCountry, TSEC.CountryName, TSEC.MaturityDate, 
+				TBL.CollCCYCode, TBL.LoanValue, CONVERT(DECIMAL(17,4),0) AS LoanValueUSD, TBL.Principal, CONVERT(DECIMAL(17,4),0) AS PrincipalUSD,  
+				TBL.AdjMktValue, 0 AS AdjMktValueUSD, 0 AS TripartyBalance, @EXPOSURE_TYPE_NA AS [ExposureType], TBL.LoanValue AS [Exposure], 0 AS ExposureUSD, 
+				TLBE.CollCCYCode AS GrossRevCCYCode, 
+				ISNULL(TLBE.GrossRevenue,0) AS GrossRevenue, CONVERT(DECIMAL(25,10),0) AS GrossRevenueUSD, 
+				ISNULL(TLBE.NetRevenue,0) AS NetRevenue, CONVERT(DECIMAL(25,10),0) AS NetRevenueUSD, 
+				ISNULL(TLBE.RevDays,0) AS RevDays, TBL.FaceAmount, TBL.TradePrice, TBL.MarkPrice, TBL.MktPrice, 0 AS RebPremAmtAcc, TBL.FinderNbr, TBL.Spread, 
+				TBL.ProductCategory, TBL.LoanDate, TBL.SettleDate, TBL.RepoDueDate, TBL.SecType, TBL.BucketLoanType, TBL.BucketSecType, TBL.ClearAgentNbr, TBL.Remarks, TBL.IsFutureOverride, 
+				CASE WHEN ( TBL.EquilendID > 0 ) THEN 'EQUILEND'
+						ELSE 'NON-EQUILEND' END AS LoanOrigin,
+				TBL.BucketCollCCY, TBL.CCYCode, TBL.LendingType, ClientFICCID = '', IsFICCMatched = 0, TBL.FactorAtBooking, TBL.RepoRate, TBL.InvRate, TBL.Haircut
+		FROM  
+			dbo.f_GetBilateralLoans( @OfficialStartDate, @AsOfEndDate, @Source , 0) TBL  -- 4th parameter to block the Loaned Securities Service records
+			
+			INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS TACCTS 
+				ON ( TBL.AcctNbr = TACCTS.AcctNbr )	 
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 182496 ms.
+			INNER JOIN #TMP_BROKERS AS TBRK 
+				ON  ( TBL.BrkNbr = TBRK.BrkNbr ) AND 
+					( TBL.AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd ) 
 
- SQL Server Execution Times:
-   CPU time = 0 ms,  elapsed time = 0 ms.
+			LEFT JOIN #TMP_LENDING_BALANCE_EARNINGS AS TLBE 
+				ON ( TBL.AsOfDate = TLBE.AsOfDate ) AND ( TBL.TxnRefNbr = TLBE.TxnRefNbr ) AND ( TBL.AcctNbr = TLBE.AcctNbr ) 
 
-Completion time: 2026-10-26T10:43:52.1591717-04:00
+			LEFT JOIN Reference.dbo.Security TSEC 
+				ON ( TBL.SecCode = TSEC.SecCode ) AND ( TBL.SecCCYCode = TSEC.CCYCode ) 
+		
+		WHERE 
+			( TBL.TxnRefNbr NOT IN ( SELECT DISTINCT TxnRefNbr FROM #TMP_MOVEMENTS ) ) 
+			AND ( TBL.LoanStatus <> @LOAN_STATUS_UNCHECKED ) 
+			AND ( IsFutureOverride = 0 OR
+					@ReportID IN (@RPTID_RWA_FO, @RPTID_RWA_FO_WORSTCASE, @RPTID_RWA_RECON, @RPTID_CBJ_MTM, @RPTID_RWA_HAIRCUT_FO_ACTUAL,
+								@RPTID_RWA_HAIRCUT_FO_WORSTCASE, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_CAPPED, @RPTID_RWA_HAIRCUT_FO_ACTUAL_REALTIME, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_REALTIME ) ) --Exclude future loans except for RWA BPP, RWA Recon 
+
+			-- Non-Cash Only / Eliminate "Rights"
+			AND (( (( @BucketLoanType IS NULL ) OR ( TBL.BucketLoanType = @BucketLoanType )) AND (( @INCLUDE_RIGHTS = 1 ) OR ( TBL.LoanValue > 0 ) ) ) 
+					OR @ReportID IN (@RPTID_RWA_INDEMNITY, @RPTID_RWA_INDEMNITY_LOANS, @RPTID_RWA_INDEMNITY_COLLATERALS))
+	END
+
+	IF ( @INCLUDE_TRIPARTIES = 1 ) AND ( @IsFICCOnly = 0 ) 
+	BEGIN
+		INSERT INTO #TMP_ALL_LOANS ( [AsOfDate], [TxnRefNbr], [AcctNbr], [AcctGrpID], [BrkNbr], [BrkGrpId], [CollSchedID], [TriPartyGrpID], [TripartyID], [LoanType], [LoanStatus], [CouponRate], [BookingCouponRate],
+										[SecID], [CountryID], [SecCode], [ISIN], [CUSIP], [SEDOL], [SecCCYCode], [SecurityDesc], [SecurityDesc2], [ISOCountry], [CountryName], [MaturityDate],
+										[CollCCYCode], [LoanValue], [LoanValueUSD], [Principal], [PrincipalUSD], [AdjMktValue], [AdjMktValueUSD], [TripartyBalance], [ExposureType], [Exposure], [ExposureUSD], [GrossRevCCYCode], [GrossRevenue], [GrossRevenueUSD],
+										[NetRevenue], [NetRevenueUSD], [RevDays], [FaceAmount], [TradePrice], [MarkPrice], [MktPrice], [RebPremAmtAcc], [FinderNbr], [Spread],  [ProductCategory],
+										[LoanDate], [SettleDate], [RepoDueDate], [SecType], [BucketLoanType], [BucketSecType], [ClearAgentNbr], [Remarks], [IsFutureOverride], [LoanOrigin], [BucketCollCCY], [CCYCode], [LendingType], [ClientFICCID], [IsFICCMatched] )
+
+		SELECT  
+				TL.AsOfDate, TL.TxnRefNbr, TL.AcctNbr, 0 AS [AcctGrpID], TL.BrkNBr, TL.BrkGrpId, TL.CollSchedID, TL.TriPartyGrpID, TL.TripartyID, TL.LoanType, TL.LoanStatus, TL.CouponRate, TL.BookingCouponRate,
+				Reference.dbo.f_GetSecID (TL.SecCode) SecID, TSEC.CountryID, 
+				TL.SecCode, TSEC.ISIN, TSEC.CUSIP, TSEC.SEDOL, TL.SecCCYCode, TSEC.SecurityDesc1 AS SecurityDesc,  TSEC.SecurityDesc2 AS SecurityDesc2,
+				TSEC.ISOCountry, TSEC.CountryName, TSEC.MaturityDate, 
+				TL.CollCCYCode, 
+				TL.LoanValue, CONVERT(DECIMAL(17,4),0) AS LoanValueUSD, TL.Principal, CONVERT(DECIMAL(17,4),0) AS PrincipalUSD,
+				AdjMktValue, 0 AS AdjMktValueUSD, 0 as TripartyBalance, @EXPOSURE_TYPE_NA AS [ExposureType], LoanValue AS [Exposure], 0 AS [ExposureUSD], 
+				TLBE.CollCCYCode AS GrossRevCCYCode, 
+				ISNULL(TLBE.GrossRevenue,0) AS GrossRevenue, CONVERT(DECIMAL(25,10),0) AS GrossRevenueUSD, 
+				ISNULL(TLBE.NetRevenue,0) AS NetRevenue, CONVERT(DECIMAL(25,10),0) AS NetRevenueUSD, 
+				ISNULL(TLBE.RevDays,0) AS RevDays, TL.FaceAmount, TL.TradePrice, TL.MarkPrice, TL.MktPrice, 0 AS RebPremAmtAcc, TL.FinderNbr, TL.Spread, TL.ProductCategory, 
+				TL.LoanDate, TL.SettleDate, TL.RepoDueDate,  TL.SecType, TL.BucketLoanType, TL.BucketSecType, TL.ClearAgentNbr, TL.Remarks, TL.IsFutureOverride, 
+				CASE WHEN ( TL.EquilendID > 0 ) THEN 'EQUILEND'
+					ELSE 'NON-EQUILEND' END AS LoanOrigin,
+				TL.BucketCollCCY, TL.CCYCode, TL.LendingType, ClientFICCID = '', IsFICCMatched = 0
+		FROM 
+			dbo.f_GetTripartyLoans( @OfficialStartDate, @AsOfEndDate, @Source, 0)   TL-- 4th parameter to block the Loaned Securities Service records
+			INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS TACCTS 
+				ON ( TL.AcctNbr = TACCTS.AcctNbr ) 
+
+			INNER JOIN #TMP_BROKERS AS TBRK 
+				ON  ( TL.BrkNbr = TBRK.BrkNbr ) AND 
+					( TL.AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd ) 
+
+			LEFT JOIN #TMP_LENDING_BALANCE_EARNINGS TLBE 
+				ON ( TL.AsOfDate = TLBE.AsOfDate ) AND ( TL.TxnRefNbr = TLBE.TxnRefNbr )  AND ( TL.AcctNbr = TLBE.AcctNbr ) 
+			LEFT JOIN Reference.dbo.Security TSEC 
+				ON ( TL.SecCode = TSEC.SecCode ) AND ( TL.SecCCYCode  = TSEC.CCYCode ) 
+		
+		WHERE ( TL.TxnRefNbr NOT IN ( SELECT DISTINCT TxnRefNbr FROM #TMP_MOVEMENTS ) ) 			
+			AND ( TL.IsFutureOverride = 0 OR @ReportID IN (@RPTID_RWA_FO, @RPTID_RWA_FO_WORSTCASE, @RPTID_RWA_RECON, @RPTID_CBJ_MTM, @RPTID_RWA_HAIRCUT_FO_ACTUAL,
+											@RPTID_RWA_HAIRCUT_FO_WORSTCASE, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_CAPPED,  @RPTID_RWA_HAIRCUT_FO_ACTUAL_REALTIME, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_REALTIME) ) --Exclude future loans except for RWA BPP, RWA Recon 
+		
+			-- Non-Cash Only / Eliminate "Rights"
+			AND (( (( @BucketLoanType IS NULL ) OR ( TL.BucketLoanType = @BucketLoanType )) AND ( ( @INCLUDE_RIGHTS = 1 ) OR ( TL.LoanValue > 0 ) )) 
+					OR @ReportID IN (@RPTID_RWA_INDEMNITY,@RPTID_RWA_INDEMNITY_LOANS, @RPTID_RWA_INDEMNITY_COLLATERALS))
+
+			AND ( TL.LoanStatus <> @LOAN_STATUS_UNCHECKED ) 
+	END
+	
+
+	IF ( @INCLUDE_REPOS = 1 ) 
+	BEGIN
+		EXEC [p_GetRepoLoans] @OfficialStartDate, @AsOfEndDate, @Source, @IsFICCOnly, @RollupFICCBrokers, @INCLUDE_MTM_PENDING
+		
+		INSERT INTO #TMP_ALL_LOANS ( [AsOfDate], [TxnRefNbr], [AcctNbr], [AcctGrpID], [BrkNbr], [BrkGrpId], [CollSchedID], [TriPartyGrpID], [LoanType],[LoanStatus], [CouponRate], [BookingCouponRate],
+									 [SecID], [CountryID], [SecCode], [ISIN], [CUSIP], [SEDOL], [SecCCYCode], [SecurityDesc], [SecurityDesc2], [ISOCountry], [CountryName], [MaturityDate], [CollCCYCode], 
+									 [LoanValue], [LoanValueUSD], 
+									 [AdjMktValue], [AdjMktValueUSD], [TripartyBalance], 
+									 [Principal], [PrincipalUSD], 
+									 [ExposureType], [Exposure], [ExposureUSD], [GrossRevCCYCode], [GrossRevenue], [GrossRevenueUSD],
+									 [NetRevenue], [NetRevenueUSD], [RevDays], [FaceAmount], [TradePrice], [MarkPrice], [MktPrice], [RebPremAmtAcc], [FinderNbr], [Spread],  [ProductCategory],
+									 [LoanDate],[TradeDate], [SettleDate], [RepoDueDate], [SecType], [BucketLoanType], [BucketSecType], [ClearAgentNbr], [Remarks], [IsFutureOverride],
+									 [LoanOrigin], [BucketCollCCY], [CCYCode], [LendingType], [TxnRefNbrTRF], [IsTermRepo], [ClientFICCID], [IsFICCMatched], [FactorAtBooking], [RepoRate], [InvRate], [Haircut] )		
+
+		SELECT  
+				TMP_REPO.AsOfDate, TMP_REPO.TxnRefNbr, TMP_REPO.AcctNbr, TMP_REPO.AcctGrpID, TMP_REPO.BrkNbr, TMP_REPO.BrkGrpId, 0 AS CollSchedID, TMP_REPO.TriPartyGrpID, TMP_REPO.LoanType, TMP_REPO.LoanStatus, 
+				TMP_REPO.CouponRate, TMP_REPO.BookingCouponRate, 
+				Reference.dbo.f_GetSecID (TMP_REPO.SecCode) SecID, TSEC.CountryID,
+				TMP_REPO.SecCode, TSEC.ISIN, TSEC.CUSIP, TSEC.SEDOL, TMP_REPO.SecCCYCode, TSEC.SecurityDesc1 AS SecurityDesc, TSEC.SecurityDesc2 AS SecurityDesc2,
+				TSEC.ISOCountry, TSEC.CountryName, TSEC.MaturityDate, TMP_REPO.CollCCYCode, 
+				TMP_REPO.LoanValue, CONVERT(DECIMAL(17,4),0) AS LoanValueUSD, 
+				TMP_REPO.AdjMktValue, CONVERT(DECIMAL(17,4),0) AS AdjMktValueUSD, 
+				0 AS TripartyBalance, 
+				TMP_REPO.Principal,  CONVERT(DECIMAL(17,4),0) AS PrincipalUSD,  
+				TMP_REPO.[ExposureType], TMP_REPO.[Exposure], CONVERT(DECIMAL(17,4),0) AS [ExposureUSD], 
+				TLBE.CollCCYCode AS GrossRevCCYCode, ISNULL(TLBE.GrossRevenue,0) AS GrossRevenue, CONVERT(DECIMAL(25,10),0) AS GrossRevenueUSD, 
+				ISNULL(TLBE.NetRevenue,0) AS NetRevenue, CONVERT(DECIMAL(25,10),0) AS NetRevenueUSD, 
+				ISNULL(TLBE.RevDays,0) AS RevDays, TMP_REPO.FaceAmount, TMP_REPO.TradePrice, TMP_REPO.MarkPrice, TMP_REPO.MktPrice, TMP_REPO.RebPremAmtAcc, TMP_REPO.FinderNbr, TMP_REPO.Spread, TMP_REPO.ProductCategory, 
+				TMP_REPO.LoanDate, TMP_REPO.TradeDate,TMP_REPO.SettleDate, TMP_REPO.RepoDueDate, TMP_REPO.SecType, TMP_REPO.BucketLoanType, TMP_REPO.BucketSecType, TMP_REPO.[ClearAgentNbr], TMP_REPO.Remarks, TMP_REPO.IsFutureOverride, 
+				LoanOrigin, TMP_REPO.BucketCollCCY, TMP_REPO.CCYCode, TMP_REPO.LendingType, TMP_REPO.TxnRefNbrTRF, TMP_REPO.IsTermRepo, TMP_REPO.ClientFICCID, TMP_REPO.IsFICCMatched, TMP_REPO.FactorAtBooking, TMP_REPO.RepoRate, TMP_REPO.InvRate, TMP_REPO.Haircut
+		FROM  
+			#TMP_REPO_LOANS AS TMP_REPO
+
+			INNER JOIN #TMP_RWA_REPORT_ALL_ACCTS TACCTS 
+				ON ( TMP_REPO.AcctNbr = TACCTS.AcctNbr ) 
+			
+			INNER JOIN #TMP_BROKERS AS TBRK 
+				ON  ( TMP_REPO.BrkNbr = TBRK.BrkNbr ) AND 
+					( TMP_REPO.AsOfDate BETWEEN TBRK.EffectiveDateBegin AND TBRK.EffectiveDateEnd )  
+
+			LEFT JOIN #TMP_LENDING_BALANCE_EARNINGS AS TLBE 
+				ON ( TMP_REPO.AsOfDate = TLBE.AsOfDate ) AND ( TMP_REPO.TxnRefNbr = TLBE.TxnRefNbr ) AND ( TMP_REPO.AcctNbr = TLBE.AcctNbr ) 
+			LEFT JOIN Reference.dbo.Security TSEC 
+				ON ( TMP_REPO.SecCode = TSEC.SecCode ) AND ( TMP_REPO.SecCCYCode = TSEC.CCYCode ) 
+		WHERE 
+			( TMP_REPO.TxnRefNbr NOT IN ( SELECT DISTINCT TxnRefNbr FROM #TMP_MOVEMENTS ) )  AND 
+			( TMP_REPO.LoanStatus <> @LOAN_STATUS_UNCHECKED ) AND 
+			( 
+			  ( IsFutureOverride = 0 ) OR 
+			  ( IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports
+			  ( @ReportID IN (@RPTID_RWA_FO, @RPTID_RWA_FO_WORSTCASE, @RPTID_RWA_RECON, @RPTID_CBJ_MTM, @RPTID_RWA_HAIRCUT_FO_ACTUAL, 
+							  @RPTID_RWA_HAIRCUT_FO_WORSTCASE, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_CAPPED, @RPTID_RWA_HAIRCUT_FO_ACTUAL_REALTIME, @RPTID_RWA_HAIRCUT_FO_WORSTCASE_REALTIME, @RPTID_DIRECT_REPO_CUST) ) --Exclude future loans except for RWA BPP, RWA Recon 
+			) AND
+			( ( @INCLUDE_RIGHTS = 1 ) OR ( TMP_REPO.LoanValue > 0 ) ) -- Eliminate "Rights"
+	
+	END
+
+	TRUNCATE TABLE #TMP_LENDING_BALANCE_EARNINGS
+
+
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_ALL_LOANS') ) AND ( name IS NOT NULL ))
+	BEGIN				   
+		--Create indexes on #TMP_ALL_LOANS
+		CREATE INDEX IDX_TMP_ALL_LOANS_ASOFDATE ON #TMP_ALL_LOANS ( AsOfDate ) 	
+		CREATE INDEX IDX_TMP_ALL_LOANS_LOANTYPE ON #TMP_ALL_LOANS ( LoanType ) 	
+		CREATE INDEX IDX_TMP_ALL_LOANS_SECID ON #TMP_ALL_LOANS	  ( SecID ) 	
+	END
+
+
+	
+	--Update security details on all loans 
+	UPDATE TL
+	SET 
+		CountryID = TSEC.CountryID, 
+		SecurityDesc = TSEC.SecurityDesc1, 
+		SecurityDesc2 = TSEC.SecurityDesc2, 
+		ISOCountry = TSEC.ISOCountry, 
+		ISIN		= TSEC.ISIN,
+		CUSIP		= TSEC.CUSIP,
+		SEDOL		= TSEC.SEDOL,
+		CountryName = TSEC.CountryName,
+		MaturityDate = TSEC.MaturityDate,
+		SecCCYCode = TSEC.CCYCode,
+		IssuerType = TSEC.SecCategoryID
+	FROM #TMP_ALL_LOANS TL 
+		INNER JOIN Reference.dbo.Security TSEC ON TL.SecID = TSEC.SecID
+	
+	--Update desk category for all loans
+	UPDATE TL
+	SET 
+		DeskCategory =CASE WHEN ( ISNULL(TCLR.SubCategory,'')  = 'FED' ) AND ( TL.BucketSecType = 'FI' ) AND ( TL.CollCCYCode = 'USD' ) THEN 'DFIU'			--Domestic Fixed Income	
+						   WHEN ( ISNULL(TCLR.SubCategory,'') != 'FED' ) AND ( TL.BucketSecType = 'FI' ) AND ( TL.CollCCYCode = 'EUR' ) THEN 'GFIE'			--Global Fixed Income EUR
+						   WHEN ( ISNULL(TCLR.SubCategory,'') != 'FED' ) AND ( TL.BucketSecType = 'FI' ) AND ( TL.CollCCYCode = 'USD' ) THEN 'GFIU'			--Global Fixed Income USD
+						   WHEN ( ISNULL(TCLR.SubCategory,'') != 'FED' ) AND ( TL.BucketSecType = 'FI' ) AND ( NOT TL.CollCCYCode IN ('EUR','USD' ) ) THEN 'GFI' + CollCCYCode 		--Global Fixed Income AUD, and other currencies
+						   WHEN ( ISNULL(TCLR.SubCategory,'') != 'FED' ) AND ( TL.BucketSecType IN ('RI', 'EQ' )) AND ( TL.CollCCYCode = 'USD' ) THEN 'GEU'	--Global Equity USD
+					  END 
+	FROM #TMP_ALL_LOANS AS TL
+	LEFT JOIN #TMP_CLEARING_AGENT AS TCLR
+		ON ( TL.ClearAgentNbr = TCLR.ClrAgentCode )
+
+
+	SELECT 
+		BrkNbr, 
+		AsOfDate, 
+		BusinessInd,
+		CollSchedID, 
+		CollCCYCode, 
+		BalanceAmount = SUM(BalanceAmount)
+	INTO 
+		#TMP_TRIPARTY_BALANCE
+	FROM 
+		LAVA.dbo.MTMTripartyBalance
+	WHERE
+		ISNULL(IsDeleted, 0 ) = 0
+	GROUP BY 
+		BrkNbr, AsOfDate, BusinessInd, CollSchedID, CollCCYCode
+
+	--Manually entered MTM Triparty Balance ( Remarks : FICC loans are NOT affected by this. ) 
+	UPDATE 
+		TL
+	SET 
+		[TripartyBalance] = TLS.TotalTripartyBalance  * ( TL.LoanValue / TotalLoanByBroker )
+	FROM 
+		#TMP_ALL_LOANS AS TL
+	INNER JOIN 		
+	( 
+		SELECT 
+			TL.AsOfDate, TL.BrkNbr, TL.DeskCategory,
+			TotalLoanByBroker = SUM(LoanValue),
+			TotalTripartyBalance = TMP_MTMBAL.BalanceAmount
+		FROM 
+			#TMP_ALL_LOANS AS TL 
+		INNER JOIN 
+			#TMP_TRIPARTY_BALANCE AS TMP_MTMBAL 
+		ON 
+			( TMP_MTMBAL.AsOfDate = TL.AsOfDate ) AND 
+		    ( TMP_MTMBAL.BrkNbr = TL.brknbr ) AND
+			( TMP_MTMBAL.CollCCYCode = TL.CollCCYCode ) AND
+			( ISNULL(TMP_MTMBAL.CollSchedID, 0) = ISNULL(TL.CollSchedID, 0) )
+		WHERE 
+			( TL.TripartyGrpID > 0 ) AND 
+			(  
+				( TL.IsFutureOverride = 0 ) OR 
+				( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports ) 
+				( @ReportID IN (@RPTID_DIRECT_REPO_CUST)) 
+			)
+		GROUP BY 
+			TL.ASOFDATE, TL.BrkNbr, TL.DeskCategory , TMP_MTMBAL.BalanceAmount
+	) AS TLS
+	ON  
+		( TL.BrkNbr = TLS.BrkNbr ) AND 
+		( TL.AsOfDate = TLS.AsOfDate )
+	WHERE 
+		( TL.TripartyGrpID > 0 ) AND 
+		( ISNULL(TotalLoanByBroker,0) > 0) AND 
+		(  
+				( TL.IsFutureOverride = 0 ) OR 
+				( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports ) 
+				( @ReportID IN (@RPTID_DIRECT_REPO_CUST)) 
+		)
+
+
+ 	
+	--====================================================================================================================================================================================================
+	--Get BILATERAL / TRIPARTY  collaterals
+	--====================================================================================================================================================================================================						
+	IF ( @INCLUDE_BILATERALS = 1 ) AND ( @IsFICCOnly = 0 ) 
+	BEGIN
+		EXEC p_GetBilateralCollaterals @OfficialStartDate, @AsOfEndDate, @INCLUDE_FUTURE_COLLATERALS, @Source
+		INSERT INTO #TMP_COLLATERALS 
+			( AsOfDate, TxnRefNbr, AcctGrpID, AcctNbr, CollNbr, BrkGrpId, BrkNbr, CollSchedID, TriPartyGrpID, BrkCode, LoanType, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL,
+			  CCYCode, SecCCYCode, SettleDate, MaturityDate, CouponRate, SecurityPrice, SecurityPriceUSD, Quantity, IssuerType, CollCCYCode, CollValue, CollValueUSD, CollValueWithoutMargin, CollValueWithoutMarginUSD,
+			  AdjMktValue, AdjMktValueUSD, RiskWeight, SecType, BucketSecType, BucketCollCCY, ClearAgentNbr, ReceivedOrDelivered, LendingType, IsFuture, ClientFICCID )
+		SELECT  
+			AsOfDate, TxnRefNbr, 0 AS AcctgrpID, AcctNbr, CollNbr, BrkGrpId, BrkNbr, CollSchedID, TCOL.TriPartyGrpID, CONVERT(VARCHAR(12),NULL) AS BrkCode, LoanType, SecCode, SecurityDesc, NULL AS CUSIP, NULL AS ISIN, NULL AS SEDOL,
+			CCYCode, SecCCYCode, SettleDate, MaturityDate, CouponRate, SecurityPrice, 0 AS SecurityPriceUSD, Quantity, TCOL.IssuerType, CollCCYCode, CollValue, CONVERT(DECIMAL(25,4),0) AS CollValueUSD, 
+			CollValue AS CollValueWithoutMargin, CONVERT(DECIMAL(25,4), 0) AS CollValueWithoutMarginUSD,
+			AdjMktValue, CONVERT(DECIMAL(25,4), 0) AS AdjMktValueUSD, TCLSRW.RiskWeight, SecType, BucketSecType, BucketCollCCY, ClearAgentNbr, ReceivedOrDelivered, LendingType, IsFuture, ClientFICCID = '' 
+		FROM 
+			#TMP_BILATERAL_COLLATERALS AS TCOL
+			LEFT JOIN  CollateralClassAssetTypes AS TCLSA 
+				ON ( TCOL.IssuerType = TCLSA.IssuerType ) AND 
+				   ( TCLSA.TriPartyGrpID = 0 )			  AND
+				   ( TCOL.AsOfDate BETWEEN TCLSA.EffectiveDateBegin AND TCLSA.EffectiveDateEnd ) 
+			
+			LEFT JOIN #TMP_COLL_CLS_RISK_WT AS TCLSRW	   
+				ON ( TCLSA.CollateralClassID = TCLSRW.CollateralClassID )AND
+				   ( TCOL.AsOfDate BETWEEN TCLSRW.EffectiveDateBegin AND TCLSRW.EffectiveDateEnd )  AND
+				   ( TCOL.TriPartyGrpID = 0 AND TCLSRW.IsTriParty = 0 ) 
+		WHERE  
+			( TCOL.LoanStatus <> @LOAN_STATUS_UNCHECKED ) AND 
+			(( (( @BucketLoanType IS NULL ) OR ( BucketLoanType = @BucketLoanType )) AND Principal > 0 )	-- Non-Cash Only / Eliminate "Rights" except for CUSTOMER Indemnity reports
+			OR @ReportID IN (@RPTID_RWA_INDEMNITY, @RPTID_RWA_INDEMNITY_LOANS, @RPTID_RWA_INDEMNITY_COLLATERALS))	
+			
+	END	
+
+
+	
+	IF ( @INCLUDE_TRIPARTIES = 1 ) AND ( @IsFICCOnly = 0 ) 
+	BEGIN
+		IF (@Source = 'MARK')
+		BEGIN
+			INSERT INTO #TMP_COLLATERALS 
+				( AsOfDate, TxnRefNbr, AcctGrpID, AcctNbr, CollNbr, BrkGrpId, BrkNbr, CollSchedID, TriPartyGrpID, 
+				  BrkCode, LoanType, LoanStatus, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL,
+				  SecCCYCode, MaturityDate, CouponRate, SecurityPrice, SecurityPriceUSD, Quantity, IssuerType,
+				  CollCCYCode, CollValue, CollValueUSD, CollValueWithoutMargin, CollValueWithoutMarginUSD, 
+				  AdjMktValue, AdjMktValueUSD, RiskWeight, ReceivedOrDelivered, LendingType, IsFuture, ClientFICCID )
+			SELECT  
+				AsOfDate, CONVERT(INT,NULL) AS TxnRefNbr, 0 AS AcctGrpID, NULL AS AcctNbr, 0 AS CollNbr, BrkGrpID, CONVERT(VARCHAR(6),NULL) AS BrkNbr, CollSchedID, TCOL.TriPartyGrpID, 
+				BrkCode, LoanType, LoanStatus, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL,
+				SecCCYCode, MaturityDate, CouponRate, SecurityPrice, 0 AS SecurityPriceUSD, Quantity, TCOL.IssuerType, 
+				CollCCYCode, CollValue, CONVERT(DECIMAL(25,4),0) AS CollValueUSD , CollValueWithoutMargin, CONVERT(DECIMAL(25,4), 0) AS CollValueWithoutMarginUSD ,
+				0 AS AdjMktValue, 0 AS AdjMktValueUSD, TCLSRW.RiskWeight, ReceivedOrDelivered, LendingType,  0 AS IsFuture, ''
+			FROM 
+				dbo.f_GetTripartyCollaterals( @OfficialStartDate, @AsOfEndDate ) AS TCOL
+				LEFT JOIN CollateralClassAssetTypes AS TCLSA 
+					ON ( TCOL.IssuerType = TCLSA.IssuerType ) AND 
+					   ( TCLSA.TriPartyGrpID = TCOL.TriPartyGrpID )			  AND
+					   ( TCOL.AsOfDate BETWEEN TCLSA.EffectiveDateBegin AND TCLSA.EffectiveDateEnd ) 
+			
+				LEFT JOIN #TMP_COLL_CLS_RISK_WT AS TCLSRW	   
+					ON ( TCLSA.CollateralClassID = TCLSRW.CollateralClassID )AND
+					   ( TCOL.AsOfDate BETWEEN TCLSRW.EffectiveDateBegin AND TCLSRW.EffectiveDateEnd )  AND
+					   ( TCOL.TriPartyGrpID > 0 AND TCLSRW.IsTriParty = 1 ) 	
+		END
+	END 
+	
+	IF ( @INCLUDE_REPOS = 1 ) 
+	BEGIN
+		EXEC p_GetRepoCollaterals @OfficialStartDate, @AsOfEndDate, @INCLUDE_FUTURE_COLLATERALS, @Source, @IsFICCOnly, @INCLUDE_MTM_PENDING
+		
+		INSERT INTO #TMP_COLLATERALS 
+		  ( AsOfDate, TxnRefNbr, AcctGrpID, AcctNbr, CollNbr, BrkGrpId, BrkNbr, CollSchedID, TriPartyGrpID, LoanType, 
+			SecCode, SecurityDesc, CUSIP, ISIN, SEDOL, CCYCode, SecCCYCode, TradeDate, LoanDate, SettleDate, MaturityDate, CouponRate, SecurityPrice, SecurityPriceUSD,
+			IssuerType, CollCCYCode, Quantity , CollValue, CollValueUSD, CollValueWithoutMargin, CollValueWithoutMarginUSD, AdjMktValue, AdjMktValueUSD, 
+			RiskWeight, SecType, BucketSecType, BucketCollCCY, ClearAgentNbr, ReceivedOrDelivered, LendingType, IsFuture, IsTermRepo, ClientFICCID,
+			FactorAtBooking, RepoRate, InvRate, Haircut )
+		
+		SELECT  
+			AsOfDate, TxnRefNbr, AcctGrpID, AcctNbr, CollNbr, BrkGrpId, BrkNbr, 0 AS CollSchedID, TriPartyGrpID, LoanType, 
+			SecCode, SecurityDesc, CUSIP, ISIN, SEDOL, CCYCode, SecCCYCode, TradeDate, LoanDate, SettleDate, MaturityDate, CouponRate, 
+			SecurityPrice, SecurityPriceUSD, IssuerType, CollCCYCode, 
+			
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * Quantity
+				 ELSE Quantity END as Quantity, 
+
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * CollValue
+				 ELSE CollValue END AS CollValue, 
+			
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * CollValueUSD
+				 ELSE CollValueUSD END AS CollValueUSD, 
+			
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * CollValueWithoutMargin 
+				 ELSE CollValueWithoutMargin END AS CollValueWithoutMargin, 
+				 
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * CollValueWithoutMarginUSD
+				 ELSE CollValueWithoutMarginUSD END AS CollValueWithoutMarginUSD,				 
+
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * AdjMktValue 
+				 ELSE AdjMktValue END AS AdjMktValue, 
+				 
+			CASE WHEN ( ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN -1 * AdjMktValueUSD
+				 ELSE AdjMktValueUSD END AS AdjMktValueUSD,				 
+
+			0 AS RiskWeight, SecType, BucketSecType, BucketCollCCY, ClearAgentNbr, ReceivedOrDelivered, LendingType,  IsFuture, ISNULL(IsTermRepo,0), TCOL.ClientFICCID,
+			FactorAtBooking, RepoRate, InvRate, Haircut
+		FROM 
+			#TMP_REPO_COLLATERALS AS TCOL
+		WHERE 
+			( TCOL.LoanStatus <> @LOAN_STATUS_UNCHECKED ) AND (TCOL.CollValue > 0)
+	END
+
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes  
+					   WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERALS') ) 
+					   AND ( name ='IDX_TMP_COLLATERALS_COMPLEX_01' ))
+	BEGIN			
+		CREATE INDEX IDX_TMP_COLLATERALS_COMPLEX_01
+			ON #TMP_COLLATERALS ( CollateralClassID, AsOfDate, BucketSecType ) 	
+	END
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes  
+					WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERALS') ) 
+					AND ( name ='IDX_TMP_COLLATERALS_COMPLEX_02' ))
+	BEGIN			
+		CREATE INDEX IDX_TMP_COLLATERALS_COMPLEX_02
+			ON #TMP_COLLATERALS ( ISIN, SEDOL, AsOfDate ) 	
+	END
+
+	IF(@Source = 'DML') -- RealTime from DML AdjMktValue would be Null/Empty.
+	BEGIN
+		UPDATE #TMP_ALL_LOANS SET AdjMktValue = ISNULL(AdjMktValue,0)
+		UPDATE #TMP_COLLATERALS SET AdjMktValue = ISNULL(AdjMktValue,0)
+	END
+
+--====================================================================================================================================================================================
+-- Apply ISIN , CUSIP , SEDOL for Loans and Collaterals
+--====================================================================================================================================================================================
+
+	UPDATE #TMP_ALL_LOANS
+	SET SecCode = COALESCE(CASE WHEN ( ISNULL(ISIN,'') = '' )  THEN NULL ELSE ISIN  END, 
+						   CASE WHEN ( ISNULL(CUSIP,'') = '' ) THEN NULL ELSE CUSIP END, 
+						   CASE WHEN ( ISNULL(SEDOL,'') = '' ) THEN NULL ELSE SEDOL END, 
+							SecCode)
+
+	UPDATE #TMP_COLLATERALS
+	SET SecCode = COALESCE(CASE WHEN ( ISNULL(ISIN,'') = '' )  THEN NULL ELSE ISIN  END, 
+						   CASE WHEN ( ISNULL(CUSIP,'') = '' ) THEN NULL ELSE CUSIP END, 
+						   CASE WHEN ( ISNULL(SEDOL,'') = '' ) THEN NULL ELSE SEDOL END, 
+							SecCode)
+
+ -- Treat Rights as Equities for Loans and Collaterals
+	UPDATE #TMP_ALL_LOANS
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+	UPDATE #TMP_COLLATERALS
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+	--======================================================================================================================================================================================================================================
+		-- Include Pending Loans and Collaterals based on MTM Cycle
+	--======================================================================================================================================================================================================================================
+	IF ( @INCLUDE_MTM_PENDING = 1 ) AND ( @IGNORE_MTM_CYCLE = 0 )
+	BEGIN
+
+		-- LOANS
+		DELETE TL
+		FROM
+			#TMP_ALL_LOANS TL		
+		LEFT JOIN 
+			LAVA.dbo.MTMBroker AS MTMBRK
+		ON	
+			( MTMBRK.BrkNbr = TL.BrkNbr ) AND		
+			( ISNULL(MTMBRK.IsDeleted, 0 ) = 0	 ) AND					
+			( TL.ASOFDATE BETWEEN MTMBRK.EffectiveDateBegin AND MTMBRK.EffectiveDateEnd ) 
+		WHERE
+			( TL.IsFutureOverride = 1 ) AND 			
+			( dbo.f_IsWithinMTMCycle( TL.Asofdate, TL.SettleDate, TL.IsFutureOverride, MTMBRK.MTMNewLoans ) = 0 )
+
+		-- Collaterals
+		DELETE TCOL
+		FROM
+			#TMP_COLLATERALS TCOL
+		LEFT JOIN Reference.dbo.Security TSEC
+			ON ( REFERENCE.dbo.f_GetSecID(TCOL.SecCode)  = TSEC.SecID )										
+		LEFT JOIN LAVA.dbo.MTMBroker AS MTMBRK
+			ON	
+				( MTMBRK.BrkNbr = TCOL.BrkNbr ) AND		
+				( ISNULL(MTMBRK.IsDeleted, 0 ) = 0	 ) AND					
+				( TCOL.ASOFDATE BETWEEN MTMBRK.EffectiveDateBegin AND MTMBRK.EffectiveDateEnd ) 
+		WHERE
+			( TCOL.IsFuture = 1 ) /* AND  ( ISNULL(TCOL.ReceivedOrDelivered,'') =  'DELIVERED') */ AND
+			( CASE WHEN NOT ( dbo.f_IsWithinMTMCycle(TCOL.Asofdate, TCOL.SettleDate, 1, MTMBRK.MTMNewCollateral ) = 1 ) THEN 1 
+				    ELSE 0 
+					END
+			) = 0
+
+	END	
+
+	--====================================================================================================================================================================================================
+	-- Summing up loan value, gross revenue for ALL loans 
+	--====================================================================================================================================================================================================
+	INSERT INTO #TMP_LOAN_SUMMARY ( AsOfDate, BrkGrpId, AcctNbr, AcctGrpID, TxnRefNbr, CollSchedID, TriPartyGrpID, CollCCYCode,
+									Principal, RebPremAmtAcc, LoanValue, AdjMktValue, ExposureType, Exposure, NetExposure, FinalExposure, GrossRevenue, 
+									DividendCouponPay, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr, SecLocation, LendingType, WeightPct, OnLoanWeightPct,
+									FinalReceiveWeightPct, FinalDeliverWeightPct, IsTermRepo, ClientFICCID, IsFICCMatched  )
+
+	SELECT 	AsOfDate, 
+			BrkGrpID, AcctNbr, AcctGrpID,
+			CASE WHEN ( LendingType = @LENDING_TYPE_REPO ) THEN TxnRefNbr
+				 ELSE 0 END,	--For NON-CASH ( Sec Lending ), dont care about transaction ref number 
+			CollSchedID, TriPartyGrpID, CollCCYCode, 
+			SUM(Principal), SUM(RebPremAmtAcc),SUM(LoanValue), SUM(AdjMktValue), 
+			ExposureType, SUM(Exposure) AS Exposure, SUM(Exposure) AS NetExposure, SUM(Exposure) AS FinalExposure, 
+			SUM(GrossRevenue), 
+			0 AS DividendCouponPay, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr, 
+			CASE WHEN ( ISOCountry = 'US' ) THEN 'Domestic' 
+				 ELSE 'Global' END AS SecLocation, 
+			LendingType, 
+			0 AS WeightPct,				--Weight Percentage. For REPOS, this is the first pass.
+			0 AS OnLoanWeightPct,		--Weight Percentage for what's on loan regardless if the lending type is SEC LENDING or REPOS. 
+			0 AS FinalReceiveWeightPct,	--Recalculated weight percentage for REPOs to distribute residual Free Collaterals
+			0 AS FinalDeliverWeightPct,	--Recalculated weight percentage for REPOs to distribute residual Delivered Collaterals
+			IsTermRepo = CASE WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) THEN IsTermRepo
+							  ELSE NULL END,
+			TL.ClientFICCID,
+			TL.IsFICCMatched
+	FROM 
+		#TMP_ALL_LOANS AS TL 
+	WHERE
+		( TL.IsFutureOverride = 0 ) OR 
+		( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports ) 
+		( @ReportID IN (@RPTID_DIRECT_REPO_CUST)) 
+	GROUP BY 
+		AsOfDate, 
+		TL.BrkGrpID, AcctNbr, AcctGrpID, 
+		CASE WHEN ( LendingType = @LENDING_TYPE_REPO ) THEN TxnRefNbr ELSE 0 END, 
+		TL.CollSchedID, 
+		TriPartyGrpID, CollCCYCode, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr,   
+		CASE WHEN ( ISOCountry = 'US' ) THEN 'Domestic'  ELSE 'Global' END,
+		ExposureType, LendingType, 
+		
+		CASE WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) THEN IsTermRepo
+			 ELSE NULL END, 
+
+		TL.ClientFICCID, TL.IsFICCMatched		 	 
+
+
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_LOAN_SUMMARY') ) AND ( name ='IDX_TMP_LOAN_SUMMARY_COMPLEX1' ))
+	BEGIN				   
+		CREATE INDEX IDX_TMP_LOAN_SUMMARY_COMPLEX1 
+				ON #TMP_LOAN_SUMMARY ( AsOfDate, BrkGrpId, AcctNbr, TxnRefNbr, CollSchedID, CollCCYCode, TriPartyGrpID ) 
+	END	
+
+	
+	--====================================================================================================================================================================================================
+	--Get TOTAL BILATERAL / TRIPARTY loans by broker
+	--====================================================================================================================================================================================================
+	DECLARE @TMP_BRK_TOTAL TABLE 
+	( 	
+		AsOfDate		DATETIME, 
+		BrkGrpID		INT				NULL,
+		AcctGrpID		INT				NULL,
+		CollSchedID		INT				NULL,
+		TriPartyGrpID	INT				NULL,
+		CollCCYCode		VARCHAR(3)		NULL,
+		LendingType		VARCHAR(10)		NULL,
+		BrkTotLoanValue	DECIMAL(17,4)	NULL,
+		BrkTotExposure  DECIMAL(17,4)	NULL,
+		ExposureType	VARCHAR(15)		NULL,
+		IsTermRepo		SMALLINT		NULL, 
+		ClientFICCID	VARCHAR(10)		NULL,
+		IsFICCMatched	BIT				NULL
+	)
+
+	INSERT @TMP_BRK_TOTAL 
+	  ( AsOfDate, BrkGrpID, AcctGrpID, CollSchedID, TriPartyGrpID, CollCCYCode, 
+		LendingType, ExposureType, BrkTotLoanValue, BrkTotExposure, IsTermRepo, ClientFICCID, IsFICCMatched )
+	
+	SELECT 
+		AsOfDate, 
+		BrkGrpID    = CASE WHEN ( IsFICCMatched = 1 ) THEN 0 ELSE BrkGrpID  END, 
+		AcctGrpID   = CASE WHEN ( ExposureType = @EXPOSURE_TYPE_DELIVER ) THEN AcctGrpID ELSE 0 END ,
+		CollSchedID = CASE WHEN ( IsFICCMatched = 1 ) THEN 0 ELSE CollSchedID END, 
+		TriPartyGrpID, CollCCYCode, 
+		LendingType, ExposureType, SUM(LoanValue) AS BrkTotLoanValue, SUM(Exposure) AS BrkTotExposure,
+		CASE WHEN ( ExposureType = @EXPOSURE_TYPE_DELIVER AND  IsTermRepo = 3) THEN IsTermRepo 
+			 ELSE 0 END AS IsTermRepo,
+		ClientFICCID, IsFICCMatched
+	FROM 
+		#TMP_LOAN_SUMMARY
+	WHERE 
+		( LendingType = @LENDING_TYPE_SECLENDING ) OR 
+		(( LendingType = @LENDING_TYPE_REPO ) AND ( ExposureType != @EXPOSURE_TYPE_NA ))
+	GROUP BY 
+		AsOfDate, 
+		CASE WHEN ( IsFICCMatched = 1 ) THEN 0 ELSE BrkGrpID  END, 
+		CASE WHEN ( ExposureType = @EXPOSURE_TYPE_DELIVER ) THEN AcctGrpID 
+			 ELSE 0 END,
+		CASE WHEN ( IsFICCMatched = 1 ) THEN 0 ELSE CollSchedID END		
+		, TriPartyGrpID, CollCCYCode, LendingType, ExposureType,
+		CASE WHEN ( ExposureType = @EXPOSURE_TYPE_DELIVER AND  IsTermRepo = 3 ) THEN IsTermRepo 
+			 ELSE 0 END, -- Separate Totals for Own Repo based on Term Repo flag for DELIVERIES
+		ClientFICCID, IsFICCMatched
+
+
+	--====================================================================================================================================================================================================
+	--Calculate loan allocation percentage 
+	--Resolved unqualified JOINS
+	--====================================================================================================================================================================================================
+	UPDATE TL
+	SET 
+		WeightPct = CASE WHEN ( TL.LendingType = @LENDING_TYPE_SECLENDING ) THEN 
+							CASE WHEN ( BrkTotLoanValue != 0  ) THEN ( LoanValue / BrkTotLoanValue ) 
+								 ELSE 0 
+								 END
+						 
+						 WHEN ( TL.LendingType = @LENDING_TYPE_REPO )	   THEN 
+							CASE WHEN ( BrkTotExposure !=0 )    THEN ( Exposure / BrkTotExposure )   
+								 ELSE 0 
+								 END
+						 ELSE 
+							CASE WHEN ( BrkTotLoanValue !=0 )   THEN ( LoanValue / BrkTotLoanValue ) 
+								 ELSE 0 
+								 END
+						 END
+	FROM
+		#TMP_LOAN_SUMMARY TL
+	INNER JOIN
+		@TMP_BRK_TOTAL TBT
+	ON ( TL.AsOfDate	= TBT.AsOfDate )		AND
+	   ( TL.TriPartyGrpID = TBT.TriPartyGrpID )	AND 
+	   ( TL.CollCCYCode	= TBT.CollCCYCode )		AND
+	   ( TL.LendingType	= TBT.LendingType )		AND 
+	  ( TL.ExposureType	= TBT.ExposureType )	
+	WHERE
+		  (
+			(( TL.IsFICCMatched = 1 ) AND ( TL.ClientFICCID = TBT.ClientFICCID )) OR 
+			(( TL.IsFICCMatched = 0 ) AND ( TL.BrkGrpId	= TBT.BrkGrpId ) AND ( TL.CollSchedID	= TBT.CollSchedID ))		
+
+		   ) AND 
+		  
+			(( TL.ExposureType != @EXPOSURE_TYPE_DELIVER )	-- AcctGrpID and TermRepo flag only applies to DELIVERIES
+				OR (( TL.ExposureType = @EXPOSURE_TYPE_DELIVER ) AND ( TL.AcctGrpID = TBT.AcctGrpID ) AND (( TBT.IsTermRepo != 3 ) OR (  TBT.IsTermRepo = 3 AND TL.IsTermRepo = TBT.IsTermRepo)) ))  
+
+
+	UPDATE 
+		TL
+	SET 
+		OnLoanWeightPct = CASE WHEN ( BrkTotLoanValue != 0  ) THEN ( LoanValue / BrkTotLoanValue ) 
+							   ELSE 0 
+							   END
+	FROM
+		#TMP_LOAN_SUMMARY AS TL 
+		INNER JOIN 
+		(
+			SELECT 
+				AsOfDate, 
+				BrkGrpID = CASE WHEN ( IsFICCMatched = 1 ) THEN 0 
+								ELSE BrkGrpID  
+								END, 
+				CollSchedID = CASE WHEN ( IsFICCMatched = 1 ) THEN 0 
+								   ELSE CollSchedID 
+								   END, 
+				TriPartyGrpID, CollCCYCode, LendingType, ClientFICCID, IsFICCMatched,
+				BrkTotLoanValue = SUM(BrkTotLoanValue) 
+			FROM @TMP_BRK_TOTAL 
+			GROUP BY 
+				AsOfDate, 
+				CASE WHEN ( IsFICCMatched = 1 ) THEN 0 
+					  ELSE BrkGrpID  
+					  END, 
+				CASE WHEN ( IsFICCMatched = 1 ) THEN 0 
+					 ELSE CollSchedID 
+					 END, 
+				TriPartyGrpID, CollCCYCode, LendingType, ClientFICCID, IsFICCMatched
+		) AS TBT
+
+	ON ( TL.AsOfDate	= TBT.AsOfDate )			AND
+		(
+			(( TL.IsFICCMatched = 1 ) AND ( TL.ClientFICCID = TBT.ClientFICCID )) OR 
+			(( TL.IsFICCMatched = 0 ) AND ( TL.BrkGrpId	= TBT.BrkGrpId ) AND ( TL.CollSchedID	= TBT.CollSchedID ))		
+		
+		) AND 
+		( TL.TriPartyGrpID = TBT.TriPartyGrpID ) AND 
+		( TL.CollCCYCode   = TBT.CollCCYCode )	 AND
+		( TL.LendingType   = TBT.LendingType )		 
+	
+	--====================================================================================================================================================================================================
+	--Summing up collaterals
+	--====================================================================================================================================================================================================
+	INSERT INTO #TMP_COLLATERAL_SUMMARY  
+		( AsOfDate, AcctGrpID, BrkGrpID, BrkGrpName, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL, SecCCYCode, MaturityDate, CollNbr, CollSchedID, TriPartyGrpID, 
+		  CouponRate, SecurityPrice, Quantity, IssuerType, CollCCYcode, CollValue, CollValueWithoutMargin, AdjMktValue, RiskWeight,
+		  CollateralType, ReceivedOrDelivered, LendingType, IsAllocated , IsTermRepo, ClientFICCID )	
+	SELECT	
+		TCOL.AsOfDate,  TCOL.AcctGrpID, TCOL.BrkGrpId, BG_LATEST.BrkGrpName, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL, SecCCYCode, CONVERT(VARCHAR(10),MaturityDate,101), CollNbr, CollSchedID, TriPartyGrpID, 
+		CouponRate,  SecurityPrice, Sum(Quantity) QTY, IssuerType, CollCCYCode, SUM(CollValue) AS CollValue, SUM(CollValueWithoutMargin) AS CollValueWithoutMargin, SUM(AdjMktValue) AS AdjMktValue,
+		TCOL.RiskWeight, LoanType AS CollateralType, TCOL.ReceivedOrDelivered, TCOL.LendingType, 0 AS IsAllocated, ISNULL(TCOL.IsTermRepo, 0), ClientFICCID
+	FROM 
+		#TMP_COLLATERALS AS TCOL 
+		INNER JOIN BrokerGroup AS TBRKGRP 
+			ON ( TCOL.BrkGrpID = TBRKGRP.BrkGrpID )  AND 
+			   ( TCOL.AsOfDate BETWEEN TBRKGRP.EffectiveDateBegin AND TBRKGRP.EffectiveDateEnd )
+		INNER JOIN #TMP_LATEST_BRKGROUPS BG_LATEST 
+			ON ( BG_LATEST.BrkGrpID = TBRKGRP.BrkGrpID ) 
+	WHERE 
+	   ( TCOL.AsOfDate BETWEEN TBRKGRP.EffectiveDateBegin AND TBRKGRP.EffectiveDateEnd )  AND 
+	   ( ISNULL(TBRKGRP.IsLoanedSecuritiesService,0) = 0 ) AND -- To block Loaned Securities Service records AND 
+	   (  
+			( TCOL.IsFuture = 0 ) OR 
+			( TCOL.IsFuture = @INCLUDE_FUTURE_COLLATERALS ) OR -- Include future loans for Own Repo MTM Details Reports ) 
+			( @ReportID IN (@RPTID_DIRECT_REPO_CUST)) 
+	   )
+	GROUP BY 
+		TCOL.AsOfDate, TCOL.AcctGrpID, TCOL.BrkGrpId, BG_LATEST.BrkGrpName, TCOL.SecCode, TCOL.SecurityDesc, TCOL.CUSIP, TCOL.ISIN, TCOL.SEDOL, TCOL.SecCCYCode, TCOL.MaturityDate, 
+		TCOL.CollNbr, TCOL.CollSchedID, TCOL.TriPartyGrpID, TCOL.CouponRate, TCOL.SecurityPrice, TCOL.IssuerType, TCOL.CollCCYCode, TCOL.LoanType, TCOL.RiskWeight, TCOL.ReceivedOrDelivered, 
+		TCOL.LendingType, ISNULL(TCOL.IsTermRepo, 0), ClientFICCID
+			
+
+	
+	--For SEC LENDING, account for loans without collaterals
+	--For REPOS, CASH collaterals are not booked in WorldLend. The loan's Principal is the collateral when the loan is booked. 
+	--are equal to the Principal at the time when the loan was booked.
+	INSERT INTO #TMP_COLLATERAL_DETAILS 
+		( AsOfDate, TxnRefNbr, CollateralSummaryID,  AcctGrpID, AcctNbr, BrkGrpID, BrkGrpName, SecCode, SecurityDesc, SecurityDesc2,
+			SecCCYCode, CUSIP, ISIN, SEDOL, MaturityDate, CouponRate,
+			SecurityPrice,  SecurityPriceUSD, Quantity, IssuerType, CollCCYcode, 
+			CollValue, CollValueUSD, 
+			CollValueWithoutMargin, CollValueWithoutMarginUSD, 
+			CollateralType, BucketSecType, TriPartyGrpID, CollSchedID, RiskWeight, ProductCategory, DeskCategory, LoanOrigin, FinderNbr, SecLocation, LendingType, 
+			LoanValue, GrossRevenue, TxnRefNbrTRF, IsTermRepo, ClientFICCID, IsFICCMatched)
+	
+	SELECT  
+			TL.AsOfDate, TL.TxnRefNbr, 0 AS CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TBRKGRP.BrkGrpName, ISNULL(TL.SecCode,'') AS SecCode, ISNULL(TL.SecurityDesc,'') AS SecurityDesc, NULL AS SecurityDesc2,NULL AS SecCCYCode, NULL AS CUSIP, 
+			TL.ISIN AS ISIN, NULL AS SEDOL, NULL AS MaturityDate, NULL AS CouponRate, 
+			NULL AS SecurityPrice, 0 AS SecurityPriceUSD, NULL AS Quantity, NULL AS IssuerType, TL.CollCCYcode, 
+		  
+			CASE WHEN ( TL.LendingType = @LENDING_TYPE_SECLENDING ) THEN  
+					( CASE WHEN ((@Source = 'LOAN') AND (TL.LoanType = @LOAN_TYPE_TRIPARTY) AND (TL.TriPartyID IN (2, 4, 6, 8, 10))) THEN TL.Principal	ELSE NULL END )
+				WHEN ( TL.LendingType = @LENDING_TYPE_REPO )       THEN TL.Principal	
+				ELSE  NULL END AS CollValue, 0 AS CollValueUSD, 
+		
+			CASE WHEN ( TL.LendingType = @LENDING_TYPE_SECLENDING ) THEN 						
+					( CASE WHEN ((@Source = 'LOAN') AND (TL.LoanType = @LOAN_TYPE_TRIPARTY) AND (TL.TriPartyID IN (2, 4, 6, 8, 10))) THEN TL.Principal	ELSE NULL END )
+				WHEN ( TL.LendingType = @LENDING_TYPE_REPO )       THEN TL.Principal
+				ELSE  NULL END AS CollValueWithoutMargin, 0 AS CollValueWithoutMarginUSD, 		
+		  
+			TL.LoanType, TL.BucketSecType, TL.TriPartyGrpID, TL.CollSchedID, 
+		  
+			CASE WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) THEN 0 
+				ELSE 1 END AS RiskWeight, 
+		  
+			TL.ProductCategory, TL.DeskCategory, TL.LoanOrigin, TL.FinderNbr, 
+			CASE WHEN ( TL.ISOCountry = 'US' ) THEN 'Domestic' 
+				ELSE 'Global' END AS SecLocation , TL.LendingType, 
+				TL.LoanValue,  TL.GrossRevenue, TL.TxnRefNbrTRF, TL.IsTermRepo, TL.ClientFICCID, TL.IsFICCMatched
+	FROM 
+		#TMP_ALL_LOANS AS TL   
+			LEFT JOIN  #TMP_LATEST_BRKGROUPS AS TBRKGRP ON
+			( TL.BrkGrpID = TBRKGRP.BrkGrpID ) 
+	WHERE 
+		( 
+			( TL.IsFutureOverride = 0 ) OR 
+			( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports
+			( @ReportID IN (@RPTID_DIRECT_REPO_CUST) )
+		) AND 
+		( dbo.f_IsHoliday(TL.AsOfDate) = 0 )  AND 
+		--REPOS : Collateral = Principal from the start of the loan 
+		( ( TL.LendingType = @LENDING_TYPE_REPO ) OR 
+		
+		--SEC LENDING : Loans without collaterals		
+			( NOT EXISTS ( SELECT 1 FROM #TMP_COLLATERAL_SUMMARY AS TCS   
+								WHERE ( TCS.AsOfDate = TL.AsOfDate) AND 
+									( 
+										( ( TL.IsFICCMatched = 0 ) AND ( TCS.BrkGrpId = TL.BrkGrpId ) AND ( TCS.CollSchedID = TL.CollSchedID ) ) OR
+										( ( TL.IsFICCMatched = 1 ) AND ( TCS.ClientFICCID = TL.ClientFICCID ) ) 
+
+									)  AND 
+									
+									( TCS.TriPartyGrpID = TL.TriPartyGrpID ) AND
+									( TCS.CollCCYCode  = TL.CollCCYCode )	AND ( TCS.LendingType = TL.LendingType	)	AND
+									(( TL.ExposureType != @EXPOSURE_TYPE_DELIVER )	-- AcctGrpID only applies to DELIVERIES
+										OR (( TL.ExposureType = @EXPOSURE_TYPE_DELIVER ) AND ( TCS.AcctGrpID = TL.AcctGrpID ))) AND  
+									(( CASE WHEN ( TL.LendingType = @LENDING_TYPE_SECLENDING ) THEN @EXPOSURE_TYPE_NA
+											WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) AND ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN @EXPOSURE_TYPE_MARGIN_CALL
+											WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) AND ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN @EXPOSURE_TYPE_DELIVER 
+											ELSE @EXPOSURE_TYPE_NA END ) = TL.ExposureType )						
+							)))
+
+
+						
+
+	WHILE EXISTS( SELECT 1 FROM #TMP_COLLATERAL_SUMMARY WHERE IsAllocated = 0 ) AND ( @ITERATION < 3 )
+	BEGIN
+		SET @ITERATION = @ITERATION + 1
+	
+		--====================================================================================================================================================================================================
+		-- Allocate the collateral to brokers based on previously calculated loan percentages
+		--====================================================================================================================================================================================================
+		 IF ( @ITERATION = 1  ) 
+		 BEGIN
+			--Allocate Triparty / Pooled Bilateral / Specific Bilateral Collaterals 
+			--Free Collaterals OR Deliveries only						
+
+			INSERT INTO #TMP_COLLATERAL_DETAILS 
+				( AsOfDate, TxnRefNbr, CollateralSummaryID, AcctGrpID, AcctNbr, BrkGrpID, BrkGrpName, 
+				  SecID, SecCode, SecurityDesc, SecurityDesc2, SecCCYCode, 
+				  CUSIP, ISIN, SEDOL, CountryName, MaturityDate, CouponRate,
+				  SecurityPrice,  SecurityPriceUSD, Quantity, IssuerType, CollCCYcode, 
+				  CollValue, CollValueUSD, 
+				  CollValueWithoutMargin, CollValueWithoutMarginUSD, 
+				  AdjMktValue, AdjMktValueUSD, 
+				  CollateralType, TriPartyGrpID, CollSchedID, RiskWeight, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr, SecLocation, LendingType, 
+				  ReceivedOrDelivered, LoanValue, GrossRevenue, ClientFICCID, IsFICCMatched )
+			SELECT  
+				  TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, 
+				  Reference.dbo.f_GetSecID (TCS.SecCode) AS SecID, TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode,  
+				  COALESCE(TCS.CUSIP, TSEC.CUSIP) AS CUSIP, COALESCE(TCS.ISIN, TSEC.ISIN) AS ISIN, COALESCE(TCS.SEDOL, TSEC.SEDOL) AS SEDOL, TSEC.CountryName, TCS.MaturityDate, TCS.CouponRate, 
+				  TCS.SecurityPrice, 0 AS SecurityPriceUSD, SUM(TCS.Quantity * TL.WeightPct) AS Quantity, TCS.IssuerType, TL.CollCCYcode, 
+				  SUM(TCS.CollValue * TL.WeightPct) AS CollValue, 0 AS CollValueUSD,				
+				  SUM(TCS.CollValueWithoutMargin  * TL.WeightPct) AS CollValueWithoutMargin, 0 AS CollValueWithoutMarginUSD, 
+				  SUM(TCS.AdjMktValue * TL.WeightPct) AS AdjMktValue,  0 AS AdjMktValueUSD, 
+				  TCS.CollateralType, TL.TriPartyGrpID, TL.CollSchedID, TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, TL.FinderNbr, TL.SecLocation, TL.LendingType, 
+				  TCS.ReceivedOrDelivered, 0 AS LoanValue, 0 AS GrossRevenue, TL.ClientFICCID, TL.IsFICCMatched 
+			FROM 
+				#TMP_LOAN_SUMMARY AS TL   
+					INNER JOIN #TMP_COLLATERAL_SUMMARY AS TCS   
+						 ON ( TCS.AsOfDate = TL.AsOfDate)			 AND
+							( 
+								( ( TL.IsFICCMatched = 0 ) AND ( TCS.BrkGrpId = TL.BrkGrpId ) AND ( TCS.CollSchedID = TL.CollSchedID ) ) OR
+								( ( TL.IsFICCMatched = 1 ) AND ( TCS.ClientFICCID = TL.ClientFICCID ) ) 
+							)										 AND 
+
+							( TCS.TriPartyGrpID = TL.TriPartyGrpID ) AND
+							( TCS.CollCCYCode  = TL.CollCCYCode	)	 AND
+							( TCS.LendingType = TL.LendingType )	 AND	-- Match REPO loans with REPO collaterals, SECLENDING loans with SECLENDING collaterals
+							(( TL.ExposureType != @EXPOSURE_TYPE_DELIVER )	-- AcctGrpID only applies to DELIVERIES
+													OR (( TL.ExposureType = @EXPOSURE_TYPE_DELIVER ) AND ( TCS.AcctGrpID = TL.AcctGrpID ) AND
+													   (( TCS.IsTermRepo != 3 ) OR (( TCS.IsTermRepo = 3 ) AND ( TCS.IsTermRepo = TL.IsTermRepo )) )))  AND
+							( CASE WHEN ( TL.LendingType = @LENDING_TYPE_SECLENDING ) THEN @EXPOSURE_TYPE_NA
+								   WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) AND ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN @EXPOSURE_TYPE_MARGIN_CALL
+								   WHEN ( TL.LendingType = @LENDING_TYPE_REPO ) AND ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN @EXPOSURE_TYPE_DELIVER 
+								   ELSE @EXPOSURE_TYPE_NA END  = TL.ExposureType ) 
+					
+					LEFT JOIN Reference.dbo.[Security] AS TSEC 
+						ON ( TCS.SecCode = TSEC.SecCode ) AND ( TCS.SecCCYCode = TSEC.CCYCode ) 
+							
+			WHERE 
+				( dbo.f_IsHoliday(TL.AsOfDate) = 0 ) AND 
+				( TCS.CollValue IS NOT NULL )		 AND 
+				( ISNULL(TCS.IsAllocated,0) = 0 )	AND 
+				( ( TL.LendingType = @LENDING_TYPE_SECLENDING ) OR (  ( TL.LendingType = @LENDING_TYPE_REPO ) AND ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) ) )
+
+			GROUP BY 
+				TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, Reference.dbo.f_GetSecID (TCS.SecCode), TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode, 
+				COALESCE(TCS.CUSIP, TSEC.CUSIP), COALESCE(TCS.ISIN, TSEC.ISIN), COALESCE(TCS.SEDOL, TSEC.SEDOL), 		
+				TSEC.CountryName,  TCS.MaturityDate, TCS.CouponRate, TCS.SecurityPrice, TCS.IssuerType, TL.CollCCYcode, TCS.CollateralType, TL.TriPartyGrpID, TL.CollSchedID, 
+				TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, TL.FinderNbr, TL.SecLocation, TL.LendingType, TL.ExposureType, TCS.ReceivedOrDelivered, TL.ClientFICCID, TL.IsFICCMatched 		 
+		 
+		 END
+		 ELSE IF ( @ITERATION = 2  ) 
+		 BEGIN
+			--Free Collaterals OR Deliveries only
+			INSERT INTO #TMP_COLLATERAL_DETAILS 
+				( AsOfDate, TxnRefNbr, CollateralSummaryID, AcctGrpID, AcctNbr, BrkGrpID, BrkGrpName, 
+				  SecID, SecCode, SecurityDesc, SecurityDesc2, SecCCYCode, 
+				  CUSIP, ISIN, SEDOL, CountryName, MaturityDate, CouponRate,
+				  SecurityPrice,  SecurityPriceUSD, Quantity, IssuerType, CollCCYcode, 
+				  CollValue, CollValueUSD, CollValueWithoutMargin, CollValueWithoutMarginUSD, AdjMktValue, AdjMktValueUSD,
+				  CollateralType, TriPartyGrpID, CollSchedID, RiskWeight, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr, SecLocation, LendingType, 
+				  ReceivedOrDelivered, LoanValue, GrossRevenue, ClientFICCID, IsFICCMatched )
+			SELECT  
+				  TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, 
+				  Reference.dbo.f_GetSecID (TCS.SecCode) AS SecID, TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode,  
+				  COALESCE(TCS.CUSIP, TSEC.CUSIP) AS CUSIP, COALESCE(TCS.ISIN, TSEC.ISIN) AS ISIN, COALESCE(TCS.SEDOL, TSEC.SEDOL) AS SEDOL, TSEC.CountryName, TCS.MaturityDate, TCS.CouponRate, 
+				  TCS.SecurityPrice, 0 AS SecurityPriceUSD, 
+				  
+				  SUM( CASE WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN TCS.Quantity * TL.FinalReceiveWeightPct
+						    WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN TCS.Quantity * TL.FinalDeliverWeightPct
+						    ELSE 0 END ) AS Quantity,	
+				  TCS.IssuerType, TL.CollCCYcode, 
+				  
+				  SUM( CASE WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN TCS.CollValue * TL.FinalReceiveWeightPct
+						    WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN TCS.CollValue * TL.FinalDeliverWeightPct
+						    ELSE 0 END ) AS CollValue,				--For REPOS, apply recalculated weights based on net exposure
+				  0 AS CollValueUSD,				
+				  
+				  SUM( CASE WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN TCS.CollValueWithoutMargin * TL.FinalReceiveWeightPct
+						    WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN TCS.CollValueWithoutMargin * TL.FinalDeliverWeightPct
+						    ELSE 0 END ) AS CollValueWithoutMargin,	--For REPOS, apply recalculated weights based on net exposure
+				  0 AS CollValueWithoutMarginUSD, 
+				  
+				  SUM( CASE WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  THEN TCS.AdjMktValue * TL.FinalReceiveWeightPct
+						    WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) THEN TCS.AdjMktValue * TL.FinalDeliverWeightPct
+						    ELSE 0 END ) AS AdjMktValue,			--For REPOS, apply recalculated weights based on net exposure
+				  0 AS AdjMktValueUSD, 				  
+				  
+				  TCS.CollateralType, TL.TriPartyGrpID, TL.CollSchedID, TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, TL.FinderNbr, TL.SecLocation, TL.LendingType, 
+				  TCS.ReceivedOrDelivered, 0 AS LoanValue, 0 AS GrossRevenue, TL.ClientFICCID, TL.IsFICCMatched
+			FROM 
+				#TMP_LOAN_SUMMARY TL   
+				INNER JOIN #TMP_COLLATERAL_SUMMARY TCS   ON
+						( TCS.AsOfDate = TL.AsOfDate)			 AND
+
+						( 
+							( ( TL.IsFICCMatched = 0 ) AND ( TCS.BrkGrpId = TL.BrkGrpId ) AND ( TCS.CollSchedID = TL.CollSchedID ) ) OR
+							( ( TL.IsFICCMatched = 1 ) AND ( TCS.ClientFICCID = TL.ClientFICCID ) ) 
+						)										 AND
+
+						( TCS.TriPartyGrpID = TL.TriPartyGrpID ) AND
+						( TCS.CollCCYCode  = TL.CollCCYCode	)	 AND
+						( TCS.LendingType = TL.LendingType )	 AND	-- Match REPO loans with REPO collaterals, SECLENDING loans with SECLENDING collaterals
+						( ( TL.NetExposure != 0 )				 AND	-- Apply remaining FREE / DELIVERY collaterals to loans with expousre
+							(	
+								( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )	 OR
+								(
+									( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) AND ( TCS.AcctGrpID = TL.AcctGrpID ) AND 
+									(( TCS.IsTermRepo != 3 ) OR (( TCS.IsTermRepo = 3 ) AND ( TCS.IsTermRepo = TL.IsTermRepo )))
+								)
+							)
+						)  
+					
+				LEFT JOIN Reference.dbo.Security TSEC 
+					ON ( TCS.SecCode = TSEC.SecCode ) AND ( TCS.SecCCYCode = TSEC.CCYCode ) 
+			WHERE 
+				( dbo.f_IsHoliday(TL.AsOfDate) = 0 ) AND 
+				( TCS.CollValue IS NOT NULL )		 AND 
+				( ISNULL(TCS.IsAllocated,0) = 0 )	 AND --REPOS would go as far as @ITERATION > 1
+				( 
+					( CASE WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )  AND ( ISNULL(TL.FinalReceiveWeightPct,0) > 0 ) THEN 1
+						   WHEN ( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) AND ( ISNULL(TL.FinalDeliverWeightPct,0) > 0 ) THEN 1
+						   ELSE 0 
+						   END  ) = 1
+				)
+
+			GROUP BY 
+				TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, Reference.dbo.f_GetSecID (TCS.SecCode), TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode, 
+				COALESCE(TCS.CUSIP, TSEC.CUSIP), COALESCE(TCS.ISIN, TSEC.ISIN), COALESCE(TCS.SEDOL, TSEC.SEDOL), 		
+				TSEC.CountryName,  TCS.MaturityDate, TCS.CouponRate, TCS.SecurityPrice, TCS.IssuerType, TL.CollCCYcode, TCS.CollateralType, TL.TriPartyGrpID, TL.CollSchedID, 
+				TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, TL.FinderNbr, TL.SecLocation, TL.LendingType, TL.ExposureType, TCS.ReceivedOrDelivered, TL.ClientFICCID, TL.IsFICCMatched
+		 END
+		 ELSE IF ( @ITERATION = 3  ) 
+		 BEGIN
+			--Free Collaterals OR Deliveries only
+			INSERT INTO #TMP_COLLATERAL_DETAILS 
+				( AsOfDate, TxnRefNbr, CollateralSummaryID, AcctGrpID, AcctNbr, BrkGrpID, BrkGrpName, 
+				  SecID, SecCode, SecurityDesc, SecurityDesc2, SecCCYCode, 
+				  CUSIP, ISIN, SEDOL, CountryName, MaturityDate, CouponRate,
+				  SecurityPrice,  SecurityPriceUSD, Quantity, IssuerType, CollCCYcode, 
+				  CollValue, CollValueUSD, CollValueWithoutMargin, CollValueWithoutMarginUSD, AdjMktValue, AdjMktValueUSD,
+				  CollateralType, TriPartyGrpID, CollSchedID, RiskWeight, ProductCategory, DeskCategory, BucketSecType, LoanOrigin, FinderNbr, SecLocation, LendingType, 
+				  ReceivedOrDelivered, LoanValue, GrossRevenue, ClientFICCID, IsFICCMatched )
+			SELECT  
+				  TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, 
+				  Reference.dbo.f_GetSecID (TCS.SecCode) AS SecID, TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode,  
+				  COALESCE(TCS.CUSIP, TSEC.CUSIP) AS CUSIP, COALESCE(TCS.ISIN, TSEC.ISIN) AS ISIN, COALESCE(TCS.SEDOL, TSEC.SEDOL) AS SEDOL, TSEC.CountryName, TCS.MaturityDate, TCS.CouponRate, 
+				  TCS.SecurityPrice, 0 AS SecurityPriceUSD, 
+				  
+				  SUM( TCS.Quantity * TL.OnLoanWeightPct ) AS Quantity,	
+				  TCS.IssuerType, TL.CollCCYcode, 
+				  
+				  SUM( TCS.CollValue * TL.OnLoanWeightPct ) AS CollValue,				--For REPOS, apply recalculated weights based on net exposure
+				  0 AS CollValueUSD,				
+				  
+				  SUM( TCS.CollValueWithoutMargin * TL.OnLoanWeightPct ) AS CollValueWithoutMargin,	--For REPOS, apply recalculated weights based on net exposure
+				  0 AS CollValueWithoutMarginUSD, 
+				  
+				  SUM( TCS.AdjMktValue * TL.OnLoanWeightPct ) AS AdjMktValue,			--For REPOS, apply recalculated weights based on net exposure
+				  0 AS AdjMktValueUSD, 				  
+				  
+				  TCS.CollateralType, TL.TriPartyGrpID, TL.CollSchedID, TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, TL.FinderNbr, TL.SecLocation, TL.LendingType, 
+				  TCS.ReceivedOrDelivered, 0 AS LoanValue, 0 AS GrossRevenue, TL.ClientFICCID, TL.IsFICCMatched
+			FROM 
+				#TMP_LOAN_SUMMARY TL   
+				INNER JOIN #TMP_COLLATERAL_SUMMARY TCS   ON
+						( TCS.AsOfDate = TL.AsOfDate)			 AND
+
+						( 
+							( ( TL.IsFICCMatched = 0 ) AND ( TCS.BrkGrpId = TL.BrkGrpId ) AND ( TCS.CollSchedID = TL.CollSchedID ) ) OR
+							( ( TL.IsFICCMatched = 1 ) AND ( TCS.ClientFICCID = TL.ClientFICCID ) ) 
+						)										 AND
+
+						( TCS.TriPartyGrpID = TL.TriPartyGrpID ) AND
+						( TCS.CollCCYCode  = TL.CollCCYCode	)	 AND
+						( TCS.LendingType = TL.LendingType )	 -- Match REPO loans with REPO collaterals, SECLENDING loans with SECLENDING collaterals
+					
+				LEFT JOIN Reference.dbo.Security TSEC 
+					ON ( TCS.SecCode = TSEC.SecCode ) AND ( TCS.SecCCYCode = TSEC.CCYCode ) 
+			WHERE 
+				( dbo.f_IsHoliday(TL.AsOfDate) = 0 ) AND 
+				( TCS.CollValue IS NOT NULL )		 AND 
+				( ISNULL(TCS.IsAllocated,0) = 0 )	 AND  --REPOS would go as far as @ITERATION > 2
+				(	
+					( TCS.ReceivedOrDelivered = @COLLATERAL_RECEIVED )	 OR
+					(
+						( TCS.ReceivedOrDelivered = @COLLATERAL_DELIVERED ) AND ( TCS.AcctGrpID = TL.AcctGrpID ) AND 
+						(( TCS.IsTermRepo != 3 ) OR (( TCS.IsTermRepo = 3 ) AND ( TCS.IsTermRepo = TL.IsTermRepo )))
+					)
+				)				
+
+			GROUP BY 
+				TL.AsOfDate, TL.TxnRefNbr, TCS.CollateralSummaryID, TL.AcctGrpID, TL.AcctNbr, TL.BrkGrpID, TCS.BrkGrpName, 
+				Reference.dbo.f_GetSecID (TCS.SecCode), TCS.SecCode, TCS.SecurityDesc, TSEC.SecurityDesc2, TCS.SecCCYCode, 
+				COALESCE(TCS.CUSIP, TSEC.CUSIP), COALESCE(TCS.ISIN, TSEC.ISIN), COALESCE(TCS.SEDOL, TSEC.SEDOL), 		
+				TSEC.CountryName,  TCS.MaturityDate, TCS.CouponRate, TCS.SecurityPrice, TCS.IssuerType, TL.CollCCYcode, TCS.CollateralType, 
+				TL.TriPartyGrpID, TL.CollSchedID, TCS.RiskWeight, TL.ProductCategory, TL.DeskCategory, TL.BucketSecType, TL.LoanOrigin, 
+				TL.FinderNbr, TL.SecLocation, TL.LendingType, TL.ExposureType, TCS.ReceivedOrDelivered, TL.ClientFICCID, TL.IsFICCMatched
+		 END
+
+
+
+		--Mark collaterals which have been allocated.
+		UPDATE TCS
+		SET IsAllocated = 1 
+		FROM #TMP_COLLATERAL_SUMMARY AS TCS 
+		WHERE EXISTS( SELECT 1 FROM #TMP_COLLATERAL_DETAILS AS TCD
+					  WHERE TCS.CollateralSummaryID = TCD.CollateralSummaryID )
+
+
+
+
+		--RWA worst case scenarios risk weight 
+		IF ( @ReportID IN ( @RPTID_RWA_FA_WORSTCASE, @RPTID_RWA_BPP_WORSTCASE, @RPTID_RWA_FO_WORSTCASE  ) )
+		BEGIN
+		
+			UPDATE 
+				#TMP_COLLATERAL_DETAILS
+			SET 
+				RiskWeight = ISNULL(TCSRW.RiskWeight, TCD.RiskWeight)
+			FROM 
+				#TMP_COLLATERAL_DETAILS TCD
+			LEFT JOIN 
+				( SELECT TriPartyGrpID, CollSchedID, EffectiveDateBegin, EffectiveDateEnd,
+						 CASE WHEN RiskWeightDesc = '0%'	 THEN 0
+							  WHEN RiskWeightDesc = '0-20%'  THEN 0.2
+							  WHEN RiskWeightDesc = '0-50%'  THEN 0.5
+							  WHEN RiskWeightDesc = '0-100%' THEN 1		
+							  ELSE NULL 	
+						 END AS RiskWeight							 
+				  FROM CollateralScheduleRiskWeights 
+				  WHERE ( TriPartyGrpID >= 1 ) ) AS TCSRW
+			ON ( TCD.TriPartyGrpID = TCSRW.TriPartyGrpID ) AND
+			   ( TCD.CollSchedID = TCSRW.CollSchedID )	  AND
+			   ( TCD.AsOfdate BETWEEN TCSRW.EffectiveDateBegin AND TCSRW.EffectiveDateEnd )AND 
+			   ( TCD.TriPartyGrpID >= 1 )
+			   
+		END
+		
+		
+
+
+
+		IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+					   WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS') ) AND ( name ='IDX_TMP_COLLATERAL_DETAILS_COMPLEX_01' ))
+		BEGIN			
+			CREATE INDEX IDX_TMP_COLLATERAL_DETAILS_COMPLEX_01
+				ON #TMP_COLLATERAL_DETAILS ( AsOfDate, BrkGrpID, TxnRefNbr, TriPartyGrpID, CollCCYCode, LendingType ) 	
+		END
+		
+
+		-- Update TxnRefNbrTRF and TermRepo to Identify LoanClass (1B TRF/PEN TRF, NY TRF or Own) for all Repos with Free Collaterals OR Deliveries.
+		IF ( @ReportID IN ( @RPTID_RWA_MOAR_RECON, @RPTID_RWA_MOAR, @RPTID_DIRECT_REPO_CUST) OR ( @INCLUDE_FUTURE_LOANS = 1 ) )
+		BEGIN
+
+			UPDATE 
+				#TMP_COLLATERAL_DETAILS
+			SET
+				TxnRefNbrTRF = TL.TxnRefNbrTRF,
+				IsTermRepo = ISNULL(TL.IsTermRepo,0)
+			FROM
+				#TMP_COLLATERAL_DETAILS TCD
+			INNER JOIN
+				#TMP_ALL_LOANS TL
+			ON
+				( TCD.AsOfDate		= TL.AsOfDate )		 AND 				
+
+				( 
+					( ( TL.IsFICCMatched = 0 ) AND ( TCD.BrkGrpId = TL.BrkGrpId ) AND ( TCD.CollSchedID = TL.CollSchedID ) ) OR
+					( ( TL.IsFICCMatched = 1 ) AND ( TCD.ClientFICCID = TL.ClientFICCID ) ) 
+				)										 AND
+ 
+				( TCD.TxnRefNbr		= TL.TxnRefNbr )	 AND 
+				( TCD.TriPartyGrpID = TL.TriPartyGrpID ) AND
+				( TCD.CollCCYCode	= TL.CollCCYCode )	 AND 
+				( TCD.LendingType	= TL.LendingType )			
+			WHERE
+				(TCD.LendingType = @LENDING_TYPE_REPO )  AND
+				(TCD.TxnRefNbr IS NOT NULL)
+
+		END
+
+
+
+		IF(@Source = 'LOAN')
+		BEGIN
+
+			SELECT  
+				TL.AsOfDate, TL.BrkNbr, TL.DeskCategory,
+				TotalLoanByBroker = SUM(LoanValue),
+				TotalTripartyBalance = TMP_TPB.BalanceAmount			
+			INTO
+				#TMP_MTM_TRIPARTY_BALANCES			
+			FROM 
+				#TMP_ALL_LOANS AS TL 
+			INNER JOIN 
+				#TMP_TRIPARTY_BALANCE AS TMP_TPB 
+			ON 
+				( TMP_TPB.AsOfDate = TL.AsOfDate  ) AND 
+				( TMP_TPB.BrkNbr = TL.brknbr )
+			WHERE 
+				( TL.TripartyGrpID > 0 ) AND 
+				( 
+					( TL.IsFutureOverride = 0 ) OR 
+					( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports
+					( @ReportID IN (@RPTID_DIRECT_REPO_CUST) )
+				)
+			GROUP BY 
+				TL.ASOFDATE, TL.BrkNbr, TL.DeskCategory , TMP_TPB.BalanceAmount 
+
+
+
+			IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+						   WHERE ( id = OBJECT_ID('tempdb..#TMP_MTM_TRIPARTY_BALANCES') ) AND ( name ='IDX_TMP_MTM_TRIPARTY_BALANCES' ))
+			BEGIN			
+				CREATE INDEX IDX_TMP_MTM_TRIPARTY_BALANCES
+					ON #TMP_MTM_TRIPARTY_BALANCES ( DeskCategory, BrkNbr, AsOfDate )
+			END
+			
+			UPDATE TCD 
+			SET
+			   CollValue = TLS.TotalTripartyBalance  * ISNULL(( TL.LoanValue / NULLIF(TLS.TotalLoanByBroker,0) ),0),
+			   CollValueWithoutMargin	= TLS.TotalTripartyBalance  * ISNULL(( TL.LoanValue / NULLIF(TLS.TotalLoanByBroker,0) ),0)
+            FROM
+			  #TMP_COLLATERAL_DETAILS TCD			  	
+			INNER JOIN
+				#TMP_ALL_LOANS AS TL 
+			ON
+				( TCD.AsOfDate		= TL.AsOfDate )		 AND 
+				( TCD.BrkGrpID		= TL.BrkGrpID )		 AND 
+				( TCD.TxnRefNbr		= TL.TxnRefNbr )	 AND 				
+				( TCD.CollCCYCode	= TL.CollCCYCode )	 AND 
+				( TCD.LendingType	= TL.LendingType )	
+			INNER JOIN  		
+				#TMP_MTM_TRIPARTY_BALANCES AS TLS
+			ON  
+				( TL.DeskCategory = TLS.DeskCategory ) AND 
+				( TL.BrkNbr = TLS.BrkNbr ) AND 
+				( TL.AsOfDate = TLS.AsOfDate )
+			WHERE 
+				( TL.TripartyGrpID > 0 ) AND
+				( TCD.CollateralType = @LOAN_TYPE_TRIPARTY ) AND
+				( TL.TriPartyID NOT IN (2, 4, 6, 8, 10) ) 
+
+
+			DROP TABLE #TMP_MTM_TRIPARTY_BALANCES
+		END
+
+	    
+				  
+		--Allocating loans to collaterals now 
+		UPDATE TCD 
+		SET 
+			LoanValue = CASE WHEN ISNULL(BrkCollTotal,0) = 0 THEN 0 
+							 ELSE ( CONVERT(DECIMAL(25,15),CollValue) / BrkCollTotal) * BrkLoanTotal END
+		FROM 
+			#TMP_COLLATERAL_DETAILS TCD 
+			INNER JOIN 
+				( SELECT AsOfDate, BrkGrpID, TxnRefNbr, CollSchedID, TriPartyGrpID, CollCCYCode, LendingType, SUM(CONVERT(DECIMAL(25,15),ISNULL(CollValue,0))) AS BrkCollTotal 
+				  FROM #TMP_COLLATERAL_DETAILS
+				  GROUP BY AsOfDate, BrkGrpID, TxnRefNbr, CollSchedID, TriPartyGrpID, CollCCYCode, LendingType ) AS TMP_BRK_COLL_TOTAL 
+			ON ( TCD.AsOfDate = TMP_BRK_COLL_TOTAL.AsOfDate )			 AND 
+				( TCD.BrkGrpID = TMP_BRK_COLL_TOTAL.BrkGrpID )			 AND 
+				( TCD.TxnRefNbr = TMP_BRK_COLL_TOTAL.TxnRefNbr )		 AND 
+				( TCD.CollSchedID = TMP_BRK_COLL_TOTAL.CollSchedID )	 AND 
+				( TCD.TriPartyGrpID = TMP_BRK_COLL_TOTAL.TriPartyGrpID ) AND
+				( TCD.CollCCYCode = TMP_BRK_COLL_TOTAL.CollCCYCode )	 AND 
+				( TCD.LendingType = TMP_BRK_COLL_TOTAL.LendingType )			
+			INNER JOIN  
+				( SELECT AsOfDate, BrkGrpID, TxnRefNbr, CollSchedID, TriPartyGrpID, CollCCYCode, ClientFICCID, IsFICCMatched,
+						 SUM(CONVERT(DECIMAL(25,15),LoanValue)) AS BrkLoanTotal,
+						 SUM(CONVERT(DECIMAL(25,15),GrossRevenue)) AS BrkGrossRevTotal   
+				  FROM #TMP_LOAN_SUMMARY
+				  GROUP BY AsOfDate, BrkGrpID, TxnRefNbr, CollSchedID, TriPartyGrpID, CollCCYCode, ClientFICCID, IsFICCMatched ) AS TMP_BRK_LOAN_TOTAL 
+
+			ON ( TCD.AsOfDate = TMP_BRK_LOAN_TOTAL.AsOfDate )			AND 
+			    				
+				( 
+					( ( TMP_BRK_LOAN_TOTAL.IsFICCMatched = 0 ) AND ( TCD.BrkGrpId = TMP_BRK_LOAN_TOTAL.BrkGrpId ) AND ( TCD.CollSchedID = TMP_BRK_LOAN_TOTAL.CollSchedID ) ) OR
+					( ( TMP_BRK_LOAN_TOTAL.IsFICCMatched = 1 ) AND ( TCD.ClientFICCID = TMP_BRK_LOAN_TOTAL.ClientFICCID ) ) 
+				)														AND 
+
+			   ( TCD.TxnRefNbr = TMP_BRK_LOAN_TOTAL.TxnRefNbr )			AND 			   
+			   ( TCD.TriPartyGrpID = TMP_BRK_LOAN_TOTAL.TriPartyGrpID ) AND
+			   ( TCD.CollCCYCode = TMP_BRK_LOAN_TOTAL.CollCCYCode )
+		WHERE 
+			( TCD.LendingType = @LENDING_TYPE_SECLENDING )
+
+
+		UPDATE #TMP_COLLATERAL_DETAILS 
+		SET 
+			GrossRevenue = CASE WHEN ( BrkLoanTotal > 0 ) THEN CONVERT(DECIMAL(25,15), LoanValue) / BrkLoanTotal * BrkGrossRevTotal 
+								ELSE CONVERT(DECIMAL(25,15), 0) 
+								END
+		FROM 
+			#TMP_COLLATERAL_DETAILS TCD 
+			  INNER JOIN 
+					( SELECT AsOfDate, BrkGrpID, TxnRefNbr, AcctNbr, CollSchedID, TriPartyGrpID, CollCCYCode, LoanOrigin, FinderNbr, SecLocation, ProductCategory, DeskCategory, LendingType, ClientFICCID, IsFICCMatched,
+							 SUM(CONVERT(DECIMAL(25,15),LoanValue)) AS BrkLoanTotal,
+							 SUM(CONVERT(DECIMAL(25,15),GrossRevenue)) AS BrkGrossRevTotal    
+					  FROM #TMP_LOAN_SUMMARY
+					  GROUP BY AsOfDate, BrkGrpID, TxnRefNbr, AcctNbr, CollSchedID, TriPartyGrpID, CollCCYCode, LoanOrigin, FinderNbr, SecLocation, ProductCategory, DeskCategory, LendingType, ClientFICCID, IsFICCMatched ) AS TMP_BRK_LOAN_TOTAL 
+				
+				ON ( TCD.AsOfDate = TMP_BRK_LOAN_TOTAL.AsOfDate )				AND 
+				    
+			    				
+				   ( 
+						( ( TMP_BRK_LOAN_TOTAL.IsFICCMatched = 0 ) AND ( TCD.BrkGrpId = TMP_BRK_LOAN_TOTAL.BrkGrpId ) AND ( TCD.CollSchedID = TMP_BRK_LOAN_TOTAL.CollSchedID ) ) OR
+						( ( TMP_BRK_LOAN_TOTAL.IsFICCMatched = 1 ) AND ( TCD.ClientFICCID = TMP_BRK_LOAN_TOTAL.ClientFICCID ) ) 
+				   )															AND 
+
+				   ( TCD.TxnRefNbr = TMP_BRK_LOAN_TOTAL.TxnRefNbr )				AND 
+				   ( TCD.AcctNbr = TMP_BRK_LOAN_TOTAL.AcctNbr )					AND 				   
+				   ( TCD.TriPartyGrpID = TMP_BRK_LOAN_TOTAL.TriPartyGrpID )		AND
+				   ( TCD.CollCCYCode = TMP_BRK_LOAN_TOTAL.CollCCYCode )			AND
+				   ( TCD.LoanOrigin = TMP_BRK_LOAN_TOTAL.LoanOrigin )			AND 
+				   ( TCD.FinderNbr = TMP_BRK_LOAN_TOTAL.FinderNbr )				AND 
+				   ( TCD.SecLocation = TMP_BRK_LOAN_TOTAL.SecLocation)			AND
+				   ( TCD.ProductCategory = TMP_BRK_LOAN_TOTAL.ProductCategory ) AND 
+				   ( TCD.DeskCategory = TMP_BRK_LOAN_TOTAL.DeskCategory ) AND 
+				   ( TCD.LendingType = TMP_BRK_LOAN_TOTAL.LendingType )  
+		WHERE 
+			( TCD.LendingType = @LENDING_TYPE_SECLENDING )		
+			
+
+			
+		TRUNCATE TABLE #TMP_LOAN_COLLATERAL_DIST 
+		
+		--================================================================================================================================================
+		--Render REPO collateral distribution and exposure
+		--================================================================================================================================================
+		INSERT INTO #TMP_LOAN_COLLATERAL_DIST ( AsOfDate, TxnRefNbr, BrkGrpID, TripartyGrpID, CollSchedID, AcctGrpID, AcctNbr, BucketSecType, LendingType, CollCCYCode, 
+												LoanValue, LoanValueUSD, CollValue, CollValueUSD, CollDist, CollDistUSD, AdjMktValueDist, AdjMktValueDistUSD, 
+												FinalExposure, FinalExposureUSD, ClientFICCID, IsFICCMatched ) 
+		SELECT AsOfDate, TxnRefNbr, BrkGrpID, TripartyGrpID, CollSchedID, AcctGrpID, AcctNbr, BucketSecType, LendingType, CollCCYCode, 
+			SUM(LoanValue), 0 AS LoanValueUSD,
+			SUM(CollValue) AS CollValue, 0 AS CollValueUSD,
+			SUM(CASE WHEN ( ReceivedOrDelivered IS NOT NULL ) THEN ISNULL(CollValue,0)   ELSE 0 END ) AS CollDist,  0 AS CollDistUSD,
+			SUM(CASE WHEN ( ReceivedOrDelivered IS NOT NULL ) THEN ISNULL(AdjMktValue,0) ELSE 0 END ) AS AdjMktValueDist,  0 AS AdjMktValueDistUSD,
+			0 AS FinalExposure, 0 AS FinalExposureUSD, ClientFICCID, IsFICCMatched
+		FROM 
+			#TMP_COLLATERAL_DETAILS 
+		WHERE 
+			( LendingType = @LENDING_TYPE_REPO )
+		GROUP 
+			BY AsOfDate, TxnRefNbr, BrkGrpID, TripartyGrpID, CollSchedID, AcctGrpID, AcctNbr, BucketSecType, LendingType, CollCCYCode, ClientFICCID, IsFICCMatched
+		
+
+
+		
+		--================================================================================================================================================
+		--Render NON-REPO collateral distribution
+		--================================================================================================================================================
+		INSERT INTO #TMP_LOAN_COLLATERAL_DIST  
+		( 
+			AsOfDate, TxnRefNbr, BrkGrpID, TripartyGrpID, CollSchedID, AcctGrpID, AcctNbr, BucketSecType, LendingType, CollCCYCode, 
+			LoanValue, LoanValueUSD, CollValue, CollValueUSD, CollDist, CollDistUSD, AdjMktValueDist, AdjMktValueDistUSD,  FinalExposure, FinalExposureUSD,
+			ClientFICCID, IsFICCMatched
+		)
+		SELECT TL.AsOfDate, TL.TxnRefNbr, TL.BrkGrpID, TL.TripartyGrpID, TL.CollSchedID, TL.AcctGrpID, TL.AcctNbr, TL.BucketSecType, TL.LendingType, TL.CollCCYCode, 
+			   TL.LoanValue AS LoanValue, 0 AS LoanValueUSD,
+			 ( CASE WHEN ( TLS.TotLoanValue != 0 ) THEN TCOL.CollValue * ( TL.LoanValue / TLS.TotLoanValue ) 
+					ELSE TCOL.CollValue END  )   AS CollValue, 0 AS CollValueUSD, 
+			 ( CASE WHEN ( TLS.TotLoanValue != 0 ) THEN TCOL.CollValue * ( TL.LoanValue / TLS.TotLoanValue ) 
+					ELSE TCOL.CollValue END  )   AS CollDist,  0 AS CollDistUSD, 
+			 
+			 CASE WHEN ( TL.TripartyGrpID > 0 ) THEN TL.TripartyBalance
+				  ELSE 
+					CASE WHEN ( TLS.TotLoanValue!= 0 ) THEN ( TCOL.AdjMktValue * ( TL.LoanValue / TLS.TotLoanValue )) 
+					ELSE TCOL.AdjMktValue END
+				  END AS AdjMktValueDist,  0 AS AdjMktValueUSDDist, 			 
+			 
+			   0 AS FinalExposure, 0 AS FinalExposureUSD,
+			ClientFICCID = '',  IsFICCMatched = 0
+
+		FROM #TMP_ALL_LOANS AS TL
+		INNER JOIN ( SELECT AsOfDate, TripartyGrpID, BrkGrpID, CollSchedID, AcctNbr, CollCCYCode, LendingType, SUM(LoanValue) AS TotLoanValue, ClientFICCID
+					 FROM #TMP_LOAN_SUMMARY
+					 GROUP BY AsOfDate, TripartyGrpID, BrkGrpID, CollSchedID, AcctNbr, CollCCYCode, LendingType, ClientFICCID ) AS TLS
+			
+			ON ( TL.AsOfDate = TLS.AsOfDate  )		AND
+			 
+			   ( TL.TripartyGrpID = TLS.TripartyGrpID )  AND
+			   (
+						(( TL.IsFICCMatched = 1 ) AND ( TL.ClientFICCID = TLS.ClientFICCID )) OR 
+						(( TL.IsFICCMatched = 0 ) AND ( TL.BrkGrpId	= TLS.BrkGrpId ) AND ( TL.CollSchedID	= TLS.CollSchedID ))		
+
+			   )									AND 
+
+			   ( TL.AcctNbr = TLS.AcctNbr )			AND 
+			   ( TL.CollCCYCode = TLS.CollCCYCode ) AND
+			   ( TL.LendingType = TLS.LendingType )
+			   
+		INNER JOIN ( SELECT  AsOfDate, TripartyGrpID, BrkGrpID, CollSchedID, AcctNbr, CollCCYCode, LendingType,  SUM(CollValue) AS CollValue, SUM(AdjMktValue) AS AdjMktValue, ClientFICCID
+					 FROM #TMP_COLLATERAL_DETAILS 
+					 GROUP BY AsOfDate, TripartyGrpID, BrkGrpID, CollSchedID, AcctNbr, CollCCYCode, LendingType, ClientFICCID ) AS TCOL
+			ON ( TL.AsOfDate = TCOL.AsOfDate  )		 AND 
+
+			   ( TL.TripartyGrpID = TCOL.TripartyGrpID )  			AND
+			   (
+					(( TL.IsFICCMatched = 1 ) AND ( TL.ClientFICCID = TCOL.ClientFICCID )) OR 
+					(( TL.IsFICCMatched = 0 ) AND ( TL.BrkGrpId	= TCOL.BrkGrpId ) AND ( TL.CollSchedID	= TCOL.CollSchedID ))		
+
+			   )									 AND 
+			   
+			   ( TL.CollCCYCode = TCOL.CollCCYCode ) AND 
+			   ( TL.LendingType = TCOL.LendingType ) AND 
+			   ( TL.AcctNbr = TCOL.AcctNbr )     
+		WHERE 
+			( TL.LendingType = @LENDING_TYPE_SECLENDING )  AND 
+			( 
+				( TL.IsFutureOverride = 0 ) OR 
+				( TL.IsFutureOverride = @INCLUDE_FUTURE_LOANS ) OR -- Include future loans for Own Repo MTM Details Reports
+				( @ReportID IN (@RPTID_DIRECT_REPO_CUST) )
+			)
+
+
+
+			   
+		--====================================================================================================================================================================================
+		--For SECLENDING, exposure = net exposure = final exposure
+		--For REPOS, calculate net exposure after allocating FREE / DELIVERY Collaterals
+		--====================================================================================================================================================================================
+		IF ( @ITERATION = 1 ) 
+		BEGIN
+			--For REPOS, calculate net exposure on top of the initial collateral which is equal to the Principal of the loan ( Net Exposure = Exposure - Collateral Flat Market Value )
+			UPDATE TLS
+			SET 
+				NetExposure   = TLS.Exposure - TCOL.CollDist,
+				FinalExposure = TLS.Exposure - TCOL.CollDist
+			FROM 
+				#TMP_LOAN_SUMMARY AS TLS
+				INNER JOIN #TMP_LOAN_COLLATERAL_DIST AS TCOL
+					ON ( TCOL.AsOfDate = TLS.AsOfDate )				AND 					   			 
+
+						( 
+							( ( TLS.IsFICCMatched = 0 ) AND ( TCOL.BrkGrpId = TLS.BrkGrpId ) AND ( TCOL.CollSchedID = TLS.CollSchedID ) ) OR
+							( ( TLS.IsFICCMatched = 1 ) AND ( TCOL.ClientFICCID = TLS.ClientFICCID ) ) 
+						)										    AND 
+
+					   ( TCOL.TxnRefNbr = TLS.TxnRefNbr )			AND 
+					   ( TCOL.AcctNbr = TLS.AcctNbr )				AND 					   
+					   ( TCOL.TriPartyGrpID = TLS.TriPartyGrpID )	AND
+					   ( TCOL.CollCCYCode = TLS.CollCCYCode )		AND
+					   ( TCOL.LendingType = TLS.LendingType )  			
+			WHERE 
+				( TLS.LendingType = @LENDING_TYPE_REPO )
+
+				
+			--REPOS may have remaining FREE collaterals that have to be reallocated after recalculating the weights based on the Net Exposure.
+			--Calculate incoming weights. 
+			UPDATE TLS
+			SET 
+				FinalReceiveWeightPct = CASE WHEN ( TLS.NetExposure > 0 ) AND ( TMP_NET_EXP.TotalPositiveExposure != 0 ) THEN TLS.NetExposure / TMP_NET_EXP.TotalPositiveExposure  
+											 END
+			FROM 
+				#TMP_LOAN_SUMMARY AS TLS
+				INNER JOIN ( SELECT AsOfDate, 
+									BrkGrpId = CASE WHEN IsFICCMatched = 1    THEN 0 ELSE BrkGrpID END,
+									CollSchedID = CASE WHEN IsFICCMatched = 1 THEN 0 ELSE CollSchedID END,
+									TriPartyGrpID, CollCCYCode, LendingType, 
+									SUM(CASE WHEN ( NetExposure < 0 ) THEN NetExposure ELSE 0 END) AS TotalNegativeExposure,
+									SUM(CASE WHEN ( NetExposure > 0 ) THEN NetExposure ELSE 0 END) AS TotalPositiveExposure,
+									ClientFICCID				
+							 FROM  #TMP_LOAN_SUMMARY
+							 WHERE (( LendingType = @LENDING_TYPE_REPO ))
+							 GROUP BY AsOfDate, 
+										CASE WHEN IsFICCMatched =1 THEN 0 ELSE BrkGrpID END,
+										CASE WHEN IsFICCMatched = 1 THEN 0 ELSE CollSchedID END,
+										TriPartyGrpID, CollCCYCode, LendingType, ClientFICCID ) AS TMP_NET_EXP
+				ON 
+					( TLS.AsOfDate = TMP_NET_EXP.AsOfDate ) AND 									 					   			 
+
+						( 
+							( ( TLS.IsFICCMatched = 0 ) AND ( TMP_NET_EXP.BrkGrpId = TLS.BrkGrpId ) AND ( TMP_NET_EXP.CollSchedID = TLS.CollSchedID ) ) OR
+							( ( TLS.IsFICCMatched = 1 ) AND ( TMP_NET_EXP.ClientFICCID = TLS.ClientFICCID ) ) 
+						)										      AND 
+					
+					( TLS.TriPartyGrpID = TMP_NET_EXP.TriPartyGrpID ) AND 
+					( TLS.CollCCYCode = TMP_NET_EXP.CollCCYCode )	  AND 
+					( TLS.LendingType = TMP_NET_EXP.LendingType ) 
+			WHERE 
+				( TLS.LendingType = @LENDING_TYPE_REPO ) 
+				
+		
+			--REPOS may have remaining DELIVER collaterals that have to be reallocated after recalculating the weights based on the Net Exposure.
+			--Calculate outgoing weights. 
+			UPDATE TLS
+			SET 
+				FinalDeliverWeightPct = CASE WHEN ( TLS.NetExposure < 0 ) AND ( TMP_NET_EXP.TotalNegativeExposure != 0 ) THEN TLS.NetExposure / TMP_NET_EXP.TotalNegativeExposure  
+											 WHEN ( TLS.NetExposure > 0 ) AND ( TMP_NET_EXP.TotalPositiveExposure != 0 ) THEN TLS.NetExposure / TMP_NET_EXP.TotalPositiveExposure  
+											 ELSE 0 END													 
+			FROM 
+				#TMP_LOAN_SUMMARY AS TLS
+				INNER JOIN ( SELECT AsOfDate, 
+									BrkGrpId = CASE WHEN IsFICCMatched = 1 THEN 0 ELSE BrkGrpID  END,
+									AcctGrpID,
+									CollSchedID = CASE WHEN IsFICCMatched = 1 THEN 0 ELSE CollSchedID END,
+									TriPartyGrpID, CollCCYCode, LendingType, 
+									SUM(CASE WHEN ( NetExposure < 0 ) THEN NetExposure ELSE 0 END) AS TotalNegativeExposure,
+									SUM(CASE WHEN ( NetExposure > 0 ) THEN NetExposure ELSE 0 END) AS TotalPositiveExposure,
+									CASE WHEN ( IsTermRepo = 3 ) THEN IsTermRepo ELSE 0 END	AS IsTermRepo,
+									ClientFICCID			
+							 FROM  #TMP_LOAN_SUMMARY
+							 WHERE (( LendingType = @LENDING_TYPE_REPO ))
+							 GROUP BY AsOfDate, 
+									CASE WHEN IsFICCMatched = 1 THEN 0 ELSE BrkGrpID END,  
+									AcctGrpID, 
+									CASE WHEN IsFICCMatched = 1 THEN 0 ELSE CollSchedID END, 
+									TriPartyGrpID, CollCCYCode, LendingType,
+								    CASE WHEN ( IsTermRepo = 3 ) THEN IsTermRepo ELSE 0 END, ClientFICCID ) AS TMP_NET_EXP
+				ON 
+					( TLS.AsOfDate = TMP_NET_EXP.AsOfDate )			  AND 
+						( 
+							( ( TLS.IsFICCMatched = 0 ) AND ( TMP_NET_EXP.BrkGrpId = TLS.BrkGrpId ) AND ( TMP_NET_EXP.CollSchedID = TLS.CollSchedID ) ) OR
+							( ( TLS.IsFICCMatched = 1 ) AND ( TMP_NET_EXP.ClientFICCID = TLS.ClientFICCID ) ) 
+						)										      AND 
+
+					( TLS.AcctGrpID = TMP_NET_EXP.AcctGrpID )		  AND 					
+					( TLS.TriPartyGrpID = TMP_NET_EXP.TriPartyGrpID ) AND 
+					( TLS.CollCCYCode = TMP_NET_EXP.CollCCYCode )	  AND 
+					( TLS.LendingType = TMP_NET_EXP.LendingType )	  AND
+					(( TMP_NET_EXP.IsTermRepo != 3 ) OR (( TMP_NET_EXP.IsTermRepo = 3 ) AND ( TLS.IsTermRepo = TMP_NET_EXP.IsTermRepo )))
+
+			WHERE 
+				( TLS.LendingType = @LENDING_TYPE_REPO ) 		
+		
+		
+			UPDATE #TMP_LOAN_COLLATERAL_DIST 
+			SET FinalExposure = LoanValue - CollDist
+			WHERE ( LendingType = @LENDING_TYPE_SECLENDING ) 			
+		END
+		ELSE
+		BEGIN
+
+			UPDATE TLS
+			SET 
+				FinalExposure  = TLS.Exposure - TLCOL.CollDist
+			FROM 
+				#TMP_LOAN_SUMMARY AS TLS
+				INNER JOIN #TMP_LOAN_COLLATERAL_DIST AS TLCOL
+					ON ( TLCOL.AsOfDate = TLS.AsOfDate )			AND 					   			 
+
+						( 
+							( ( TLS.IsFICCMatched = 0 ) AND ( TLCOL.BrkGrpId = TLS.BrkGrpId ) AND ( TLCOL.CollSchedID = TLS.CollSchedID ) ) OR
+							( ( TLS.IsFICCMatched = 1 ) AND ( TLCOL.ClientFICCID = TLS.ClientFICCID ) ) 
+						)										    AND
+						 
+					   ( TLCOL.TxnRefNbr = TLS.TxnRefNbr )			AND 
+					   ( TLCOL.AcctNbr = TLS.AcctNbr )				AND 
+					   ( TLCOL.TriPartyGrpID = TLS.TriPartyGrpID )	AND
+					   ( TLCOL.CollCCYCode = TLS.CollCCYCode )		AND
+					   ( TLCOL.LendingType = TLS.LendingType )  			
+			WHERE 
+				( TLS.LendingType = @LENDING_TYPE_REPO )		
+				
+				
+			UPDATE TLCOL
+			SET 
+				FinalExposure = TLS.FinalExposure
+			FROM 
+				#TMP_LOAN_COLLATERAL_DIST AS TLCOL
+				INNER JOIN #TMP_LOAN_SUMMARY AS TLS
+					ON ( TLCOL.AsOfDate = TLS.AsOfDate )			AND 					   			 
+
+						( 
+							( ( TLS.IsFICCMatched = 0 ) AND ( TLCOL.BrkGrpId = TLS.BrkGrpId ) AND ( TLCOL.CollSchedID = TLS.CollSchedID ) ) OR
+							( ( TLS.IsFICCMatched = 1 ) AND ( TLCOL.ClientFICCID = TLS.ClientFICCID ) ) 
+						)										    AND
+
+					   ( TLCOL.TxnRefNbr = TLS.TxnRefNbr )			AND 
+					   ( TLCOL.AcctNbr = TLS.AcctNbr )				AND 
+					   ( TLCOL.TriPartyGrpID = TLS.TriPartyGrpID )	AND
+					   ( TLCOL.CollCCYCode = TLS.CollCCYCode )		AND
+					   ( TLCOL.LendingType = TLS.LendingType )  	
+			WHERE 
+				( TLCOL.LendingType = @LENDING_TYPE_REPO ) 
+
+
+			UPDATE #TMP_LOAN_COLLATERAL_DIST 
+			SET FinalExposure = LoanValue - CollDist
+			WHERE ( LendingType = @LENDING_TYPE_SECLENDING ) 					   
+		END		
+
+
+		
+	END		-- END OF WHILE EXISTS( SELECT 1 FROM #TMP_COLLATERAL_SUMMARY WHERE IsAllocated = 0 ) 			
+
+
+	
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS') ) AND ( name ='IDX_TMP_COLLATERAL_DETAILS_COMPLEX' ))
+	BEGIN			
+		CREATE INDEX IDX_TMP_COLLATERAL_DETAILS_COMPLEX
+		ON #TMP_COLLATERAL_DETAILS ( BrkGrpId, AcctNbr, SecCode, CollCCYCode, TriPartyGrpID, AsOfDate, LendingType ) 		
+	END
+
+
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS') ) AND ( name ='IDX_TMP_COLLATERAL_DETAILS_SECURITY' ))
+	BEGIN			
+		CREATE INDEX IDX_TMP_COLLATERAL_DETAILS_SECURITY
+		ON #TMP_COLLATERAL_DETAILS ( SecID, CollateralType, CountryID, SecurityDesc, SecurityDesc2, ISIN , CUSIP, SEDOL, CountryName, MaturityDate, SecCCYCode ) 	
+	END
+	
+	IF NOT EXISTS (SELECT * FROM tempdb..sysindexes 
+				   WHERE ( id = OBJECT_ID('tempdb..#TMP_COLLATERAL_DETAILS') ) AND ( name ='IDX_TMP_COLLATERAL_DETAILS_ACCTNBR' ))
+	BEGIN			
+		CREATE INDEX IDX_TMP_COLLATERAL_DETAILS_ACCTNBR
+		ON #TMP_COLLATERAL_DETAILS ( AcctNbr ) 					
+	END
+
+
+	--Updating collateral security details			
+	UPDATE TCOL
+	SET 
+		CountryID	 = TSEC.CountryID,
+		SecurityDesc = TSEC.SecurityDesc1, 
+		SecurityDesc2 = TSEC.SecurityDesc2, 
+		ISIN		=  COALESCE(TCOL.ISIN, TSEC.ISIN),
+		CUSIP		= TSEC.CUSIP,
+		SEDOL		= TSEC.SEDOL,
+		CountryName = TSEC.CountryName,
+		MaturityDate = CASE WHEN CollateralType ='T' THEN TCOL.MaturityDate 
+							ELSE CONVERT(VARCHAR(10),TSEC.MaturityDate, 101) END, 
+--		SecCCYCode = TSEC.CCYCode
+		SecCCYCode = CASE WHEN CollateralType ='T' THEN TCOL.SecCCYCode   -- From TP feeds don't overwrite with Security Master setup.
+							ELSE TSEC.CCYCode END
+	FROM #TMP_COLLATERAL_DETAILS TCOL 
+		INNER JOIN Reference.dbo.Security TSEC ON 
+			( TCOL.SecID = TSEC.SecID )
+	WHERE 
+		( TCOL.SecID > 0 ) 
+
+
+	UPDATE TCOL
+	SET 
+		CountryID	= TCTRY.CountryID,
+		CountryName = TCTRY.CountryName
+	FROM #TMP_COLLATERAL_DETAILS TCOL 
+		INNER JOIN Reference.dbo.Country TCTRY ON ( SUBSTRING(LTRIM(RTRIM(TCOL.SecCode)),1,2) = LTRIM(RTRIM(TCTRY.ISOCountry)) )
+	WHERE 
+		( ISNULL(LTRIM(RTRIM(TCOL.CountryName)),'')  = '' ) AND 
+		( ISNULL(TCOL.SecCode,'')  != '' )
+	
+	UPDATE TCOL
+	SET 
+		CountryID	= TCTRY.CountryID,
+		CountryName = TCTRY.CountryName
+	FROM #TMP_COLLATERAL_DETAILS AS TCOL 
+		INNER JOIN CollateralClassAssetTypes TCLSA 
+			ON ( TCOL.IssuerType = TCLSA.IssuerType ) AND ( TCOL.TriPartyGrpID = TCLSA.TriPartyGrpID )  
+		INNER JOIN CollateralClass TCCLS 
+			ON ( TCCLS.CollateralClassID = TCLSA.CollateralClassID ) 
+		INNER JOIN REFERENCE.DBO.Country AS TCTRY
+			ON ( TCTRY.CountryID = 209 )	--US
+	WHERE 
+		( TCCLS.CollateralClassID IN ( @CLASSID_US_TREASURIES, @CLASSID_FDIC_GUARENTEED_DEBT_UNDER_TLGP, @CLASSID_GNMA_0PCT, @CLASSID_AGENCY_MBS_REMICS_CMOS  ))  AND
+		( ISNULL(LTRIM(RTRIM(TCOL.CountryName)),'')  = '' ) AND 
+		( ISNULL(TCOL.SecCode,'')  != '' )  
+		
+
+	
+	--Apply FX rates wherever applicable
+	EXEC dbo.p_UpdateLoanAndCollateralAllocFX @TargetCurrency, @Source
+
+
+	
+--====================================================================================================================================================================================
+	-- Apply RWA Haircut calculation methodolody for Loan and Collateral.
+--====================================================================================================================================================================================
+	IF ( @Source IN ('MARK', 'DML') ) -- Ignore INTRA-DAY ( LOANS)
+	BEGIN
+		EXEC dbo.p_UpdateLoanAndCollateralRWAHaircut @ReportID
+	END	
+
+--====================================================================================================================================================================================
+-- Apply ISIN , CUSIP , SEDOL for Loans and Collaterals
+--====================================================================================================================================================================================
+
+/*
+	UPDATE #TMP_ALL_LOANS
+	SET SecCode = COALESCE(ISIN, CUSIP, SEDOL, SecCode)
+
+	UPDATE #TMP_COLLATERALS
+	SET SecCode = COALESCE(ISIN, CUSIP, SEDOL, SecCode)
+
+ -- Treat Rights as Equities for Loans and Collaterals
+	UPDATE #TMP_ALL_LOANS
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+	UPDATE #TMP_COLLATERALS
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+*/
+
+-- Treat Rights as Equities for Loans Collateral Allocation and Distribution TMP Table.
+	UPDATE #TMP_COLLATERAL_DETAILS
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+	UPDATE #TMP_LOAN_COLLATERAL_DIST
+	SET BucketSecType = CASE BucketSecType WHEN 'RI' THEN 'EQ' ELSE BucketSecType END
+
+--====================================================================================================================================================================================
+	TRUNCATE TABLE #TMP_MOVEMENTS
+
+	SET NOCOUNT OFF
+END
+
+
+
+
+
+
+CREATE FUNCTION [dbo].[f_GetTripartyCollaterals]
+(
+	@FromBatchRunDate DATETIME, 
+	@ToBatchRunDate	  DATETIME
+)
+RETURNS 
+	@TRIPARTY_COLLATERALS TABLE
+	( 	
+		AsOfDate		DATETIME		NOT NULL,
+		BrkGrpId		INT				NULL,
+		CollTypeID		INT				NULL,
+		CollSchedID		INT				NULL,
+		TriPartyGrpID	INT				NULL,
+		LoanType		CHAR (1)		NOT NULL, 
+		LoanStatus		CHAR (1)		NOT NULL, 
+		SecCode			VARCHAR(12)		NULL, 
+		SecurityDesc	VARCHAR(100)	NULL,
+		CUSIP			VARCHAR(9)		NULL, 
+		ISIN			VARCHAR(12)		NULL, 
+		SEDOL			VARCHAR(7)		NULL, 
+		SecCCYCode		VARCHAR(3)		NULL,		
+		MaturityDate	DATETIME		NULL,
+		CouponRate		VARCHAR(40)		NULL,
+		SecurityPrice   DECIMAL(18,7)	NULL, 
+		Quantity		DECIMAL(18,4)	NULL, 
+		IssuerType		VARCHAR(40)		NULL, 
+		CollCCYCode		CHAR(3)			NULL,		
+		CollValue		DECIMAL(25,4)	NULL, 
+		CollValueWithoutMargin	DECIMAL(25,4)	NULL, 
+		BrkCode			VARCHAR(12)		NULL,
+		ReceivedOrDelivered VARCHAR(9) NULL,
+		LendingType		VARCHAR(10)	   NULL,
+		CollateralID    INT			   NULL					
+	)
+
+BEGIN
+
+	DECLARE @LOAN_STATUS_VERIFIED AS CHAR(1) 
+	SET @LOAN_STATUS_VERIFIED = '1' 
+
+	INSERT INTO @TRIPARTY_COLLATERALS
+		( AsOfDate, BrkGrpId, CollTypeID, CollSchedID, TriPartyGrpID, LoanType, LoanStatus, SecCode, SecurityDesc, CUSIP, ISIN, SEDOL,
+		  SecCCYCode,  MaturityDate, CouponRate, SecurityPrice, Quantity, IssuerType, CollCCYCode, CollValue, CollValueWithoutMargin, BrkCode,
+		  ReceivedOrDelivered, LendingType, CollateralID )
+	
+	SELECT CCH.AsOfDate, BCTS.BrkGrpId,  BCTS.CollTypeID, CollSchedID, CCH.TriPartyGrpID, 'T' AS LoanType,  LoanStatus = @LOAN_STATUS_VERIFIED, 
+		   SecCode, SecurityDesc, 
+		   CASE WHEN SecIdType = 'CU' THEN SecCode ELSE NULL END AS CUSIP,
+		   CASE WHEN SecIdType = 'IS' THEN SecCode ELSE ISIN END AS ISIN,
+		   CASE WHEN SecIdType = 'SE' THEN SecCode ELSE NULL END AS SEDOL,
+		  -- SecCCYCode, MaturityDate, CouponRate, SecurityPrice, Quantity, IssuerType, CollCcyCode, 
+		   SecCCYCode, RWAMaturityDate, CouponRate, SecurityPrice, Quantity, IssuerType, CollCcyCode, 
+		   CollateralAmount, CollateralAmountWithoutMargin, CCH.BrkCode,
+		   'RECEIVED'	AS ReceivedOrDelivered,
+		   'SECLENDING' AS LendingType,
+		   CCH.ID AS CollateralID
+	FROM 
+		CollateralCoverageHistory CCH 
+		LEFT JOIN BrokerCollTypeSchedule BCTS ON  ( BCTS.TriPartyGrpID = CCH.TriPartyGrpID AND BCTS.TriPartyBrkCode = CCH.BrkCode ) 
+	WHERE  
+		( CCH.AsOfDate BETWEEN @FromBatchRunDate AND @ToBatchRunDate) AND
+		( CCH.AsOfDate BETWEEN BCTS.EffectiveDateBegin AND BCTS.EffectiveDateEnd ) 
+	RETURN 
+
+	
+END
+
+
+
+
+
+
