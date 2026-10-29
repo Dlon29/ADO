@@ -1,39 +1,1398 @@
-SELECT
-    CONVERT(DATE, AsOfDate) AS AsOfDate,
-    BrkCode,
-    TriPartyGrpID,
-    SUM(CollateralAmount) AS CollateralAmount,
-    SUM(CollateralAmountWithoutMargin)
-        AS CollateralAmountWithoutMargin
-FROM dbo.CollateralCoverageHistory
-WHERE AsOfDate >= '20260630'
-  AND AsOfDate <  '20260702'
-GROUP BY
-    CONVERT(DATE, AsOfDate),
-    BrkCode,
-    TriPartyGrpID
-ORDER BY
-    AsOfDate,
-    BrkCode,
-    TriPartyGrpID;
+using C1.C1Excel;
+using Common.Logging;
+using MOBETTER.Helpers;
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Reflection.Emit;
+using System.Text;
+using System.Web;
+using System.Xml.Linq;
+
+namespace MOBETTER.ExcelTemplates
+{
+    /*************************************************************************************************************************************************************************************************************
+        Filename         : CBJLendingBalanceMonitoringReportC1
+        Original Creator :  OFSS  
+        Date created     :  07/06/2021    
+        Description      :  This module used to generate the CBJ Lending Balance Monitoring reports through ComponentOne
+ 
+        History:
+        07/06/2021       Adnan Kotawala      Initialized : This is a POC to check how feasible it is to use ComponentOne for excel reports generation
+    **************************************************************************************************************************************************************************************************************/
+
+    public class CBJLendingBalanceMonitoringReportC1 : STBUSA.Excel.AbstractTemplate
+    {
+
+        const int RPT_ID_DEFAULT = 525;
+        const int RPT_ID_CBJ_LENDING_BALANCE_MONITORING_PQ = 123;
+
+        private DateTime _asOfDate;
+        private string _reportTitle = string.Empty;
+
+        private List<InvestmentManager> _investmentManagers = new List<InvestmentManager>();
+        private List<Account> _accounts = new List<Account>();
+        private List<CreditGroup> _creditGroups = new List<CreditGroup>();
+        private List<LendingLimitBrokerPct> _lendingLimitBrkPct = new List<LendingLimitBrokerPct>();
+        private List<LoanBalance> _loans = new List<LoanBalance>();
+        private IDictionary<int, IReportBuilder> _reportBldrDict = new Dictionary<int, IReportBuilder>();
+
+        private static class ReportTemplate
+        {
+            public const string REPORT_TEMPLATE = "REPORT_TEMPLATE";
+            public const string DEFAULT_WORKSHEET = "DEFAULT_WORKSHEET";
+            public const string DEFAULT_WORKSHEET_ROW = "DEFAULT_WORKSHEET_ROW";
+        }
+
+
+        private static ILog _logger = LogManager.GetLogger(typeof(CBJLendingBalanceMonitoringReport));
+
+        #region SubClasses
+        private class InvestmentManager
+        {
+            public int InvestmentMgrID { get; set; }
+            public string InvestmentMgrName { get; set; }
+        }
+
+        private class Account 
+        {
+            public string AcctNbr { get; set; }
+            public string AcctSN { get; set; }
+            public string AcctName { get; set; }
+            public string AcctType { get; set; }
+            public int LendingLimitGrpID { get; set; }
+            public decimal LendingLimit { get; set; }
+            public string LendingLimitCurrency { get; set; }
+            public decimal ExchangeRate_YENUSD { get; set; }
+            public decimal ExchangeRate_YENEUR { get; set; }
+            public bool IsDefaultExchangeRate { get; set; }
+
+            public override bool Equals(object obj)
+            {
+                if (obj == null || !(obj is Account))
+                    return false;
+                else
+                    return AcctNbr == ((Account)obj).AcctNbr;
+            }
+
+            public override int GetHashCode()
+            {
+                return this.AcctNbr.GetHashCode();
+            }
+
+        }
+
+        private class CreditGroup
+        {
+            public int BrkCrGrpID { get; set; }
+            public string BrkCrGrpName { get; set; }
+            public decimal CrLimit { get; set; }
+            public string CreditRating { get; set; }
+        }
+
+        private class LendingLimitBrokerPct
+        {
+            public int BrkCrGrpID { get; set; }
+            public int LendingLimitGrpID { get; set; }
+            public decimal PercentLimit { get; set; }
+            public bool IsDefaultPctForEQ { get; set; }
+            public bool IsDefaultPctForFI { get; set; }
+        }
+
+        private class LoanBalance
+        {
+            public string AcctNbr { get; set; }
+            public int BrkCrGrpID { get; set; }
+            public int LendingLimitGrpID { get; set; }
+            public string BucketSecType { get; set; }
+            public decimal PrincipalDomestic { get; set; }
+            public decimal PrincipalGlobalEUR { get; set; }
+            public decimal PrincipalGlobalUSD { get; set; }
+            public bool IsFuture { get; set; }
+        }
+
+        private class WorksheetInfo
+        {
+            public string WorksheetName { get; set; }
+            public Dictionary<string, string> TemplateDictionary { get; set; }
+
+            public Dictionary<string, XLCell> CellTemplateDictionary { get; set; }
+
+
+        }
+        #endregion
+
+        #region Builders
+        private interface IReportBuilder
+        {
+            DateTime AsOfDate { get; set; }
+            int InvestmentMgrID { get; set; }
+            string ReportTitle { get; set; }
+            List<InvestmentManager> InvestmentManagers { get; set; }
+            List<Account> Accounts { get; set; }
+            List<CreditGroup> CreditGroups { get; set; }
+            List<LendingLimitBrokerPct> LendingLimitBrokerPct { get; set; }
+            List<LoanBalance> Loans { get; set; }
+            string BuildWorkbookXml();
+            byte[] BuildC1Workbook();
+        }
+
+        private class DefaultReportBuilder : IReportBuilder
+        {
+
+            private string _appRoot = GlobalVariable.AppRoot;
+            private const string acctNameCellTemplateID = "CELL.ACCTNAME";
+            private const string acctNbrCellTemplateID = "CELL.ACCTNBR";
+            private const string acctSNCellTemplateID = "CELL.ACCTSN";
+            private const string acctTypeCellTemplateID = "CELL.ACCTTYPE";
+            private const string lendLimYenCellTemplateID = "CELL.LENDINGLIMIT.YEN";
+
+            #region Constructor
+            public DefaultReportBuilder()
+            {
+            }
+            #endregion
+
+            #region Properties
+            public DateTime AsOfDate { get; set; }
+            public int InvestmentMgrID { get; set; }
+            public string ReportTitle { get; set; }
+            public List<InvestmentManager> InvestmentManagers { get; set; }
+            public List<Account> Accounts { get; set; }
+            public List<CreditGroup> CreditGroups { get; set; }
+            public List<LendingLimitBrokerPct> LendingLimitBrokerPct { get; set; }
+            public List<LoanBalance> Loans { get; set; }
+            
+            #endregion
+
+            #region Methods
+            public string BuildWorkbookXml()
+            {
+                try
+                {
+                    Dictionary<string, string> templates = this.GetXmlTemplateDictionary();
+                    StringBuilder workbook = new StringBuilder(templates[ReportTemplate.REPORT_TEMPLATE]);
+                    var worksheetInfo = new WorksheetInfo() { WorksheetName = "PEN", TemplateDictionary = templates };
+                    this.BuildWorksheetBody(workbook, worksheetInfo);
+                    return workbook.ToString();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            public byte[] BuildC1Workbook()
+            {
+                try
+                {
+                    string incFilePath = System.Web.HttpContext.Current.Server.MapPath(@"/" + _appRoot);
+                    byte[] reportContent = null;
+                    C1XLBook workBookTemplate = new C1XLBook();
+                    C1XLBook workBookFinal = new C1XLBook();
+                    string templateName = Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoring_Template.xls");
+                    string uploadPath = "C:\\Adnan's Stuff\\P2422.1\\Templates\\";
+                    string fileName = "CBJLendingBalanceMonitoring_POC.xls";
+                    int dataColWidth = 0;
+
+                    using (FileStream fs = new FileStream(templateName, FileMode.Open, FileAccess.Read))
+                    {
+                        workBookTemplate.Load(fs);
+                        fs.Close();
+                    }
+                    workBookFinal.Clear();
+
+                    #region Worksheets
+
+                    XLSheet worksheetTemplate = workBookTemplate.Sheets[0];
+                    dataColWidth = worksheetTemplate.Columns[2].Width;
+
+                    var defaultExchRates = this.Accounts.Exists(acct => acct.IsDefaultExchangeRate == true) ?
+                            this.Accounts.SingleOrDefault(acct => acct.IsDefaultExchangeRate) :
+                            this.Accounts.FirstOrDefault();
+
+                    // Set the sheet name
+                    XLSheet worksheetFinal = workBookFinal.Sheets.Add("PEN");
+
+                    worksheetFinal.Columns[0].Width = worksheetTemplate.Columns[0].Width;
+                    worksheetFinal.Columns[1].Width = worksheetTemplate.Columns[1].Width;
+                    worksheetFinal[2, 0].SetValue(ReportTitle, worksheetTemplate.GetCell(2, 0).Style);
+                    worksheetFinal[5, 0].SetValue(AsOfDate.ToString("yyyy-MM-dd"), worksheetTemplate.GetCell(5, 0).Style);
+                    worksheetFinal[9, 0].SetValue(defaultExchRates.ExchangeRate_YENUSD, worksheetTemplate.GetCell(9, 0).Style);
+                    worksheetFinal[10, 0].SetValue(defaultExchRates.ExchangeRate_YENEUR, worksheetTemplate.GetCell(10, 0).Style);
+
+                    if (defaultExchRates == null)
+                    {
+                        throw new ApplicationException("Missing lending limit exchange rate.");
+                    }
+
+                    for (int r = 5; r <= 18; r++)
+                    {
+                        int c = 1;
+                        XLCell acctHeaderCell = worksheetTemplate.GetCell(r, c);
+                        worksheetFinal[r, c].SetValue(acctHeaderCell.Value, acctHeaderCell.Style);
+                        foreach (Account acct in Accounts)
+                        {
+                            c++;
+                            worksheetFinal.Columns[c].Width = dataColWidth;
+                            XLCell dataCellTemplate = worksheetTemplate.GetCell(r, 2);
+
+                            if (r <= 9)
+                            {
+                                Type aType = acct.GetType();
+                                PropertyInfo pi = aType.GetProperty(dataCellTemplate.Value.ToString());
+                                worksheetFinal[r, c].SetValue(pi.GetValue(acct), dataCellTemplate.Style);
+                            }
+
+                            if (r == 10) {
+                                worksheetFinal[r, c].Formula = GetExcelColumnName(c) + r.ToString() + "/" + "A" + r.ToString();
+                                worksheetFinal[r, c].Style = dataCellTemplate.Style;
+                            }
+
+                            if(r == 11)
+                            {
+                                worksheetFinal[r, c].Formula = GetExcelColumnName(c) + (r -1).ToString() + "/" + "A" + r.ToString();
+                                worksheetFinal[r, c].Style = dataCellTemplate.Style;
+
+                            }
+
+                            if (r > 11 && r <= 17)
+                            {
+                                if (c == 2)
+                                {
+                                    worksheetFinal[r, c].Formula = dataCellTemplate.Formula;
+                                    worksheetFinal[r, c].Style = dataCellTemplate.Style;
+                                }
+                                else
+                                {
+                                    worksheetFinal.CopyFormula(r, 2, r, c);
+                                    worksheetFinal[r, c].Style = dataCellTemplate.Style;
+                                }
+                            }
+
+                            if (r == 18)
+                            {
+                                dataCellTemplate = worksheetTemplate.GetCell(r, 0);
+                                worksheetFinal[r, 0].SetValue(dataCellTemplate.Value, dataCellTemplate.Style);
+                            }
+                        }
+                    }
+
+                    #region Worksheet Body
+
+                    var loanBalances = this.Loans
+                                           .GroupBy(ln => new { ln.LendingLimitGrpID, ln.BrkCrGrpID })
+                                           .ToList()
+                                           .Select(lnBalance => new {
+                                               LendingLimitGrpID = lnBalance.Key.LendingLimitGrpID,
+                                               BrkCrGrpID = lnBalance.Key.BrkCrGrpID,
+                                               PrincipalDomestic = lnBalance.Sum(b => b.PrincipalDomestic),
+                                               PrincipalGlobalUSD = lnBalance.Sum(b => b.PrincipalGlobalUSD),
+                                               PrincipalGlobalEUR = lnBalance.Sum(b => b.PrincipalGlobalEUR)
+                                           })
+                                           .ToList();
+
+                    int dataRow = 19;
+                    foreach (var creditGrp in CreditGroups)
+                    {
+                        for (int templateRow = 19; templateRow <= 25; templateRow++)
+                        {
+                            
+                            PropertyInfo pi;
+                            XLCell dataCellTemplate = worksheetTemplate.GetCell(templateRow, 0);
+
+                            if (templateRow != 23)
+                            {
+                                Type bcType = creditGrp.GetType();
+                                string cellValue = "";
+                                if (!String.IsNullOrEmpty(Convert.ToString(dataCellTemplate.Value)))
+                                {
+                                    pi = bcType.GetProperty(dataCellTemplate.Value.ToString());
+                                    cellValue = pi.GetValue(creditGrp).ToString();
+                                }
+                                worksheetFinal[dataRow, 0].SetValue(cellValue, dataCellTemplate.Style);
+                            }
+                            else
+                            {
+                                worksheetFinal[dataRow, 0].Formula = dataCellTemplate.Formula;
+                            }
+
+                            dataCellTemplate = worksheetTemplate.GetCell(templateRow, 1);
+                            worksheetFinal[dataRow, 1].SetValue(dataCellTemplate.Value, dataCellTemplate.Style);
+
+                            int c = 2;
+                            foreach (Account acct in Accounts)
+                            {
+                                dataCellTemplate = worksheetTemplate.GetCell(templateRow, 2);
+
+                                if (templateRow <= 22 && templateRow != 21)
+                                {
+                                    var loanBalance = loanBalances.SingleOrDefault(ln => (ln.LendingLimitGrpID == acct.LendingLimitGrpID) && (ln.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                                    string cellValue = "0";
+                                    if (loanBalance != null)
+                                    {
+                                        Type loanBalanceType = loanBalance.GetType();
+                                        pi = loanBalanceType.GetProperty(dataCellTemplate.Value.ToString());
+                                        cellValue = pi.GetValue(loanBalance).ToString();
+                                    }
+                                    worksheetFinal[dataRow, c].SetValue(cellValue, dataCellTemplate.Style);
+                                }
+
+                                if(templateRow == 21)
+                                {
+                                    if (c == 2)
+                                    {
+                                        worksheetFinal[dataRow, c].Formula = dataCellTemplate.Formula;
+                                    }
+                                    else
+                                    {
+                                        worksheetFinal.CopyFormula(dataRow, 2, dataRow, c);
+                                    }
+                                }
+
+                                string colName = GetExcelColumnName(c);
+                                if (templateRow == 23)
+                                {
+                                    worksheetFinal[dataRow, c].Formula = "SUM(" + colName + dataRow.ToString() + " * $A$11, " + colName + (dataRow - 1).ToString() + " * $A$10)/" + colName + "$10 *100";
+                                }
+
+                                var percentLimit = LendingLimitBrokerPct.SingleOrDefault(pct => (pct.LendingLimitGrpID == acct.LendingLimitGrpID) && (pct.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                                string pctLmtValue = (percentLimit != null) ? percentLimit.PercentLimit.ToString() : "0";
+                                if (templateRow == 24)
+                                {
+                                    worksheetFinal[dataRow, c].Formula = "CONCATENATE(\"(\",TEXT(" + pctLmtValue + ",\"###%\"),\") \", TEXT((" + colName + "$11*" + pctLmtValue + ")-" + colName + (dataRow - 2).ToString() + "-(" + colName + (dataRow - 1).ToString() + "*$A$11/$A$10),\"_(#,##0.00_)\"))";
+                                }
+
+                                if (templateRow == 25)
+                                {
+                                    worksheetFinal[dataRow, c].Formula = "CONCATENATE(\"(\",TEXT(" + pctLmtValue + ",\"###%\"),\") \", TEXT((" + colName + "$12*" + pctLmtValue + ")-" + colName + (dataRow - 2).ToString() + "-(" + colName + (dataRow - 3).ToString() + "*$A$10/$A$11),\"_(#,##0.00_)\"))";
+                                }
+
+                                worksheetFinal[dataRow, c].Style = dataCellTemplate.Style;
+
+                                c++;
+                            }
+
+                            dataRow++;
+                        }
+                    }
+                    #endregion
+
+                    workBookFinal.Sheets.RemoveAt(0);
+                    DirectoryInfo dirInf = Directory.CreateDirectory(uploadPath);
+                    workBookFinal.Save(dirInf.FullName + fileName);
+                    using (FileStream fs = new FileStream(dirInf.FullName + fileName, FileMode.Open, FileAccess.Read))
+                    {
+                        reportContent = new byte[fs.Length];
+                        fs.Read(reportContent, 0, reportContent.Length);
+                        fs.Close();
+                    }
+
+                    return reportContent;
+                    #endregion
+
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private void BuildWorksheetBody(StringBuilder workbook, WorksheetInfo worksheetInfo)
+            {
+                const int ACCOUNT_COL_IDX_START = 3;
+                const int HEADER_ROW_COUNT = 19;
+                const int ROW_COUNT_PER_CR_GRP = 7;
+                const int LENDING_LIMIT_ROW_START = 5; 
+                
+                try
+                {
+                    this.BuildAccountHeaders(workbook, worksheetInfo);
+                    var conditionalFormattingBldr = new StringBuilder();
+                    var lendingLimitChkExceedCondGTUSDBldr = new StringBuilder();
+                    var lendingLimitChkExceedCondGTEURBldr = new StringBuilder();
+                    var conditionalFormattingGTUSDBldr = new StringBuilder();
+                    var conditionalFormattingGTEURBldr = new StringBuilder();
+
+
+                    //==================================================================================================================================================================
+                    //Render balances by credit group and account 
+                    //==================================================================================================================================================================
+                    var templateDict = worksheetInfo.TemplateDictionary;
+                    var loanBalanceBldr = new StringBuilder();
+                    
+
+
+                    var loanBalances = this.Loans
+                                           .GroupBy( ln=> new  { ln.LendingLimitGrpID, ln.BrkCrGrpID} )
+                                           .ToList()
+                                           .Select(lnBalance => new { 
+                                                                        LendingLimitGrpID = lnBalance.Key.LendingLimitGrpID, 
+                                                                        BrkCrGrpID = lnBalance.Key.BrkCrGrpID, 
+                                                                        PrincipalDomestic = lnBalance.Sum(b=>b.PrincipalDomestic),
+                                                                        PrincipalGlobalUSD = lnBalance.Sum(b=>b.PrincipalGlobalUSD),
+                                                                        PrincipalGlobalEUR = lnBalance.Sum(b=>b.PrincipalGlobalEUR)
+                                           })
+                                           .ToList();
+
+                    var limitRowIdx = HEADER_ROW_COUNT + LENDING_LIMIT_ROW_START;
+
+                    foreach (var creditGrp in CreditGroups)
+                    {
+                        var domesticUSDRowBldr = new StringBuilder();
+                        var globalUSDRowBldr = new StringBuilder();
+                        var totalUSDRowBldr = new StringBuilder();
+                        var globalEURRowBldr = new StringBuilder();
+                        var lendingLimitChkExceedCondBldr = new StringBuilder();
+                        var lendingLimitPctRowBldr = new StringBuilder();
+                        var availableBalanceUSDRowBldr = new StringBuilder();
+                        var availableBalanceEURRowBldr = new StringBuilder();
+                        var acctColIdx = ACCOUNT_COL_IDX_START;
+
+                        foreach (var acct in this.Accounts)
+                        {
+                            var percentLimit = LendingLimitBrokerPct.SingleOrDefault(pct => (pct.LendingLimitGrpID == acct.LendingLimitGrpID) && (pct.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                            totalUSDRowBldr.Append(templateDict["CELL.BALANCE.TOTALUSD"]);
+                            lendingLimitPctRowBldr.Append(templateDict["CELL.LENDINGLIMIT.PCT"]);
+                            availableBalanceUSDRowBldr.Append(templateDict["CELL.AVAILABLE.BALANCE.USD"].Replace("<!--PercentLimit-->", (percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+                            availableBalanceEURRowBldr.Append(templateDict["CELL.AVAILABLE.BALANCE.EUR"].Replace("<!--PercentLimit-->", (percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+
+
+                            var loanBalance = loanBalances.SingleOrDefault(ln => (ln.LendingLimitGrpID == acct.LendingLimitGrpID)  && (ln.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                            domesticUSDRowBldr.Append(templateDict["CELL.DOMESTIC.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalDomestic) : "0"));
+                            globalUSDRowBldr.Append(templateDict["CELL.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalGlobalUSD) : "0"));
+                            globalEURRowBldr.Append(templateDict["CELL.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalGlobalEUR) : "0"));
+
+
+                            if (lendingLimitChkExceedCondBldr.Length > 0)
+                            {
+                                lendingLimitChkExceedCondBldr.Append(",");
+                            }
+                            
+                            lendingLimitChkExceedCondBldr.Append(
+                                    templateDict["CELL.LENDINGLIMIT.CHK.EXCEED.CONDITION"]
+                                                    .Replace("<!--AcctColIdx-->", Convert.ToString(acctColIdx))
+                                                    .Replace("<!--PercentLimit-->",(percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+
+                            conditionalFormattingBldr.Append(templateDict["CELL.LENDINGLIMIT.CONDITIONAL.FORMAT"]
+                                                                .Replace("<!--RuleRowIdx-->", Convert.ToString(limitRowIdx))
+                                                                .Replace("<!--RuleColIdx-->", Convert.ToString(acctColIdx))
+                                                                .Replace("<!--PercentLimit-->", (percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+
+                            acctColIdx++;
+
+                        }
+
+
+                        var creditGroupRowBldr = templateDict[ReportTemplate.DEFAULT_WORKSHEET_ROW]
+                                                    .Replace("<!--BrkCrGrpName-->", creditGrp.BrkCrGrpName)
+                                                    .Replace("<!--CreditRating-->", creditGrp.CreditRating)
+                                                    .Replace("<!--DomesticUSD-->", domesticUSDRowBldr.ToString())
+                                                    .Replace("<!--GlobalUSD-->", globalUSDRowBldr.ToString())
+                                                    .Replace("<!--TotalUSD-->", totalUSDRowBldr.ToString())
+                                                    .Replace("<!--GlobalEUR-->", globalEURRowBldr.ToString())
+                                                    .Replace("<!--LendingLimitPercentage-->", lendingLimitPctRowBldr.ToString())
+                                                    .Replace("<!--AvailableBalanceUSD-->", availableBalanceUSDRowBldr.ToString())
+                                                    .Replace("<!--AvailableBalanceEUR-->", availableBalanceEURRowBldr.ToString())
+                                                    .Replace("<!--LendingLimitChkConditions-->", lendingLimitChkExceedCondBldr.ToString());
+
+                        loanBalanceBldr.Append(creditGroupRowBldr.ToString());
+                        limitRowIdx += ROW_COUNT_PER_CR_GRP;
+                    }
+
+                    //Subtotals
+                    var totalLoanBalanceDomesticUSD = new StringBuilder();
+                    var totalLoanBalanceGlobalUSD = new StringBuilder();
+                    var totalLoanBalanceGlobalEUR = new StringBuilder();
+                    var outOfBalanceUSD = new StringBuilder();
+                    var outOfBalanceEUR = new StringBuilder();
+                    var colIdx = ACCOUNT_COL_IDX_START;
+
+                    foreach (var acct in this.Accounts)
+                    {
+                        totalLoanBalanceDomesticUSD.Append(templateDict["CELL.TOTAL.BALANCE.DOMESTIC.USD"]);
+                        totalLoanBalanceGlobalUSD.Append(templateDict["CELL.TOTAL.BALANCE.GLOBAL.USD"]);
+                        totalLoanBalanceGlobalEUR.Append(templateDict["CELL.TOTAL.BALANCE.GLOBAL.EUR"]);
+
+                        var totalPrincipalUSD = Loans.Where(ln => (ln.AcctNbr == acct.AcctNbr) && (acct.AcctType.Contains(ln.BucketSecType))).Sum(ln => ln.PrincipalGlobalUSD + ln.PrincipalDomestic);
+                        var totalPrincipalEUR = Loans.Where(ln => (ln.AcctNbr == acct.AcctNbr) && (acct.AcctType.Contains(ln.BucketSecType))).Sum(ln => ln.PrincipalGlobalEUR);
+                        outOfBalanceUSD.Append(templateDict["CELL.OUT.OF.BALANCE.USD"].Replace("<!--TotalPrincipal-->", Convert.ToString(totalPrincipalUSD)));
+                        outOfBalanceEUR.Append(templateDict["CELL.OUT.OF.BALANCE.EUR"].Replace("<!--TotalPrincipal-->", Convert.ToString(totalPrincipalEUR)));
+
+                        if (lendingLimitChkExceedCondGTUSDBldr.Length > 0)
+                        {
+                            lendingLimitChkExceedCondGTUSDBldr.Append(",");
+                        }
+
+                        lendingLimitChkExceedCondGTUSDBldr.Append(
+                                templateDict["CELL.LENDINGLIMIT.CHK.EXCEED.CONDITION.GRANDTOTAL.USD"]
+                                                .Replace("<!--AcctColIdx-->", Convert.ToString(colIdx)));
+
+                        if (lendingLimitChkExceedCondGTEURBldr.Length > 0)
+                        {
+                            lendingLimitChkExceedCondGTEURBldr.Append(",");
+                        }
+
+                        lendingLimitChkExceedCondGTEURBldr.Append(
+                                templateDict["CELL.LENDINGLIMIT.CHK.EXCEED.CONDITION.GRANDTOTAL.EUR"]
+                                                .Replace("<!--AcctColIdx-->", Convert.ToString(colIdx)));
+
+                        conditionalFormattingGTUSDBldr.Append(templateDict["CELL.LENDINGLIMIT.CONDITIONAL.FORMAT.GT.USD"]
+                                                                .Replace("<!--RuleColIdx-->", Convert.ToString(colIdx)));
+
+                        conditionalFormattingGTEURBldr.Append(templateDict["CELL.LENDINGLIMIT.CONDITIONAL.FORMAT.GT.EUR"]
+                                                                .Replace("<!--RuleColIdx-->", Convert.ToString(colIdx)));
+
+                        colIdx++;
+                    }
+
+
+                    var investmentMgr = InvestmentManagers.FirstOrDefault();
+                    var investmentMgrName = string.Empty;
+                    if (this.InvestmentMgrID != 0)
+                    {
+                        investmentMgrName = (investmentMgr != null) 
+                                ? string.Format("{0} : {1}", "Investment Manager", investmentMgr.InvestmentMgrName) 
+                                : string.Empty;
+                    }
+
+                    workbook.Replace("<!--AsOfDate-->", this.AsOfDate.ToString("yyyy-MM-dd"));
+                    workbook.Replace("<!--ReportTitle-->", this.ReportTitle);
+                    workbook.Replace("<!--InvestmentMgrName-->",  investmentMgrName);
+
+
+                    
+
+                    workbook.Replace("<!--LoanBalances-->", loanBalanceBldr.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceDomesticUSD-->", totalLoanBalanceDomesticUSD.ToString());
+                    workbook.Replace("<!--LendingLimitChkConditionsGrandTotalUSD-->", lendingLimitChkExceedCondGTUSDBldr.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceGlobalUSD-->", totalLoanBalanceGlobalUSD.ToString());
+                    workbook.Replace("<!--LendingLimitChkConditionsGrandTotalEUR-->", lendingLimitChkExceedCondGTEURBldr.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceGlobalEUR-->", totalLoanBalanceGlobalEUR.ToString());
+                    workbook.Replace("<!--OutOfBalanceUSD-->", outOfBalanceUSD.ToString());
+                    workbook.Replace("<!--OutOfBalanceEUR-->", outOfBalanceEUR.ToString());
+
+                    int exceedLimitRowOffset = HEADER_ROW_COUNT + (ROW_COUNT_PER_CR_GRP * CreditGroups.Count);
+                    workbook.Replace("<!--ExceedLimitRowOffset-->", Convert.ToString(exceedLimitRowOffset));
+                                                limitRowIdx += ROW_COUNT_PER_CR_GRP;
+
+                    workbook.Replace("<!--ConditionalFormattingGrandTotalRowUSD-->", conditionalFormattingGTUSDBldr.ToString());
+                    workbook.Replace("<!--ConditionalFormattingGrandTotalRowEUR-->", conditionalFormattingGTEURBldr.ToString());
+                    workbook.Replace("<!--ExceedLimitRowOffset1-->", Convert.ToString(exceedLimitRowOffset + 2));
+                    workbook.Replace("<!--ExceedLimitRowOffset2-->", Convert.ToString(exceedLimitRowOffset + 3));
+                    workbook.Replace("<!--ExceedLimitRowOffset3-->", Convert.ToString(exceedLimitRowOffset + 4));
+                    workbook.Replace("<!--ConditionalFormatting-->", conditionalFormattingBldr.ToString());
+                    
+
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private StringBuilder BuildAccountHeaders(StringBuilder workbook, WorksheetInfo worksheetInfo)
+            {
+                try
+                {
+                    var defaultExchRates = this.Accounts.Exists(acct => acct.IsDefaultExchangeRate == true) ?
+                                                this.Accounts.SingleOrDefault(acct => acct.IsDefaultExchangeRate) :
+                                                this.Accounts.FirstOrDefault();
+
+                    if (defaultExchRates == null)
+                    {
+                        throw new ApplicationException("Missing lending limit exchange rate.");
+                    }
+
+                    var templateDict = worksheetInfo.TemplateDictionary;
+
+                    var acctNames = this.Accounts.Select(acct => templateDict["CELL.ACCTNAME"].Replace("<!--AcctName-->", acct.AcctName))
+                                             .ToList()
+                                             .Aggregate((seed, accName) => string.Concat(seed, accName));
+
+                    var acctNbrs = this.Accounts.Select(acct => templateDict["CELL.ACCTNBR"].Replace("<!--AcctNbr-->", acct.AcctNbr))
+                                            .ToList()
+                                            .Aggregate((seed, acctNbr) => string.Concat(seed, acctNbr));
+
+
+                    var acctShortNames = this.Accounts.Select(acct => templateDict["CELL.ACCTSN"].Replace("<!--AcctSN-->", acct.AcctSN))
+                                                  .ToList()
+                                                  .Aggregate((seed, acctSN) => string.Concat(seed, acctSN));
+
+                    var acctTypes = this.Accounts.Select(acct => templateDict["CELL.ACCT.TYPE"].Replace("<!--AcctType-->", acct.AcctType))
+                                                  .ToList()
+                                                  .Aggregate((seed, acctType) => string.Concat(seed, acctType));
+
+                    var acctLendingLimitsYEN = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.YEN"].Replace("<!--LendingLimit-->", Convert.ToString(acct.LendingLimit)))
+                                                        .ToList()
+                                                        .Aggregate((seed, limitYEN) => string.Concat(seed, limitYEN));
+
+                    const int EXCHRATE_OFFSET = 2;
+                    int relativeCol = EXCHRATE_OFFSET;
+                    var acctLendingLimitsYENUSD = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.YENUSD"].Replace("<!--RelativeColumnIndexForYENUSD-->", Convert.ToString(relativeCol++)))
+                                                        .ToList()
+                                                        .Aggregate((seed, limitYENUSD) => string.Concat(seed, limitYENUSD));
+
+
+                    relativeCol = EXCHRATE_OFFSET;
+                    var acctLendingLimitsYENEUR = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.YENEUR"].Replace("<!--RelativeColumnIndexForYENEUR-->", Convert.ToString(relativeCol++)))
+                                                        .ToList()
+                                                        .Aggregate((seed, limitYEN) => string.Concat(seed, limitYEN));
+
+
+                    var acctLendingLimits20PCT = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.20PCT"])
+                                                          .ToList()
+                                                          .Aggregate((seed, limit20PCT) => string.Concat(seed, limit20PCT));
+
+                    var acctLendingLimits50PCT = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.50PCT"])
+                                                          .ToList()
+                                                          .Aggregate((seed, limit50PCT) => string.Concat(seed, limit50PCT));
+
+                    var acctLendingLimits100PCT = this.Accounts.Select(acct => templateDict["CELL.LENDINGLIMIT.100PCT"])
+                                                          .ToList()
+                                                          .Aggregate((seed, limit) => string.Concat(seed, limit));
+
+                    workbook.Replace("<!--AccountNames-->", acctNames);
+                    workbook.Replace("<!--AcctNbrs-->", acctNbrs);
+                    workbook.Replace("<!--AccountShortNames-->", acctShortNames);
+                    workbook.Replace("<!--AcctTypes-->", acctTypes);
+
+                    workbook.Replace("<!--LendingLimitsYEN-->", acctLendingLimitsYEN);
+                    workbook.Replace("<!--LendingLimitsYENUSD-->", acctLendingLimitsYENUSD);
+                    workbook.Replace("<!--LendingLimitsYENEUR-->", acctLendingLimitsYENEUR);
+                    workbook.Replace("<!--LendingLimits20PCTYENUSD-->", acctLendingLimits20PCT);
+                    workbook.Replace("<!--LendingLimits20PCTYENEUR-->", acctLendingLimits20PCT);
+                    workbook.Replace("<!--LendingLimits50PCTYENUSD-->", acctLendingLimits50PCT);
+                    workbook.Replace("<!--LendingLimits50PCTYENEUR-->", acctLendingLimits50PCT);
+                    workbook.Replace("<!--LendingLimits100PCTYENUSD-->", acctLendingLimits100PCT);
+                    workbook.Replace("<!--LendingLimits100PCTYENEUR-->", acctLendingLimits100PCT);
+                    workbook.Replace("<!--YENUSD_ExchRate-->", Convert.ToString(defaultExchRates.ExchangeRate_YENUSD));
+                    workbook.Replace("<!--YENEUR_ExchRate-->", Convert.ToString(defaultExchRates.ExchangeRate_YENEUR));
+                    return workbook;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private Dictionary<string, string> GetXmlTemplateDictionary()
+            {
+                try
+                {
+                    string incFilePath = System.Web.HttpContext.Current.Server.MapPath(@"/" + _appRoot);
+                    Dictionary<string, string> xmlTemplateDict = new Dictionary<string, string>();
+
+
+                    xmlTemplateDict.Add(ReportTemplate.REPORT_TEMPLATE, MOBETTER.SwitchHeaderFooter.ReadIncFiles(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringReport.xml")));
+                    xmlTemplateDict.Add(ReportTemplate.DEFAULT_WORKSHEET_ROW, MOBETTER.SwitchHeaderFooter.ReadIncFiles(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringReportRow.xml")));
+                    var cellTemplates = XDocument.Load(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringReportCells.xml"))
+                                                 .Root
+                                                 .Elements()
+                                                 .ToList()
+                                                 .Select(c => new
+                                                 {
+                                                     TemplateID = c.Elements().ToList().SingleOrDefault(prop => prop.Name == "ID").Value,
+                                                     Content = c.Elements().ToList().SingleOrDefault(prop => prop.Name == "Template").Value
+                                                 }
+                                                        )
+                                                .ToList();
+
+                    foreach (var cellTemplate in cellTemplates)
+                    {
+                        xmlTemplateDict.Add(cellTemplate.TemplateID, cellTemplate.Content);
+                    }
+                    return xmlTemplateDict;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw ex;
+                }
+            }
+
+            private Dictionary<string, XLCell> GetCellTemplates()
+            {
+                try
+                {
+                    Dictionary<string, XLCell> cellTemplateDict = new Dictionary<string, XLCell>();
+                    C1XLBook workBookTemplate = new C1XLBook();
+                    string templateName = "C:\\Adnan's Stuff\\P2422.1\\Templates\\CBJLendingBalanceMonitoring.xls";
+                    using (FileStream fs = new FileStream(HttpContext.Current.Server.MapPath(templateName), FileMode.Open, FileAccess.Read))
+                    {
+                        workBookTemplate.Load(fs);
+                        fs.Close();
+                    }
+
+                    XLSheet worksheetTemplate = workBookTemplate.Sheets[0];
+                    cellTemplateDict.Add(acctNameCellTemplateID, worksheetTemplate.GetCell(5, 2));
+                    cellTemplateDict.Add(acctTypeCellTemplateID, worksheetTemplate.GetCell(6, 2));
+                    cellTemplateDict.Add(acctNbrCellTemplateID, worksheetTemplate.GetCell(7, 2));
+                    cellTemplateDict.Add(acctSNCellTemplateID, worksheetTemplate.GetCell(8, 2));
+                    cellTemplateDict.Add(lendLimYenCellTemplateID, worksheetTemplate.GetCell(9, 2));
 
 
 
-SELECT
-    AsOfDate,
-    BrkGrpID,
-    TriPartyGrpID,
-    CollValue,
-    CollValueWithoutMargin,
-    BrkCode,
-    CollateralID
-FROM dbo.f_GetTripartyCollaterals
-(
-    '20260630',
-    '20260630'
-)
-ORDER BY
-    BrkGrpID,
-    TriPartyGrpID,
-    BrkCode,
-    CollateralID;
+                    return cellTemplateDict;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw ex;
+                }
+            }
+
+            #endregion
+
+            #region Helper Methods
+
+            private string GetExcelColumnName(int columnNumber)
+            {
+                int dividend = columnNumber + 1;
+                string columnName = String.Empty;
+                int modulo;
+
+                while (dividend > 0)
+                {
+                    modulo = (dividend - 1) % 26;
+                    columnName = Convert.ToChar(65 + modulo).ToString() + columnName;
+                    dividend = (int)((dividend - modulo) / 26);
+                }
+
+                return columnName;
+            }
+
+            #endregion
+        }
+
+        private class PQReportBuilder : IReportBuilder
+        {
+            private string _appRoot = GlobalVariable.AppRoot;
+            private List<Account> _accounts = new List<Account>();
+
+            #region Constructor
+            public PQReportBuilder()
+            {
+            }
+            #endregion
+
+            #region Properties
+            public DateTime AsOfDate { get; set; }
+            public int InvestmentMgrID { get; set; }
+            public string ReportTitle { get; set; }
+            public List<InvestmentManager> InvestmentManagers { get; set; }
+            public List<Account> Accounts { get; set; }
+            public List<CreditGroup> CreditGroups { get; set; }
+            public List<LendingLimitBrokerPct> LendingLimitBrokerPct { get; set; }
+            public List<LoanBalance> Loans { get; set; }
+            #endregion
+
+            #region Methods
+
+            public byte[] BuildC1Workbook()
+            {
+                return null;
+
+            }
+
+            public string BuildWorkbookXml()
+            {
+                try
+                {
+                    Dictionary<string, string> templates = this.GetXmlTemplateDictionary();
+                    StringBuilder workbook = new StringBuilder(templates[ReportTemplate.REPORT_TEMPLATE]);
+                    var worksheetInfo = new WorksheetInfo() { WorksheetName = "PEN", TemplateDictionary = templates };
+                    this.BuildWorksheetBody(workbook, worksheetInfo);
+                    return workbook.ToString();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private void BuildWorksheetBody(StringBuilder workbook, WorksheetInfo worksheetInfo)
+            {
+                try
+                {
+
+                    _accounts = this.Accounts.Select(acct => new Account() {
+                                                                                AcctNbr = acct.AcctNbr, 
+                                                                                AcctName = acct.AcctName, 
+                                                                                AcctSN = acct.AcctSN, 
+                                                                                LendingLimitGrpID = acct.LendingLimitGrpID, 
+                                                                                LendingLimit = acct.LendingLimit 
+                                                                            })
+                                            .ToList()
+                                            .Distinct()
+                                            .ToList();
+
+                    this.BuildAccountHeaders(workbook, worksheetInfo);
+
+                    //==================================================================================================================================================================
+                    //Render balances by credit group and account 
+                    //==================================================================================================================================================================
+
+                    var loans = this.Loans.GroupBy(ln => new { ln.AcctNbr, ln.BrkCrGrpID, ln.IsFuture, ln.LendingLimitGrpID })
+                                          .Select(lnGrp => new
+                                                              {
+                                                                  AcctNbr = lnGrp.Key.AcctNbr,
+                                                                  BrkCrGrpID = lnGrp.Key.BrkCrGrpID,
+                                                                  IsFuture = lnGrp.Key.IsFuture,
+                                                                  LendingLimitGrpID = lnGrp.Key.LendingLimitGrpID,
+                                                                  PrincipalDomestic = lnGrp.Sum(ln => ln.PrincipalDomestic),
+                                                                  PrincipalGlobalEUR = lnGrp.Sum(ln => ln.PrincipalGlobalEUR),
+                                                                  PrincipalGlobalUSD = lnGrp.Sum(ln => ln.PrincipalGlobalUSD)
+                                                              })
+                                          .ToList();
+
+                    var templateDict = worksheetInfo.TemplateDictionary;
+                    var loanBalanceBldr = new StringBuilder();
+
+                    foreach (var creditGrp in CreditGroups)
+                    {
+                        var domesticUSDRowBldr = new StringBuilder();
+                        var globalUSDRowBldr = new StringBuilder();
+                        var totalUSDRowBldr = new StringBuilder();
+                        var globalEURRowBldr = new StringBuilder();
+                        var lendingLimitPctRowBldr = new StringBuilder();
+                        var availableBalanceUSDRowBldr = new StringBuilder();
+                        var availableBalanceEURRowBldr = new StringBuilder();
+
+
+                        foreach (var acct in _accounts)
+                        {
+                            var percentLimit = this.LendingLimitBrokerPct.SingleOrDefault(pct => (pct.LendingLimitGrpID == acct.LendingLimitGrpID) && (pct.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                            totalUSDRowBldr.Append(templateDict["CELL.BALANCE.TOTALUSD"]);
+                            lendingLimitPctRowBldr.Append(templateDict["CELL.LENDINGLIMIT.PCT"]);
+                            availableBalanceUSDRowBldr.Append(templateDict["CELL.AVAILABLE.BALANCE.USD"].Replace("<!--PercentLimit-->", (percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+                            availableBalanceEURRowBldr.Append(templateDict["CELL.AVAILABLE.BALANCE.EUR"].Replace("<!--PercentLimit-->", (percentLimit != null) ? Convert.ToString(percentLimit.PercentLimit) : "0"));
+
+
+                            var loanBalance = loans.SingleOrDefault(ln => (ln.LendingLimitGrpID == acct.LendingLimitGrpID) && (ln.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                            domesticUSDRowBldr.Append(templateDict["CELL.DOMESTIC.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalDomestic) : "0"));
+                            globalUSDRowBldr.Append(templateDict["CELL.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalGlobalUSD) : "0"));
+                            globalEURRowBldr.Append(templateDict["CELL.BALANCE"].Replace("<!--TotalPrincipal-->", (loanBalance != null) ? Convert.ToString(loanBalance.PrincipalGlobalEUR) : "0"));
+
+                        }
+
+
+                        var defaultFIPct = this.LendingLimitBrokerPct.SingleOrDefault(pct => ( pct.IsDefaultPctForFI == true ) && (pct.BrkCrGrpID == creditGrp.BrkCrGrpID));
+                        var defaultEQPct = this.LendingLimitBrokerPct.SingleOrDefault(pct => ( pct.IsDefaultPctForEQ == true ) && (pct.BrkCrGrpID == creditGrp.BrkCrGrpID));
+
+
+                        var creditGroupRowBldr = templateDict[ReportTemplate.DEFAULT_WORKSHEET_ROW]
+                                                    .Replace("<!--BrkCrGrpName-->", creditGrp.BrkCrGrpName)
+                                                    .Replace("<!--CreditRating-->", creditGrp.CreditRating)
+                                                    .Replace("<!--CrLimit-->",   Convert.ToString(creditGrp.CrLimit))
+                                                    .Replace("<!--DefaultFIPct-->", ( ( defaultFIPct != null ) ? defaultFIPct.PercentLimit * 100 : 0).ToString("#,##0"))
+                                                    .Replace("<!--DefaultEQPct-->", ((defaultEQPct != null) ? defaultEQPct.PercentLimit * 100 : 0).ToString("#,##0"))
+                                                    .Replace("<!--DomesticUSD-->", domesticUSDRowBldr.ToString())
+                                                    .Replace("<!--GlobalUSD-->", globalUSDRowBldr.ToString())
+                                                    .Replace("<!--TotalUSD-->", totalUSDRowBldr.ToString())
+                                                    .Replace("<!--GlobalEUR-->", globalEURRowBldr.ToString())
+                                                    .Replace("<!--LendingLimitPercentage-->", lendingLimitPctRowBldr.ToString())
+                                                    .Replace("<!--AvailableBalanceUSD-->", availableBalanceUSDRowBldr.ToString())
+                                                    .Replace("<!--AvailableBalanceEUR-->", availableBalanceEURRowBldr.ToString());
+
+                        loanBalanceBldr.Append(creditGroupRowBldr.ToString());
+                    }
+
+                    //Subtotals
+                    var totalLoanBalanceDomesticUSD = new StringBuilder();
+                    var totalLoanBalanceGlobalUSD = new StringBuilder();
+                    var totalLoanBalanceGlobalEUR = new StringBuilder();
+                    var outOfBalanceUSD = new StringBuilder();
+                    var outOfBalanceEUR = new StringBuilder();
+
+                    foreach (var acct in _accounts)
+                    {
+                        totalLoanBalanceDomesticUSD.Append(templateDict["CELL.TOTAL.BALANCE.DOMESTIC.USD"]);
+                        totalLoanBalanceGlobalUSD.Append(templateDict["CELL.TOTAL.BALANCE.GLOBAL.USD"]);
+                        totalLoanBalanceGlobalEUR.Append(templateDict["CELL.TOTAL.BALANCE.GLOBAL.EUR"]);
+
+                        var totalPrincipalUSD = loans.Where(ln => (ln.AcctNbr == acct.AcctNbr)).Sum(ln => ln.PrincipalGlobalUSD + ln.PrincipalDomestic);
+                        var totalPrincipalEUR = loans.Where(ln => (ln.AcctNbr == acct.AcctNbr)).Sum(ln => ln.PrincipalGlobalEUR);
+                        outOfBalanceUSD.Append(templateDict["CELL.OUT.OF.BALANCE.USD"].Replace("<!--TotalPrincipal-->", Convert.ToString(totalPrincipalUSD)));
+                        outOfBalanceEUR.Append(templateDict["CELL.OUT.OF.BALANCE.EUR"].Replace("<!--TotalPrincipal-->", Convert.ToString(totalPrincipalEUR)));
+                    }
+
+                    var investmentMgr = InvestmentManagers.FirstOrDefault();
+                    var investmentMgrName = string.Empty;
+                    if (this.InvestmentMgrID != 0)
+                    {
+                        investmentMgrName = (investmentMgr != null)
+                                ? string.Format("{0} : {1}", "Investment Manager", investmentMgr.InvestmentMgrName)
+                                : string.Empty;
+                    }
+
+                    workbook.Replace("<!--AsOfDate-->", this.AsOfDate.ToString("yyyy-MM-dd"));
+                    workbook.Replace("<!--InvestmentMgrName-->", investmentMgrName);
+                    workbook.Replace("<!--LoanBalances-->", loanBalanceBldr.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceDomesticUSD-->", totalLoanBalanceDomesticUSD.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceGlobalUSD-->", totalLoanBalanceGlobalUSD.ToString());
+                    workbook.Replace("<!--TotalLoanBalanceGlobalEUR-->", totalLoanBalanceGlobalEUR.ToString());
+                    workbook.Replace("<!--OutOfBalanceUSD-->", outOfBalanceUSD.ToString());
+                    workbook.Replace("<!--OutOfBalanceEUR-->", outOfBalanceEUR.ToString());
+                    
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private StringBuilder BuildAccountHeaders(StringBuilder workbook, WorksheetInfo worksheetInfo)
+            {
+                try
+                {
+
+                    var defaultExchRates = this.Accounts.Exists(acct => acct.IsDefaultExchangeRate == true) ?
+                                                this.Accounts.SingleOrDefault(acct => acct.IsDefaultExchangeRate) :
+                                                this.Accounts.FirstOrDefault();
+
+                    if (defaultExchRates == null)
+                    {
+                        throw new ApplicationException("Missing lending limit exchange rate.");
+                    }
+
+                    var templateDict = worksheetInfo.TemplateDictionary;
+
+
+                    var acctNames = new StringBuilder();
+                    var acctNbrs = new StringBuilder();
+                    var acctShortNames = new StringBuilder();
+                    var acctLendingLimitsYEN = new StringBuilder();
+                    var acctLendingLimitsYENUSD = new StringBuilder();
+                    var acctLendingLimitsYENEUR = new StringBuilder();
+                    var acctLendingLimits20PCT = new StringBuilder();
+                    var acctLendingLimits50PCT = new StringBuilder();
+                    var acctLendingLimits100PCT = new StringBuilder();
+
+
+                    const int EXCHRATE_OFFSET = 2;
+                    int relativeCol = EXCHRATE_OFFSET;
+
+                    foreach (var acct in _accounts)
+                    {
+                        acctNames.Append(templateDict["CELL.ACCTNAME"].Replace("<!--AcctName-->", acct.AcctName));
+                        acctNbrs.Append(templateDict["CELL.ACCTNBR"].Replace("<!--AcctNbr-->", acct.AcctNbr));
+                        acctShortNames.Append(templateDict["CELL.ACCTSN"].Replace("<!--AcctSN-->", acct.AcctSN));
+                        acctLendingLimitsYEN.Append(templateDict["CELL.LENDINGLIMIT.YEN"].Replace("<!--LendingLimit-->", Convert.ToString(acct.LendingLimit)));
+
+                        acctLendingLimitsYENUSD.Append(templateDict["CELL.LENDINGLIMIT.YENUSD"].Replace("<!--RelativeColumnIndexForYENUSD-->", Convert.ToString(relativeCol)));
+                        acctLendingLimitsYENEUR.Append(templateDict["CELL.LENDINGLIMIT.YENEUR"].Replace("<!--RelativeColumnIndexForYENEUR-->", Convert.ToString(relativeCol)));
+
+                        acctLendingLimits20PCT.Append(templateDict["CELL.LENDINGLIMIT.20PCT"]);
+                        acctLendingLimits50PCT.Append(templateDict["CELL.LENDINGLIMIT.50PCT"]);
+                        acctLendingLimits100PCT.Append(templateDict["CELL.LENDINGLIMIT.100PCT"]);
+
+                        relativeCol++;
+                    };
+
+                    workbook.Replace("<!--AccountNames-->", acctNames.ToString());
+                    workbook.Replace("<!--AcctNbrs-->", acctNbrs.ToString());
+                    workbook.Replace("<!--AccountShortNames-->", acctShortNames.ToString());
+                    workbook.Replace("<!--LendingLimitsYEN-->", acctLendingLimitsYEN.ToString());
+                    workbook.Replace("<!--LendingLimitsYENUSD-->", acctLendingLimitsYENUSD.ToString());
+                    workbook.Replace("<!--LendingLimitsYENEUR-->", acctLendingLimitsYENEUR.ToString());
+                    workbook.Replace("<!--LendingLimits20PCTYENUSD-->", acctLendingLimits20PCT.ToString());
+                    workbook.Replace("<!--LendingLimits20PCTYENEUR-->", acctLendingLimits20PCT.ToString());
+                    workbook.Replace("<!--LendingLimits50PCTYENUSD-->", acctLendingLimits50PCT.ToString());
+                    workbook.Replace("<!--LendingLimits50PCTYENEUR-->", acctLendingLimits50PCT.ToString());
+                    workbook.Replace("<!--LendingLimits100PCTYENUSD-->", acctLendingLimits100PCT.ToString());
+                    workbook.Replace("<!--LendingLimits100PCTYENEUR-->", acctLendingLimits100PCT.ToString());
+                    workbook.Replace("<!--YENUSD_ExchRate-->", Convert.ToString(defaultExchRates.ExchangeRate_YENUSD));
+                    workbook.Replace("<!--YENEUR_ExchRate-->", Convert.ToString(defaultExchRates.ExchangeRate_YENEUR));
+                    return workbook;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw;
+                }
+            }
+
+            private Dictionary<string, string> GetXmlTemplateDictionary()
+            {
+                try
+                {
+                    string incFilePath = System.Web.HttpContext.Current.Server.MapPath(@"/" + _appRoot);
+                    Dictionary<string, string> xmlTemplateDict = new Dictionary<string, string>();
+
+                    xmlTemplateDict.Add(ReportTemplate.REPORT_TEMPLATE, MOBETTER.SwitchHeaderFooter.ReadIncFiles(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringPQReport.xml")));
+                    xmlTemplateDict.Add(ReportTemplate.DEFAULT_WORKSHEET_ROW, MOBETTER.SwitchHeaderFooter.ReadIncFiles(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringPQReportRow.xml")));
+                    var cellTemplates = XDocument.Load(Path.Combine(incFilePath, "ExcelTemplates", "CBJLendingBalanceMonitoringPQReportCells.xml"))
+                                                 .Root
+                                                 .Elements()
+                                                 .ToList()
+                                                 .Select(c => new
+                                                 {
+                                                     TemplateID = c.Elements().ToList().SingleOrDefault(prop => prop.Name == "ID").Value,
+                                                     Content = c.Elements().ToList().SingleOrDefault(prop => prop.Name == "Template").Value
+                                                 }
+                                                        )
+                                                .ToList();
+
+                    foreach (var cellTemplate in cellTemplates)
+                    {
+                        xmlTemplateDict.Add(cellTemplate.TemplateID, cellTemplate.Content);
+                    }
+                    return xmlTemplateDict;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex);
+                    throw ex;
+                }
+            }
+            #endregion
+        }
+
+        #endregion
+
+        #region Constructor
+        public CBJLendingBalanceMonitoringReportC1(object container)
+        {
+            this._container = container;
+        }
+        #endregion
+
+        #region Properties
+        public override object Container
+        {
+            set { this._container = value; }
+        }
+
+        public DateTime AsOfDate
+        {
+            set { this._asOfDate = value; }
+        }
+
+        public string ReportTitle
+        {
+            set { this._reportTitle = value; }
+        }
+        public int ReportID { get; set; }
+
+        public int InvestmentMgrID { get; set; }
+        #endregion
+
+        #region Factory
+        private void GetDataForReport(SqlDataReader sqlRdr)
+        {
+            try
+            {
+                _investmentManagers = this.CreateInvestmentManagers(sqlRdr);
+                if (!sqlRdr.NextResult()) { return; }
+
+                _accounts = this.CreateAccounts(sqlRdr);
+                if (!sqlRdr.NextResult()) { return; }
+
+                _creditGroups = this.CreateCreditGroups(sqlRdr);
+                if (!sqlRdr.NextResult()) { return; }
+
+                _lendingLimitBrkPct = this.CreateLendingLimitBrkPercentage(sqlRdr);
+                if (!sqlRdr.NextResult()) { return; }
+
+                _loans = this.CreateLoanBalances(sqlRdr);
+
+                _reportBldrDict = this.CreateReportBuilderDict();
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+
+        private List<LendingLimitBrokerPct> CreateLendingLimitBrkPercentage(SqlDataReader lendingLimitBrkPctRdr)
+        {
+            try
+            {
+                _logger.DebugFormat("Preparing to read lending limit broker percentage.");
+                List<LendingLimitBrokerPct> brokerPercentage = new List<LendingLimitBrokerPct>();
+                while (lendingLimitBrkPctRdr.Read())
+                {
+                    int lendingLimitGrpID = 0;
+                    int brkCrGrpID = 0;
+                    decimal percentLimit = 0;
+                    bool isDefaultPctForEQ = false;
+                    bool isDefaultPctForFI = false;
+
+                    LendingLimitBrokerPct brkPct = new LendingLimitBrokerPct()
+                    {
+                        LendingLimitGrpID = Int32.TryParse(Convert.ToString(lendingLimitBrkPctRdr["LendingLimitGrpID"]), out lendingLimitGrpID) ? lendingLimitGrpID : 0,
+                        BrkCrGrpID = Int32.TryParse(Convert.ToString(lendingLimitBrkPctRdr["BrkCrGrpID"]), out brkCrGrpID) ? brkCrGrpID : 0,
+                        PercentLimit = decimal.TryParse(Convert.ToString(lendingLimitBrkPctRdr["PercentLimit"]), out percentLimit) ? percentLimit : 0,
+                        IsDefaultPctForEQ = bool.TryParse(Convert.ToString(lendingLimitBrkPctRdr["IsDefaultPctForEQ"]), out isDefaultPctForEQ) ? isDefaultPctForEQ : false, 
+                        IsDefaultPctForFI = bool.TryParse(Convert.ToString(lendingLimitBrkPctRdr["IsDefaultPctForFI"]), out isDefaultPctForFI) ? isDefaultPctForFI : false
+                    };
+
+                    brokerPercentage.Add(brkPct);
+                }
+                return brokerPercentage;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private List<InvestmentManager> CreateInvestmentManagers(SqlDataReader invMgrRdr)
+        {
+            try
+            {
+                _logger.DebugFormat("Preparing to read investment managers.");
+                List<InvestmentManager> investmentMgrs = new List<InvestmentManager>();
+                while (invMgrRdr.Read())
+                {
+                    int invMgrID = 0;
+
+                    InvestmentManager invMgr = new InvestmentManager()
+                    {
+                        InvestmentMgrID = Int32.TryParse(Convert.ToString(invMgrRdr["InvMgrID"]), out invMgrID) ? invMgrID : 0,
+                        InvestmentMgrName = Convert.ToString(invMgrRdr["InvMgrName"]),
+                    };
+
+                    investmentMgrs.Add(invMgr);
+                }
+                return investmentMgrs;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private List<Account> CreateAccounts(SqlDataReader acctRdr)
+        {
+            try
+            {
+                _logger.DebugFormat("Preparing to read accounts and lending limits.");
+                List<Account> accounts = new List<Account>();
+                while (acctRdr.Read())
+                {
+                    int lendingLimitGrpID = 0;
+                    decimal lendingLimit = 0;
+                    decimal exchangeRateYENUSD = 0;
+                    decimal exchangeRateYENEUR = 0;
+                    bool isDefaultExchRate = false;
+
+                    Account account = new Account()
+                    {
+                        AcctNbr = Convert.ToString(acctRdr["AcctNbr"]),
+                        AcctName = Convert.ToString(acctRdr["AcctName"]),
+                        AcctSN = Convert.ToString(acctRdr["AcctSN"]),
+                        AcctType = Convert.ToString(acctRdr["AcctType"]),
+                        LendingLimitGrpID = Int32.TryParse(Convert.ToString(acctRdr["LendingLimitGrpID"]), out lendingLimitGrpID) ? lendingLimitGrpID : 0,
+                        LendingLimit = decimal.TryParse(Convert.ToString(acctRdr["LendingLimit"]), out lendingLimit) ? lendingLimit : 0,
+                        LendingLimitCurrency = Convert.ToString(acctRdr["LendingLimitCurr"]),
+                        ExchangeRate_YENUSD = decimal.TryParse(Convert.ToString(acctRdr["ExchRate_YENUSD"]), out exchangeRateYENUSD) ? exchangeRateYENUSD : 0,
+                        ExchangeRate_YENEUR = decimal.TryParse(Convert.ToString(acctRdr["ExchRate_YENEUR"]), out exchangeRateYENEUR) ? exchangeRateYENEUR : 0,
+                        IsDefaultExchangeRate = bool.TryParse(Convert.ToString(acctRdr["IsDefaultExchRate"]), out isDefaultExchRate) ? isDefaultExchRate : false
+                    };
+
+                    accounts.Add(account);
+                }
+                return accounts;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private List<CreditGroup> CreateCreditGroups(SqlDataReader creditGrpRdr)
+        {
+            try
+            {
+                _logger.DebugFormat("Preparing to read credit groups.");
+                List<CreditGroup> creditGroups = new List<CreditGroup>();
+                while (creditGrpRdr.Read())
+                {
+                    int creditGrpID = 0;
+                    decimal crLimit = 0;
+
+                    CreditGroup creditGrp = new CreditGroup()
+                    {
+                        BrkCrGrpID = Int32.TryParse(Convert.ToString(creditGrpRdr["BrkCrGrpID"]), out creditGrpID) ? creditGrpID : 0,
+                        BrkCrGrpName = Convert.ToString(creditGrpRdr["BrkCrGrpName"]),
+                        CrLimit = decimal.TryParse(Convert.ToString(creditGrpRdr["CrLimit"]), out crLimit) ? crLimit : 0,
+                        CreditRating = Convert.ToString(creditGrpRdr["CreditRating"])
+                    };
+                    creditGroups.Add(creditGrp);
+                }
+                return creditGroups;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private List<LoanBalance> CreateLoanBalances(SqlDataReader loanBalRdr)
+        {
+            try
+            {
+                _logger.DebugFormat("Preparing to read loan balances.");
+                List<LoanBalance> loanBalances = new List<LoanBalance>();
+                while (loanBalRdr.Read())
+                {
+                    bool isFuture = false;
+                    int creditGrpID = 0;
+                    int lendingLimitGrpID = 0;
+                    decimal principalDomesticUSD = 0;
+                    decimal principalGlobalEUR = 0;
+                    decimal principalGlobalUSD = 0;
+
+                    LoanBalance loanBal = new LoanBalance()
+                    {
+                        AcctNbr = Convert.ToString(loanBalRdr["AcctNbr"]),
+                        BrkCrGrpID = Int32.TryParse(Convert.ToString(loanBalRdr["BrkCrGrpID"]), out creditGrpID) ? creditGrpID : 0,
+                        LendingLimitGrpID = Int32.TryParse(Convert.ToString(loanBalRdr["LendingLimitGrpID"]), out lendingLimitGrpID) ? lendingLimitGrpID : 0,
+                        BucketSecType = Convert.ToString(loanBalRdr["BucketSecType"]),
+                        PrincipalDomestic = decimal.TryParse(Convert.ToString(loanBalRdr["PrincipalDomestic"]), out principalDomesticUSD) ? principalDomesticUSD : 0,
+                        PrincipalGlobalUSD = decimal.TryParse(Convert.ToString(loanBalRdr["PrincipalGlobalUSD"]), out principalGlobalUSD) ? principalGlobalUSD : 0,
+                        PrincipalGlobalEUR = decimal.TryParse(Convert.ToString(loanBalRdr["PrincipalGlobalEUR"]), out principalGlobalEUR) ? principalGlobalEUR : 0,
+                        IsFuture = bool.TryParse(Convert.ToString(loanBalRdr["IsFutureOverride"]), out isFuture) ? isFuture : false
+                    };
+                    loanBalances.Add(loanBal);
+                }
+                return loanBalances;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private void CheckData()
+        {
+            try
+            {
+                if (_accounts.Count == 0)
+                {
+                    _logger.Warn("No accounts found.");
+                    throw new ApplicationException("No accounts found on supplied parameters.");
+                }
+
+                if (this._creditGroups.Count == 0)
+                {
+                    _logger.Warn("No credit groups found.");
+                    throw new ApplicationException("No credit groups found on supplied parameters.");
+                }
+
+
+                if (!this._reportBldrDict.ContainsKey(this.ReportID))
+                {
+                    _logger.WarnFormat("There is no report builder associated with the given Report ID. ReportID:{0}", this.ReportID);
+                    throw new NotSupportedException(string.Format("There is no report builder associated with the given Report ID. ReportID:{0}", this.ReportID));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+
+        }
+        #endregion
+
+        #region Methods
+        private IDictionary<int, IReportBuilder> CreateReportBuilderDict()
+        {
+            try
+            {
+                IDictionary<int, IReportBuilder> reportBldrs = new Dictionary<int, IReportBuilder>();
+                reportBldrs.Add(RPT_ID_DEFAULT, new DefaultReportBuilder()
+                {
+                    AsOfDate = _asOfDate,
+                    InvestmentMgrID = this.InvestmentMgrID,
+                    ReportTitle = this._reportTitle,
+                    Accounts = _accounts,
+                    CreditGroups = _creditGroups,
+                    InvestmentManagers = _investmentManagers,
+                    LendingLimitBrokerPct = _lendingLimitBrkPct,
+                    Loans = _loans
+                });
+
+                reportBldrs.Add(RPT_ID_CBJ_LENDING_BALANCE_MONITORING_PQ, new DefaultReportBuilder()
+                {
+                    AsOfDate = _asOfDate, 
+                    InvestmentMgrID = this.InvestmentMgrID,
+                    ReportTitle = this._reportTitle,
+                    Accounts = _accounts,
+                    CreditGroups = _creditGroups,
+                    InvestmentManagers = _investmentManagers,
+                    LendingLimitBrokerPct = _lendingLimitBrkPct,
+                    Loans = _loans
+                });
+
+                return reportBldrs;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        public override string GetTemplateOutput()
+        {
+            try
+            {
+                return this.GetExtract();
+            }
+            catch (Exception ex)
+            {
+
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        private string GetExtract()
+        {
+            try
+            {
+                this.GetDataForReport((SqlDataReader)this._container);
+                this.CheckData();
+                string workbook = _reportBldrDict[this.ReportID].BuildWorkbookXml();
+                return workbook;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw;
+            }
+        }
+
+        public byte[] CreateReport()
+        {
+            this.GetDataForReport((SqlDataReader)this._container);
+            this.CheckData();
+            byte[] workbook = _reportBldrDict[this.ReportID].BuildC1Workbook();
+            return workbook;
+        }
+
+
+        #endregion
+
+    }
+}
