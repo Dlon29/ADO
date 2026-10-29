@@ -13,16 +13,7 @@ using System.Web;
 using System.Xml.Linq;
 
 namespace MOBETTER.ExcelTemplates
-{
-    /*************************************************************************************************************************************************************************************************************
-        Filename         : CBJLendingBalanceMonitoringReportC1
-        Original Creator :  OFSS  
-        Date created     :  07/06/2021    
-        Description      :  This module used to generate the CBJ Lending Balance Monitoring reports through ComponentOne
- 
-        History:
-        07/06/2021       Adnan Kotawala      Initialized : This is a POC to check how feasible it is to use ComponentOne for excel reports generation
-    **************************************************************************************************************************************************************************************************************/
+{    
 
     public class CBJLendingBalanceMonitoringReportC1 : STBUSA.Excel.AbstractTemplate
     {
