@@ -1,236 +1,262 @@
+
 using System;
 using System.IO;
-using C1.C1Excel;
 
-namespace STBUSA.Excel.Util.Wrapper
+// Actual ComponentOne classes are aliased internally.
+// These aliases will never be exposed to the consuming project.
+using NativeC1XLBook = C1.C1Excel.C1XLBook;
+using NativeXLSheet = C1.C1Excel.XLSheet;
+using NativeXLCell = C1.C1Excel.XLCell;
+using NativeXLColumn = C1.C1Excel.XLColumn;
+using NativeXLStyle = C1.C1Excel.XLStyle;
+
+namespace STBUSA.Excel.Util
 {
-	/// <summary>
-	/// Summary description for WorkBook.
-	/// </summary>
-	public class WorkBook {
-		
-        private C1XLBook _wb;
-		private WorkSheets _cws;
-		public WorkBook(ref object wb){
-            if (wb is C1XLBook)
-            {
-				if(this._wb == null){
-                    this._wb = (C1XLBook)wb;
-				}
-			}
-		}
-
-        public static void SaveAs(string strFileDestination)
-        {
-            
-            C1XLBook workBook = new C1XLBook();
-            try
-            {
-                using (FileStream fs = new FileStream(strFileDestination, FileMode.Open, FileAccess.ReadWrite))
-                {                    
-                    workBook.Load(fs);                    
-                    workBook.Save(fs, FileFormat.Biff8);
-                    fs.Close();
-                }                
-            }
-            catch (Exception e)
-            {                
-                throw e;
-            }
-            finally
-            {
-                
-                workBook.Dispose();
-                GC.Collect(); 
-            }
-        }
-
-		~WorkBook(){
-			if(this._wb != null){				
-                this._wb.Dispose();
-				this._wb = null;
-			}
-		}
-
-		public WorkSheets Sheets{
-			get{
-				if(this._cws == null){
-					object t = (object)this._wb;
-                    _cws = new WorkSheets(ref t);
-				}
-				return _cws;
-			}
-		}
-	}
-
-    public class WorkSheets
+    /// <summary>
+    /// Wrapper for the ComponentOne C1XLBook class.
+    /// </summary>
+    public class C1XLBook : IDisposable
     {
-        private WorkSheet _ws;        
-        private C1XLBook _wb;
+        private readonly NativeC1XLBook _book;
+        private bool _disposed;
 
-        public WorkSheets(ref object wb)
+        public C1XLBook()
         {
-            if (wb is C1XLBook)
-            {
-                if (this._wb == null)
-                {
-                    this._wb = (C1XLBook)wb;
-                }
-            }
+            _book = new NativeC1XLBook();
         }
 
-        ~WorkSheets()
+        public void Load(Stream stream)
         {
-            if (this._wb != null)
-            {                
-                this._wb.Dispose();
-                this._wb = null;
-            }
+            EnsureNotDisposed();
+            _book.Load(stream);
         }
 
-        public WorkSheet this[object index]
+        public void Clear()
+        {
+            EnsureNotDisposed();
+            _book.Clear();
+        }
+
+        public XLSheetCollection Sheets
         {
             get
             {
-                if (this._wb == null)
-                    throw new ApplicationException("Object reference to workbook not set");
-                object t = null;
-                if (index is string)
-                {
-                    t = _wb.Sheets[(string)index];
-                }
-                else
-                {
-                    t = _wb.Sheets[(int)index - 1];
-                }
-                _ws = new WorkSheet(t);
-                return _ws;
+                EnsureNotDisposed();
+                return new XLSheetCollection(_book);
             }
+        }
+
+        public void Save(string filePath)
+        {
+            EnsureNotDisposed();
+            _book.Save(filePath);
+        }
+
+        private void EnsureNotDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException("C1XLBook");
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                _book.Dispose();
+                _disposed = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for the ComponentOne worksheet collection.
+    /// </summary>
+    public class XLSheetCollection
+    {
+        private readonly NativeC1XLBook _book;
+
+        internal XLSheetCollection(NativeC1XLBook book)
+        {
+            _book = book;
+        }
+
+        public XLSheet this[int index]
+        {
+            get
+            {
+                return new XLSheet(_book.Sheets[index]);
+            }
+        }
+
+        public XLSheet Add(string sheetName)
+        {
+            return new XLSheet(_book.Sheets.Add(sheetName));
+        }
+
+        public void RemoveAt(int index)
+        {
+            _book.Sheets.RemoveAt(index);
         }
 
         public int Count
         {
             get
             {
-                return this._wb.Sheets.Count;
-            }
-        }
-
-        public string[] Names
-        {
-            get
-            {
-                int count = this._wb.Sheets.Count;
-                string[] names = new string[count];
-
-                for (int i = 0; i < count; i++)
-                {
-                    names[i] = this._wb.Sheets[i].Name;
-                }
-
-                return names;
+                return _book.Sheets.Count;
             }
         }
     }
 
-	public class WorkSheet{
-		//private msExcel.Worksheet _ws;
-        private XLSheet _ws;
-		private Cells _cc;
+    /// <summary>
+    /// Wrapper for the ComponentOne XLSheet class.
+    /// </summary>
+    public class XLSheet
+    {
+        private readonly NativeXLSheet _sheet;
 
-		public WorkSheet(object ws){
-            if (ws is XLSheet)
-            {
-				if(_ws != null){					
-                    this._ws = null;
-				}
-                this._ws = (XLSheet)ws;
-			}
-		}
+        internal XLSheet(NativeXLSheet sheet)
+        {
+            _sheet = sheet;
+        }
 
-		~WorkSheet(){
-			if(_ws != null){				
-				this._ws = null;
-			}
-		}
-
-		public Cells Cells{
-			get{
-				object t = (object)this._ws;
-				this._cc = new Cells(ref t);
-				return this._cc;
-			}
-		}
-	}
-
-	public class Cells{
-		//private msExcel.Worksheet _ws;
-        private XLSheet _ws;
-		private Range _r;
-		
-		public Cells(ref object ws){
-            if (ws is XLSheet)
-            {
-				if(_ws != null){					
-					this._ws = null;
-				}
-                this._ws = (XLSheet)ws;
-			}
-		}
-
-		~Cells(){
-			if(_ws != null){				
-				this._ws = null;
-			}
-		}
-
-		public Range this[object rowIndex, object columnIndex] {
-			get {
-				if(this._ws == null)
-					throw new ApplicationException("Object reference to worksheet not set");
-				object t = _ws.GetCell((int)rowIndex -1, (int)columnIndex -1);
-				this._r = new Range(ref t);
-				return this._r;
-			}			
-		}
-	}
-
-	public class Range{		
-        private XLCell _r;
-		public enum RangeFormat {Text, Number, Date}; 
- 
-		public Range(ref object r){
-            if (r is XLCell)
-            {
-				if(this._r != null){					
-					_r = null;
-				}
-                this._r = (XLCell)r;
-			}
-		}
-
-		~Range(){
-			if(this._r != null){				
-				_r = null;
-			}
-		}
-
-		public object Text{
-			get{
-				return this._r.Text.ToString().Trim();
-			}
-		}
-
-        public object Self
+        public C1ExcelColumnCollection Columns
         {
             get
             {
-                return this._r;
+                return new C1ExcelColumnCollection(_sheet);
             }
         }
 
-		public void Format(RangeFormat format){			
-            this._r.Style.Format = "@";
-		}
-	}
+        public XLCell this[int row, int column]
+        {
+            get
+            {
+                return new XLCell(_sheet[row, column]);
+            }
+        }
+
+        public XLCell GetCell(int row, int column)
+        {
+            NativeXLCell cell = _sheet.GetCell(row, column);
+
+            if (cell == null)
+                return null;
+
+            return new XLCell(cell);
+        }
+
+        public void CopyFormula(
+            int sourceRow,
+            int sourceColumn,
+            int targetRow,
+            int targetColumn)
+        {
+            _sheet.CopyFormula(
+                sourceRow,
+                sourceColumn,
+                targetRow,
+                targetColumn);
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for the ComponentOne column collection.
+    /// </summary>
+    public class C1ExcelColumnCollection
+    {
+        private readonly NativeXLSheet _sheet;
+
+        internal C1ExcelColumnCollection(NativeXLSheet sheet)
+        {
+            _sheet = sheet;
+        }
+
+        public C1ExcelColumn this[int index]
+        {
+            get
+            {
+                return new C1ExcelColumn(_sheet.Columns[index]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for an individual ComponentOne column.
+    /// </summary>
+    public class C1ExcelColumn
+    {
+        private readonly NativeXLColumn _column;
+
+        internal C1ExcelColumn(NativeXLColumn column)
+        {
+            _column = column;
+        }
+
+        public int Width
+        {
+            get
+            {
+                return _column.Width;
+            }
+            set
+            {
+                _column.Width = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for the ComponentOne XLCell class.
+    /// </summary>
+    public class XLCell
+    {
+        private readonly NativeXLCell _cell;
+
+        internal XLCell(NativeXLCell cell)
+        {
+            _cell = cell;
+        }
+
+        public object Value
+        {
+            get
+            {
+                return _cell.Value;
+            }
+            set
+            {
+                _cell.Value = value;
+            }
+        }
+
+        public string Formula
+        {
+            get
+            {
+                return _cell.Formula;
+            }
+            set
+            {
+                _cell.Formula = value;
+            }
+        }
+
+        // Object is used instead of exposing C1.C1Excel.XLStyle.
+        public object Style
+        {
+            get
+            {
+                return _cell.Style;
+            }
+            set
+            {
+                _cell.Style = (NativeXLStyle)value;
+            }
+        }
+
+        public void SetValue(object value, object style)
+        {
+            _cell.SetValue(value, (NativeXLStyle)style);
+        }
+    }
 }
