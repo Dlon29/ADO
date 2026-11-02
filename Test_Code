@@ -1,81 +1,78 @@
 
 using System;
-using System.IO;
+using System.Reflection;
 
-// Actual ComponentOne classes are aliased internally.
-// These aliases will never be exposed to the consuming project.
 using NativeC1XLBook = C1.C1Excel.C1XLBook;
 using NativeXLSheet = C1.C1Excel.XLSheet;
-using NativeXLCell = C1.C1Excel.XLCell;
-using NativeXLColumn = C1.C1Excel.XLColumn;
-using NativeXLStyle = C1.C1Excel.XLStyle;
+using NativeFileFormat = C1.C1Excel.FileFormat;
 
-namespace STBUSA.Excel.Util
+namespace STBUSA.Excel.Util.C1Compatibility
 {
     /// <summary>
-    /// Wrapper for the ComponentOne C1XLBook class.
+    /// Compatibility wrapper for Excel operations
+    /// used by SingleLoanFromAvailability.
     /// </summary>
-    public class C1XLBook : IDisposable
+    public enum FileFormat
+    {
+        Biff8,
+        OpenXml
+    }
+
+    /// <summary>
+    /// Wrapper for ComponentOne C1XLBook.
+    /// </summary>
+    public sealed class C1XLBook : IDisposable
     {
         private readonly NativeC1XLBook _book;
-        private bool _disposed;
 
         public C1XLBook()
         {
             _book = new NativeC1XLBook();
         }
 
-        public void Load(Stream stream)
+        public void Load(string filePath, FileFormat format)
         {
-            EnsureNotDisposed();
-            _book.Load(stream);
+            NativeFileFormat nativeFormat;
+
+            switch (format)
+            {
+                case FileFormat.Biff8:
+                    nativeFormat = NativeFileFormat.Biff8;
+                    break;
+
+                case FileFormat.OpenXml:
+                    nativeFormat = NativeFileFormat.OpenXml;
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException("format");
+            }
+
+            _book.Load(filePath, nativeFormat);
         }
 
-        public void Clear()
-        {
-            EnsureNotDisposed();
-            _book.Clear();
-        }
-
-        public XLSheetCollection Sheets
+        public XLSheets Sheets
         {
             get
             {
-                EnsureNotDisposed();
-                return new XLSheetCollection(_book);
+                return new XLSheets(_book);
             }
-        }
-
-        public void Save(string filePath)
-        {
-            EnsureNotDisposed();
-            _book.Save(filePath);
-        }
-
-        private void EnsureNotDisposed()
-        {
-            if (_disposed)
-                throw new ObjectDisposedException("C1XLBook");
         }
 
         public void Dispose()
         {
-            if (!_disposed)
-            {
-                _book.Dispose();
-                _disposed = true;
-            }
+            _book.Dispose();
         }
     }
 
     /// <summary>
-    /// Wrapper for the ComponentOne worksheet collection.
+    /// Wrapper for ComponentOne worksheet collection.
     /// </summary>
-    public class XLSheetCollection
+    public sealed class XLSheets
     {
         private readonly NativeC1XLBook _book;
 
-        internal XLSheetCollection(NativeC1XLBook book)
+        internal XLSheets(NativeC1XLBook book)
         {
             _book = book;
         }
@@ -87,44 +84,18 @@ namespace STBUSA.Excel.Util
                 return new XLSheet(_book.Sheets[index]);
             }
         }
-
-        public XLSheet Add(string sheetName)
-        {
-            return new XLSheet(_book.Sheets.Add(sheetName));
-        }
-
-        public void RemoveAt(int index)
-        {
-            _book.Sheets.RemoveAt(index);
-        }
-
-        public int Count
-        {
-            get
-            {
-                return _book.Sheets.Count;
-            }
-        }
     }
 
     /// <summary>
-    /// Wrapper for the ComponentOne XLSheet class.
+    /// Wrapper for ComponentOne XLSheet.
     /// </summary>
-    public class XLSheet
+    public sealed class XLSheet
     {
         private readonly NativeXLSheet _sheet;
 
         internal XLSheet(NativeXLSheet sheet)
         {
             _sheet = sheet;
-        }
-
-        public C1ExcelColumnCollection Columns
-        {
-            get
-            {
-                return new C1ExcelColumnCollection(_sheet);
-            }
         }
 
         public XLCell this[int row, int column]
@@ -134,129 +105,36 @@ namespace STBUSA.Excel.Util
                 return new XLCell(_sheet[row, column]);
             }
         }
-
-        public XLCell GetCell(int row, int column)
-        {
-            NativeXLCell cell = _sheet.GetCell(row, column);
-
-            if (cell == null)
-                return null;
-
-            return new XLCell(cell);
-        }
-
-        public void CopyFormula(
-            int sourceRow,
-            int sourceColumn,
-            int targetRow,
-            int targetColumn)
-        {
-            _sheet.CopyFormula(
-                sourceRow,
-                sourceColumn,
-                targetRow,
-                targetColumn);
-        }
     }
 
     /// <summary>
-    /// Wrapper for the ComponentOne column collection.
+    /// Wrapper for ComponentOne Excel cell.
     /// </summary>
-    public class C1ExcelColumnCollection
+    public sealed class XLCell
     {
-        private readonly NativeXLSheet _sheet;
+        private readonly object _cell;
 
-        internal C1ExcelColumnCollection(NativeXLSheet sheet)
-        {
-            _sheet = sheet;
-        }
-
-        public C1ExcelColumn this[int index]
-        {
-            get
-            {
-                return new C1ExcelColumn(_sheet.Columns[index]);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Wrapper for an individual ComponentOne column.
-    /// </summary>
-    public class C1ExcelColumn
-    {
-        private readonly NativeXLColumn _column;
-
-        internal C1ExcelColumn(NativeXLColumn column)
-        {
-            _column = column;
-        }
-
-        public int Width
-        {
-            get
-            {
-                return _column.Width;
-            }
-            set
-            {
-                _column.Width = value;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Wrapper for the ComponentOne XLCell class.
-    /// </summary>
-    public class XLCell
-    {
-        private readonly NativeXLCell _cell;
-
-        internal XLCell(NativeXLCell cell)
+        internal XLCell(object cell)
         {
             _cell = cell;
         }
 
-        public object Value
+        public string Text
         {
             get
             {
-                return _cell.Value;
-            }
-            set
-            {
-                _cell.Value = value;
-            }
-        }
+                PropertyInfo textProperty =
+                    _cell.GetType().GetProperty("Text");
 
-        public string Formula
-        {
-            get
-            {
-                return _cell.Formula;
-            }
-            set
-            {
-                _cell.Formula = value;
-            }
-        }
+                if (textProperty == null)
+                {
+                    throw new InvalidOperationException(
+                        "Text property not found on Excel cell.");
+                }
 
-        // Object is used instead of exposing C1.C1Excel.XLStyle.
-        public object Style
-        {
-            get
-            {
-                return _cell.Style;
+                return Convert.ToString(
+                    textProperty.GetValue(_cell, null));
             }
-            set
-            {
-                _cell.Style = (NativeXLStyle)value;
-            }
-        }
-
-        public void SetValue(object value, object style)
-        {
-            _cell.SetValue(value, (NativeXLStyle)style);
         }
     }
 }
