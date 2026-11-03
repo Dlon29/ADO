@@ -1,236 +1,1662 @@
-using System;
-using System.IO;
 using C1.C1Excel;
+using Common.Logging;
+using STBUSA.Excel.Util;
+using STBUSA.Excel.Util.Wrapper;
+using System;
+using System.Collections;
+using System.ComponentModel;
+using System.Configuration;
+using System.Data;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Web;
+using System.Web.UI;
+using System.Web.UI.WebControls;
 
-namespace STBUSA.Excel.Util.Wrapper
+namespace Lava.RepoRequest
 {
-	/// <summary>
-	/// Summary description for WorkBook.
-	/// </summary>
-	public class WorkBook {
-		
-        private C1XLBook _wb;
-		private WorkSheets _cws;
-		public WorkBook(ref object wb){
-            if (wb is C1XLBook)
-            {
-				if(this._wb == null){
-                    this._wb = (C1XLBook)wb;
-				}
-			}
-		}
+    public partial class RepoRequestUpload : Lava.PageTemplate
+    {
+        #region Variables
+        protected string _section = "RepoRequest";
+        protected string _page = "RepoRequest";
+        protected string _pageTitle = "Repo Request Upload";
+        protected StringBuilder _ErrorString;
+        protected bool IsUI = true;
+        protected string _UserAccess = "";
+        protected string _ModuleName = "RepoRequestUpload";
+        protected int _PageNo = 1;
+        protected int _TotPage;
+        protected string PageNofM = "0 of 0";
+        protected string _PageChange = "False";
+        private int _PAGESIZE = GlobalVariable.LargePageSize;
+        private string _BussDate = GlobalVariable.SystemDate;
+        int countExcel = 0;
+        int countRepoTicket = 0;
 
-        public static void SaveAs(string strFileDestination)
+        #endregion
+
+        #region Error Logging variable declaration
+        private ILog _logger = LogManager.GetLogger(typeof(RepoRequestUpload));
+        private string ModuleName = "RepoRequestUpload";
+        private string MethodName = "";
+        private string ErrorMessageToLog = Common.GetMessage("Common", "ErrorMessageToLog");
+        #endregion
+
+        #region Constants
+        private const string _ErrorInfoNone = "NONE";
+        private const string _ErrorInfoBlank = "";
+        protected string _show_info_row = "NONE";
+        protected string _show_error_row = "NONE";
+
+        private const string UPLOAD_NEW_REPO = "UPLOAD_NEW_REPO";
+        private const string DELETE_REPO_TEMPLATE = "DELETE_REPO_TEMPLATE";
+        private const string FETCH_FILES = "FETCH_FILES";
+        private const string UPLOAD_FILES = "UPLOAD_FILES";
+        private const string SEARCH_REPO = "SEARCH_REPO";
+        private const string GOTO_DASHBOARD = "GOTO_DASHBOARD";
+        private const string FIRST = "FIRST";
+        private const string PREVIOUS = "PREVIOUS";
+        private const string NEXT = "NEXT";
+        private const string LAST = "LAST";
+        private const string GOTO1 = "GOTO1";
+        private const string GOTO2 = "GOTO2";
+        string STBUSA_APP_FILES = ConfigurationManager.AppSettings["RepoTemplateUploadArchivePath"];// @"\STBUSA APP FILES\INTRA-NET\LAVA\ARCHIVED\";
+        #endregion
+
+
+        #region Enum
+        protected enum enumRepoColumnsNameFromUploadTemplate
         {
-            
-            C1XLBook workBook = new C1XLBook();
+            [Description("FileName")]
+            FileName,
+            [Description("RepoUploadSheetNbr")]
+            RepoUploadSheetNbr,
+            [Description("Customer")]
+            Customer,
+            [Description("AccountNbr")]
+            AccountNbr,
+            [Description("Trade_Date")]
+            Trade_Date,
+            [Description("Start_Date")]
+            Start_Date,
+            [Description("End_Date")]
+            End_Date,
+            [Description("SecCategory")]
+            SecCategory,
+            [Description("Security_ISIN")]
+            Security_ISIN,
+            [Description("CCY")]
+            CCY,
+            [Description("FaceAmount")]
+            FaceAmount,
+            [Description("Other")]
+            Other
+        }
+
+        protected enum enumErrorDescription
+        {
+            [Description("FileName")]
+            FileName,
+            [Description("Error")]
+            Error
+        }
+        enum grdRepoUploadMapping
+        {
+            chkInclude,
+            RepoExcelUploadId,
+            RepoTicketID,
+            RepoUploadFileShortName,
+            RepoUploadFileName,
+            CreatedBy,
+            CreatedDate
+        }
+
+        enum enumSaveSQLIdentifier
+        {
+            SAVE_UPLOAD_NEW_REPO_REQUEST,
+            DELETE_UPLOADED_REPO_REQUEST
+        }
+
+
+        enum enumGetSQLIdentifier
+        {
+            GET_UPLOADED_NEW_REPO_REQUEST
+        }
+
+
+        #endregion
+
+        protected override void OnInit(EventArgs e)
+        {
+            base.OnInit(e);
+            if (User.Identity.IsAuthenticated) ViewStateUserKey = User.Identity.Name;
+        }
+        protected void Page_Load(object sender, EventArgs e)
+        {
             try
             {
-                using (FileStream fs = new FileStream(strFileDestination, FileMode.Open, FileAccess.ReadWrite))
-                {                    
-                    workBook.Load(fs);                    
-                    workBook.Save(fs, FileFormat.Biff8);
-                    fs.Close();
-                }                
-            }
-            catch (Exception e)
-            {                
-                throw e;
-            }
-            finally
-            {
-                
-                workBook.Dispose();
-                GC.Collect(); 
-            }
-        }
+                MethodName = "Page_Load";
+                _AccessTypeCode = getUserAppAccessTypeCode(_ModuleName, clsUI.NTUserName);
+                _AccessTypeCode = _AccessTypeCode == Common.UserAccessCode.F.ToString() ? getUserAppAccessTypeCode(_ModuleName, clsUI.NTUserName) : _AccessTypeCode;
 
-		~WorkBook(){
-			if(this._wb != null){				
-                this._wb.Dispose();
-				this._wb = null;
-			}
-		}
+                _show_error_row = _ErrorInfoNone;
 
-		public WorkSheets Sheets{
-			get{
-				if(this._cws == null){
-					object t = (object)this._wb;
-                    _cws = new WorkSheets(ref t);
-				}
-				return _cws;
-			}
-		}
-	}
-
-    public class WorkSheets
-    {
-        private WorkSheet _ws;        
-        private C1XLBook _wb;
-
-        public WorkSheets(ref object wb)
-        {
-            if (wb is C1XLBook)
-            {
-                if (this._wb == null)
+                if (_AccessTypeCode == Common.UserAccessCode.R.ToString())
                 {
-                    this._wb = (C1XLBook)wb;
+                    _UserAccess = Common.UserAccess.ReadOnly.ToString();
+                    EnableDisablePageButtons(false);
+                }
+                else if (_AccessTypeCode == Common.UserAccessCode.N.ToString())
+                {
+                    Response.Redirect(string.Format("~/Error/PageDenied.aspx?{0}&{1}", "AuthorizationFail", _page));
+                }
+
+                RetainSessionValues();
+
+                legHardBlock.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_HardBlock"]);
+                legSoftBlock.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_SoftBlock"]);                
+
+                if (!Page.IsPostBack)
+                {
+                    txtAsOfDate.Text = _BussDate;
+                    LoadUploadRepoTemplates();
+                    lnkBulkLocation.HRef = ConfigurationManager.AppSettings["RepoTemplateBulkUploadPath"];
+                    lnkBulkLocation.InnerText = ConfigurationManager.AppSettings["RepoTemplateBulkUploadPath"];
                 }
             }
+            catch (Exception Exc)
+            {
+                _ErrorString = new StringBuilder();
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                _show_error_row = "";
+            }
+
         }
 
-        ~WorkSheets()
+        private void EnableDisablePageButtons(bool val)
         {
-            if (this._wb != null)
-            {                
-                this._wb.Dispose();
-                this._wb = null;
+            this.cmdUploadNewRepo.Enabled = false;
+            this.btnFetchFiles.Enabled = false;
+            this.btnUploadFiles.Enabled = false;
+            this.cmdDeleteRepoTemplate.Enabled = false;
+        }
+
+        private void RetainSessionValues()
+        {
+            try
+            {
+                // take pageing information from hidden controls
+                if (Request["hdnPageNo"] != null)
+                {
+                    _PageNo = Int32.Parse(Request["hdnPageNo"].ToString());
+                }
+
+                if (Request["hdnTotPage"] != null)
+                {
+                    _TotPage = Int32.Parse(Request["hdnTotPage"].ToString());
+                }
+            }
+            catch (Exception)
+            {
+                _PageNo = 0;
+                _TotPage = 0;
+            }
+            PageNofM = _PageNo.ToString() + " of " + _TotPage.ToString();
+
+            return;
+        }
+
+        /// <summary>
+        /// Button click for all the button commands
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        protected void Button_Click(object sender, System.Web.UI.WebControls.CommandEventArgs e)
+        {
+            MethodName = "Button_Click()";
+            DataTable dtRepo = new DataTable();
+            dtRepo.Columns.Add("FilePath");
+            dtRepo.Columns.Add("FileName");
+
+            try
+            {
+                _ErrorString = new StringBuilder("");
+                switch (e.CommandName.ToUpper())
+                {
+                    // Upload Repo Ticket from 1st TAB.
+                    case UPLOAD_NEW_REPO:
+                        if (ValidateUploadNewRepoRequest() == false)
+                        {
+                            _show_error_row = _ErrorInfoBlank;
+                            return;
+                        }
+                        else
+                        {
+                            _show_error_row = _ErrorInfoNone;
+                            _show_info_row = _ErrorInfoBlank;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "NewTicketsUploaded"));
+                        }
+                        break;
+
+                    case DELETE_REPO_TEMPLATE:
+                        if (DeleteRepoTemplate() == false)  //false -- error
+                        {
+                            _show_error_row = _ErrorInfoBlank;
+                            return;
+                        }
+                        else
+                        {
+                            _show_error_row = _ErrorInfoNone;
+                            _show_info_row = _ErrorInfoBlank;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "DeleteRepoTickets"));
+                        }
+                        break;
+
+                    case FETCH_FILES:
+                        string repoPath = ConfigurationManager.AppSettings["RepoTemplateBulkUploadPath"].ToString();
+                        string[] Extn = ConfigurationManager.AppSettings["RepoFileExtensionAllowed"].ToString().Split(",".ToCharArray());
+
+                        if (System.IO.Directory.Exists(repoPath))
+                        {
+                            foreach (string file in Directory.GetFiles(repoPath))
+                            {
+                                if (Extn.Contains(Path.GetExtension(file)))
+                                {
+                                    DataRow dr = dtRepo.NewRow();
+                                    dr["FileName"] = file.ToString().Substring(file.LastIndexOf("\\") + 1);
+                                    dr["FilePath"] = file.Replace("\\", "\\\\");
+                                    dtRepo.Rows.Add(dr);
+                                }
+                            }
+
+                            if (dtRepo.Rows.Count > 0)
+                            {
+                                pnlFetchFiles.Visible = false;
+                                grdBulkRepoFileSelect.DataSource = dtRepo;
+                                grdBulkRepoFileSelect.DataBind();
+                                btnFetchFiles.Enabled = false;
+                            }
+                            else
+                            {
+                                pnlFetchFiles.Visible = true;
+                                btnFetchFiles.Enabled = true;
+                            }
+                        }
+                        else
+                        {
+                            System.IO.Directory.CreateDirectory(repoPath);
+                            //_ErrorString = new StringBuilder("");
+                            //_show_error_row = _ErrorInfoBlank;
+                            //_show_info_row = _ErrorInfoNone;
+                            //_ErrorString.Append(Common.GetMessage("RepoRequest", "PathDoesntExist"));
+                        }
+                        LoadUploadRepoTemplates();
+                        break;
+
+                    case UPLOAD_FILES:
+                        StringBuilder strMsg = new StringBuilder();
+                        btnFetchFiles.Enabled = true;
+                        for (int iRowCount = 0; iRowCount < grdBulkRepoFileSelect.Rows.Count; iRowCount++)
+                        {
+                            GridViewRow row = grdBulkRepoFileSelect.Rows[iRowCount];
+                            CheckBox chkFileSelect = row.FindControl("chkFileSelect") as CheckBox;
+
+                            if (chkFileSelect.Checked)
+                            {
+                                Label lblFileName = row.FindControl("lblFileName") as Label;
+                                HiddenField hdnFilePath = row.FindControl("hdnFilePath") as HiddenField;
+
+                                DataRow dr = dtRepo.NewRow();
+                                dr["FileName"] = lblFileName.Text;
+                                dr["FilePath"] = hdnFilePath.Value;
+                                dtRepo.Rows.Add(dr);
+                            }
+                        }
+
+                        BulkUploadNewRepoRequest(dtRepo, ref strMsg);
+                        if (strMsg.Length > 0)
+                        {
+                            _show_error_row = _ErrorInfoBlank;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "BulkUploadFailure") + "<br/>" + strMsg);
+                        }
+                        else
+                        {
+                            _show_error_row = _ErrorInfoNone;
+                            _show_info_row = _ErrorInfoBlank;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "BulkUploadSuccess"));
+                        }
+
+                        break;
+
+                    case SEARCH_REPO:
+                        LoadUploadRepoTemplates();
+
+                        break;
+
+                    case GOTO_DASHBOARD:
+                        Response.Redirect(Common.REPODASHBOARDPAGEURL);
+                        break;
+
+                }
+
+
+            }
+            catch (Exception ex)
+            {
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append(ex.Message);
+                _show_info_row = _ErrorInfoNone;
+                _show_error_row = _ErrorInfoBlank;
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
             }
         }
 
-        public WorkSheet this[object index]
+        private Boolean DeleteRepoTemplate()
         {
-            get
+            DataSet DS = new DataSet();
+            DataTable DT = new DataTable("repoData");
+            DT.Columns.Add("RepoExcelUploadId", typeof(int));
+
+            bool isValid = false;
+            bool isSaveSuccessful = false;
+            int nReturnValue = 0;
+            MethodName = "DeleteRepoTemplate()";
+            Byte[] byteData = null;
+            try
             {
-                if (this._wb == null)
-                    throw new ApplicationException("Object reference to workbook not set");
-                object t = null;
-                if (index is string)
+
+                for (int iRowCount = 0; iRowCount < grdRepoUpload.Rows.Count; iRowCount++)
                 {
-                    t = _wb.Sheets[(string)index];
+                    GridViewRow row = grdRepoUpload.Rows[iRowCount];
+                    CheckBox chkInclude = row.FindControl("chkInclude") as CheckBox;
+
+
+                    if (chkInclude.Checked)
+                    {
+                        Label RepoExcelUploadId = row.FindControl("lblRepoExcelUploadId") as Label;
+
+                        DataRow DR = DT.NewRow();
+                        DR["RepoExcelUploadId"] = Convert.ToInt32(RepoExcelUploadId.Text);
+                        DT.Rows.Add(DR);
+                    }
+                }
+
+
+                StringWriter sw = new StringWriter();
+                DT.WriteXml(sw);
+
+                DS = SaveMethodCall(enumSaveSQLIdentifier.DELETE_UPLOADED_REPO_REQUEST.ToString(), ref isValid, ref nReturnValue, "", sw.ToString(), clsUI.NTUserName, "", "", true, "", byteData);
+                isSaveSuccessful = isValid;
+
+                if (isValid)
+                    LoadUploadRepoTemplates();
+            }
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('flUpload');>\n");
+                _ErrorString.Append(Exc.Message);
+                _ErrorString.Append("</a> <br>\n");
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                isSaveSuccessful = false;
+            }
+            return isSaveSuccessful;
+        }
+
+
+        /// <summary>
+        /// Validate While uploading New Repo Request from Excel
+        /// </summary>
+        /// <returns></returns>
+        private bool ValidateUploadNewRepoRequest_Old()  // False error
+        {
+            _show_error_row = _ErrorInfoNone;
+            _ErrorString = new StringBuilder("");
+            bool IsValid = true;
+            DataSet objDS = new DataSet();
+            string clientName = string.Empty;
+            MethodName = "ValidateUploadNewRepoRequest()";
+            int NoOfSheets;
+            DataTable DT = new DataTable("repoData");
+            bool isRepoAck = false;
+            string deleteFile = string.Empty;
+
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Customer.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.End_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.CCY.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Other.ToString());
+
+            try
+            {
+                if (flUpload.PostedFile.FileName == "")
+                {
+                    _show_error_row = _ErrorInfoBlank;
+                    _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('flUpload');>\n");
+                    _ErrorString.Append(Common.GetMessage("RepoRequest", "SelectFileToUpload"));
+                    _ErrorString.Append("</a> <br>\n");
+                    IsValid = false;
+                }
+
+                if (IsValid == true)
+                {
+                    string fileName = flUpload.PostedFile.FileName;
+
+                    string _ExportPath = STBUSA_APP_FILES + clsUI.NTUserName + @"\";
+
+
+                    _ExportPath += DateTime.Now.ToString("MM-dd-yyyy") + @"\";
+
+                    if (!Directory.Exists(_ExportPath))
+                        System.IO.Directory.CreateDirectory(_ExportPath);
+
+                    string savedFileNamePath = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(fileName) + "_" + DateTime.Now.ToString("HHmmss") + System.IO.Path.GetExtension(fileName);
+
+                    flUpload.PostedFile.SaveAs(savedFileNamePath);
+                    flUpload.PostedFile.InputStream.Flush();
+                    flUpload.PostedFile.InputStream.Close();
+                    flUpload.PostedFile.InputStream.Dispose();
+
+                    //Read Excel Data
+                    MSExcelFileParser objParser = new MSExcelFileParser(savedFileNamePath);
+                    objParser.Parse();
+
+                    WorkBook wb = objParser.WorkBook;
+                    NoOfSheets = wb.Sheets.Count;
+
+
+                    for (int i = 1; i <= NoOfSheets; i++)  // Loop For Sheets
+                    {
+                        WorkSheet sheet = wb.Sheets[i];
+                        clientName = sheet.Cells[3, 2].Text.ToString();
+
+                        for (int row = 8; row <= 12; row++)
+                        {
+                            if (!String.IsNullOrEmpty(sheet.Cells[row, 2].Text.ToString()))
+                            {
+                                DataRow _row = DT.NewRow();
+
+                                _row[enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString()] = i;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Customer.ToString()] = sheet.Cells[row, 2].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString()] = sheet.Cells[row, 3].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString()] = sheet.Cells[row, 4].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString()] = sheet.Cells[row, 5].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.End_Date.ToString()] = sheet.Cells[row, 6].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString()] = sheet.Cells[row, 7].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString()] = sheet.Cells[row, 8].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.CCY.ToString()] = sheet.Cells[row, 9].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString()] = sheet.Cells[row, 10].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Other.ToString()] = sheet.Cells[row, 11].Text;
+
+                                DT.Rows.Add(_row);
+                            }
+                        }
+
+                    } // For loop End  of Sheets
+
+                    if (DT != null)
+                    {
+                        if (DT.Rows.Count > 0)
+                        {
+                            StringWriter sw = new StringWriter();
+                            DT.WriteXml(sw);
+                            int nReturnValue = 0;
+                            Byte[] byteData = null;
+                            objDS = SaveMethodCall(enumSaveSQLIdentifier.SAVE_UPLOAD_NEW_REPO_REQUEST.ToString(), ref IsValid, ref nReturnValue, savedFileNamePath, sw.ToString(), clsUI.NTUserName, System.IO.Path.GetFileName(fileName).ToString(), txtUploadFileShortName.Text, chkSingleUploadDuplicate.Checked, clientName, byteData);
+
+
+                            //if (nReturnValue == 2)
+                            //{
+                            //    IsValid = false;
+                            //    if (objDS.Tables.Count > 0)
+                            //    {
+                            //        if (objDS.Tables[0].Rows.Count > 0)
+                            //        {
+                            //            _ErrorString.Append(Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ".");
+                            //        }
+                            //    }
+                            //    _show_error_row = _ErrorInfoBlank;
+                            //}
+                            //else 
+                            if (nReturnValue == 3)
+                            {
+                                IsValid = false;
+                                _ErrorString.Append(System.IO.Path.GetFileName(fileName).ToString() + " - " + Common.GetMessage("RepoRequest", "DuplicateRequest"));
+                                _show_error_row = _ErrorInfoBlank;
+
+                                File.Delete(savedFileNamePath);
+                            }
+                            else
+                            {
+                                //Delete file from upload path after successful upload.
+                                //File.Delete(flUpload.PostedFile.FileName.ToString());
+
+                                if (objDS.Tables.Count > 0)
+                                {
+                                    if (objDS.Tables[0].Rows.Count > 0)
+                                    {
+                                        //_ErrorString.Append(Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ".");
+                                        //strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ". <br/>");
+                                        DataRow[] drDuplicate = objDS.Tables[0].Select("isDuplicate = 1");
+                                        if (drDuplicate.Count() > 0)
+                                        {
+                                            _show_error_row = _ErrorInfoBlank;
+                                            _ErrorString.Append(Common.GetMessage("RepoRequest", "PartialDuplicateRequest"));
+                                        }
+                                    }
+                                }
+
+                                txtUploadFileShortName.Text = "";
+                                if (objDS.Tables.Count > 1)
+                                {
+                                    if (objDS.Tables[1].Rows.Count > 0)
+                                    {
+                                        isRepoAck = Convert.ToBoolean(objDS.Tables[1].Rows[0]["IsRepoUploadAckRequired"]);
+                                    }
+                                }
+
+                                if (isRepoAck)
+                                {
+                                    SendRepoUploadAck(objDS);
+                                }
+                            }
+
+                            deleteFile = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(savedFileNamePath) + Path.GetExtension(savedFileNamePath) + "_saveas" + Path.GetExtension(savedFileNamePath);
+                            File.Delete(deleteFile);
+                        }
+                        else
+                        {
+                            IsValid = false;
+                            txtUploadFileShortName.Text = string.Empty;
+                            chkSingleUploadDuplicate.Checked = true;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "RepoRequestNotFound") + System.IO.Path.GetFileName(fileName) + "<br/>");
+                        }
+                    }
+
+                    LoadUploadRepoTemplates();
+                }
+            }
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('flUpload');>\n");
+                _ErrorString.Append(Exc.Message);
+                _ErrorString.Append("</a> <br>\n");
+                IsValid = false;
+            }
+
+            return IsValid;
+        }
+
+        /// <summary>
+        /// Validate While uploading New Repo Request from Excel
+        /// </summary>
+        /// <returns></returns>
+        private bool ValidateUploadNewRepoRequest()  // False error
+        {
+            _show_error_row = _ErrorInfoNone;
+            _ErrorString = new StringBuilder("");
+            bool IsValid = true;
+            DataSet objDS = new DataSet();
+            string clientName = string.Empty;
+            MethodName = "ValidateUploadNewRepoRequest()";
+            int NoOfSheets;
+            DataTable DT = new DataTable("repoData");
+            bool isRepoAck = false;
+            string deleteFile = string.Empty;
+
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Customer.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.End_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.CCY.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Other.ToString());
+
+            try
+            {
+                if (flUpload.PostedFile.FileName == "")
+                {
+                    _show_error_row = _ErrorInfoBlank;
+                    _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('flUpload');>\n");
+                    _ErrorString.Append(Common.GetMessage("RepoRequest", "SelectFileToUpload"));
+                    _ErrorString.Append("</a> <br>\n");
+                    IsValid = false;
+                }
+
+                if (IsValid == true)
+                {
+                    string fileName = flUpload.PostedFile.FileName;
+
+                    string _ExportPath = STBUSA_APP_FILES + clsUI.NTUserName + @"\";
+
+
+                    _ExportPath += DateTime.Now.ToString("MM-dd-yyyy") + @"\";
+
+                    if (!Directory.Exists(_ExportPath))
+                        System.IO.Directory.CreateDirectory(_ExportPath);
+
+                    string savedFileNamePath = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(fileName) + "_" + DateTime.Now.ToString("HHmmss") + System.IO.Path.GetExtension(fileName);
+
+                    flUpload.PostedFile.SaveAs(savedFileNamePath);
+                    flUpload.PostedFile.InputStream.Flush();
+                    flUpload.PostedFile.InputStream.Close();
+                    flUpload.PostedFile.InputStream.Dispose();
+
+                    _logger.InfoFormat("Successfully saved a copy of the Repo request file. Filename: {0}", savedFileNamePath);
+
+                    Byte[] bytes; 
+                    using (FileStream fs = new FileStream(savedFileNamePath, FileMode.Open, FileAccess.Read))
+                    {
+                        using (BinaryReader br = new BinaryReader(fs))
+                        { 
+                            bytes = br.ReadBytes((Int32)fs.Length);
+                            br.Close();
+                        }
+                        fs.Close();
+                    }
+                    //Read Excel Data
+
+                    using (C1XLBook wbExcel = new C1XLBook())
+                    {
+                        if (Path.GetExtension(savedFileNamePath) == ".xls")
+                        {
+                            wbExcel.Load(savedFileNamePath, FileFormat.Biff8);
+                        }
+                        else
+                        {
+                            wbExcel.Load(savedFileNamePath, FileFormat.OpenXml);
+                        }
+
+                        NoOfSheets = wbExcel.Sheets.Count;
+                        decimal n;
+
+                        for (int i = 0; i < NoOfSheets; i++)  // Loop For Sheets
+                        {
+                            XLSheet sheet = wbExcel.Sheets[i];
+
+                            clientName = Regex.Replace(sheet.GetCell(2, 1).Value.ToString(), @"\s", "").Replace(".", "");
+
+                            for (int row = 7; row <= 11; row++)
+                            {
+                                if (!String.IsNullOrEmpty(sheet[row, 1].Text.Trim().ToString()))
+                                {
+                                    DataRow _row = DT.NewRow();
+
+                                    _row[enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString()] = i;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.Customer.ToString()] = sheet[row, 1].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString()] = sheet[row, 2].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString()] = sheet[row, 3].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString()] = sheet[row, 4].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.End_Date.ToString()] = sheet[row, 5].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString()] = sheet[row, 6].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString()] = sheet[row, 7].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.CCY.ToString()] = sheet[row, 8].Text;
+                                    _row[enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString()] = decimal.TryParse(sheet[row, 9].Text, out n) == false ? "0" : sheet[row, 9].Text.ToString();
+                                    _row[enumRepoColumnsNameFromUploadTemplate.Other.ToString()] = sheet[row, 10].Text;
+
+                                    DT.Rows.Add(_row);
+                                }
+                            }
+
+                        } // For loop End  of Sheets
+                    }
+
+                    if (DT != null)
+                    {
+                        if (DT.Rows.Count > 0)
+                        {
+                            _logger.InfoFormat("Successfully parsed Repo request file. {0}", savedFileNamePath);
+
+                            int nReturnValue = 0;
+                            using (StringWriter sw = new StringWriter())
+                            {
+                                DT.WriteXml(sw);
+                                objDS = SaveMethodCall(enumSaveSQLIdentifier.SAVE_UPLOAD_NEW_REPO_REQUEST.ToString(), ref IsValid, ref nReturnValue, savedFileNamePath, sw.ToString(), clsUI.NTUserName, System.IO.Path.GetFileName(fileName).ToString(), txtUploadFileShortName.Text, chkSingleUploadDuplicate.Checked, clientName, bytes);
+
+                            }
+                            if (nReturnValue == 3)
+                            {
+                                IsValid = false;
+                                _ErrorString.Append(System.IO.Path.GetFileName(fileName).ToString() + " - " + Common.GetMessage("RepoRequest", "DuplicateRequest"));
+                                _show_error_row = _ErrorInfoBlank;
+
+                                File.Delete(savedFileNamePath);
+                            }
+                            else
+                            {
+                                if (objDS.Tables.Count > 0)
+                                {
+                                    if (objDS.Tables[0].Rows.Count > 0)
+                                    {
+                                        DataRow[] drDuplicate = objDS.Tables[0].Select("isDuplicate = 1");
+                                        if (drDuplicate.Count() > 0)
+                                        {
+                                            _show_error_row = _ErrorInfoBlank;
+                                            _ErrorString.Append(Common.GetMessage("RepoRequest", "PartialDuplicateRequest"));
+                                        }
+                                    }
+                                }
+
+                                txtUploadFileShortName.Text = "";
+                                if (objDS.Tables.Count > 1)
+                                {
+                                    if (objDS.Tables[1].Rows.Count > 0)
+                                    {
+                                        isRepoAck = Convert.ToBoolean(objDS.Tables[1].Rows[0]["IsRepoUploadAckRequired"]);
+                                    }
+                                }
+
+                                if (isRepoAck)
+                                {
+                                    SendRepoUploadAck(objDS);
+                                }
+                            }
+
+                            //deleteFile = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(savedFileNamePath) + Path.GetExtension(savedFileNamePath) + "_saveas" + Path.GetExtension(savedFileNamePath);
+                            //File.Delete(deleteFile);
+                        }
+                        else
+                        {
+                            IsValid = false;
+                            txtUploadFileShortName.Text = string.Empty;
+                            chkSingleUploadDuplicate.Checked = true;
+                            _ErrorString.Append(Common.GetMessage("RepoRequest", "RepoRequestNotFound") + System.IO.Path.GetFileName(fileName) + "<br/>");
+                        }
+                    }
+
+                    LoadUploadRepoTemplates();
+                }
+            }
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('flUpload');>\n");
+                _ErrorString.Append(Exc.Message);
+                _ErrorString.Append("</a> <br>\n");
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                IsValid = false;
+            }
+
+            return IsValid;
+        }
+
+        /// <summary>
+        /// Send email for Repo Acknowledgement
+        /// </summary>
+        /// <param name="DS_Result"></param>
+        private void SendRepoUploadAck(DataSet DS_Result)
+        {
+            DataRow[] drRecp;
+            ArrayList arrToList = null;
+            ArrayList arrCcList = null;
+            ArrayList arrBccList = null;
+            ArrayList arrAttachment = null;
+            string subject = string.Empty;
+            string emailBody = string.Empty;
+
+            try
+            {
+                if (DS_Result != null)
+                {
+                    if (DS_Result.Tables.Count > 1)
+                    {
+                        if (DS_Result.Tables[1].Rows.Count > 0)
+                        {
+                            //drRecp = DS_Result.Tables[1].Select("EmailTypeID =" + (int)Common.EmailType.To);
+                            drRecp = DS_Result.Tables[1].DefaultView.ToTable(true, "EmailTO").Select();
+                            arrToList = new ArrayList();
+                            foreach (DataRow drEmail in drRecp)
+                            {
+                                arrToList.Add(drEmail["EmailTO"]);
+                            }
+
+                            //drRecp = DS_Result.Tables[1].Select("EmailTypeID = " + (int)Common.EmailType.CC);
+                            drRecp = DS_Result.Tables[1].DefaultView.ToTable(true, "EmailCC").Select();
+                            arrCcList = new ArrayList();
+                            foreach (DataRow drEmail in drRecp)
+                            {
+                                arrCcList.Add(drEmail["EmailCC"]);
+                            }
+
+                            //drRecp = DS_Result.Tables[1].Select("EmailTypeID = " + (int)Common.EmailType.BCC);
+                            drRecp = DS_Result.Tables[1].DefaultView.ToTable(true, "EmailBCC").Select();
+                            arrBccList = new ArrayList();
+                            foreach (DataRow drEmail in drRecp)
+                            {
+                                arrBccList.Add(drEmail["EmailBCC"]);
+                            }
+                        }
+
+                        if (DS_Result.Tables[2].Rows.Count > 0)
+                        {
+                            subject = DS_Result.Tables[2].Rows[0]["Value"].ToString();
+                            emailBody = DS_Result.Tables[2].Rows[1]["Value"].ToString();
+                        }
+
+                        Common.SendMailWithAttachment(arrToList, arrCcList, null, false, subject, emailBody, true, arrAttachment ,"",true);
+                    }
+                }
+            }
+            catch (Exception exc)
+            {
+                throw exc;
+            }
+        }
+
+        /// <summary>
+        /// Grid repo upload Item Databound Event
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        protected void grdRepoUpload_rowdatabound(object sender, GridViewRowEventArgs e)
+        {
+            DataRowView drData = null;
+            MethodName = "grdRepoUpload_rowdatabound()";
+            DataView dv = null;
+            
+            try
+            {
+                if (e.Row.RowType == DataControlRowType.DataRow)
+                {
+                    drData = (DataRowView)e.Row.DataItem;
+                    dv = drData.DataView;
+
+                    CheckBox chkInclude = (CheckBox)e.Row.FindControl("chkInclude");
+
+                    drData = (DataRowView)e.Row.DataItem;
+
+                    if (Convert.ToBoolean(drData["IsHardBlock"]) == true)
+                    {
+                        e.Row.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_HardBlock"]);
+                        chkInclude.Enabled = true;
+                    }
+                    else if (Convert.ToInt32(drData["StatusID"]) == 100 && Convert.ToBoolean(drData["IsHardBlock"]) == false)
+                    {
+                        e.Row.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_SoftBlock"]);
+                        chkInclude.Enabled = false;
+                    }
+
+                    countExcel = dv.Table.AsEnumerable().Where(y => y.Field<int>("StatusID") != 150).Select(x => x.Field<int>("RepoExcelID")).Distinct().Count();
+                    countRepoTicket = dv.Table.AsEnumerable().Where(y => y.Field<int>("StatusID") != 150).Select(x => x.Field<int>("CntRepoTicket")).FirstOrDefault();
+
+                    //try
+                    //{
+                    //    HyperLink lnkRepoExcelId = new HyperLink();
+                    //    lnkRepoExcelId = e.Row.Cells[(int)grdRepoUploadMapping.RepoExcelUploadId].FindControl("lnkRepoExcelId") as HyperLink;
+
+                    //    lnkRepoExcelId.NavigateUrl = string.Format("/LAVA/RepoRequest/RepoRequestDashBoard.aspx?RepoExcelID={0}", lnkRepoExcelId.Text);
+                    //}
+                    //catch (Exception Exc)
+                    //{
+                    //    _ErrorString = new StringBuilder();
+                    //    _ErrorString.Append(Exc.Message);
+                    //    log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                    //    _show_error_row = string.Empty;
+                    //}
+                }
+                if (e.Row.RowType == DataControlRowType.Footer)
+                {
+                   
+                    for (int i = 0; i < 3 - 1; i++)
+                    {
+                        e.Row.Cells.RemoveAt(1);
+                    }
+                    e.Row.Cells[2].ColumnSpan = 3;
+                    //Label lblTotalCount = (Label)e.Row.FindControl("lblTotalCount");
+                    e.Row.Cells[2].Text = countExcel + " files uploaded, " + countRepoTicket + "Tickets in Dashboard";
+                }
+            }
+            catch (Exception Exc)
+            {
+                _ErrorString = new StringBuilder();
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                _show_error_row = string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Validate While uploading New Repo Request from Excel
+        /// </summary>
+        /// <returns></returns>
+        private void BulkUploadNewRepoRequest_Old(DataTable dtFiles, ref StringBuilder strErrorMessage)  // False error
+        {
+            string fileName = string.Empty;
+
+            _show_error_row = _ErrorInfoNone;
+            _ErrorString = new StringBuilder("");
+            bool IsValid = true;
+            DataSet objDS = new DataSet();
+            strErrorMessage = new StringBuilder();
+            MethodName = "BulkUploadNewRepoRequest()";
+            int NoOfSheets;
+            DataTable DT = new DataTable("repoData");
+            string clientName = string.Empty;
+            bool isRepoAck = false;
+            //bool isDeleteFile = true;
+
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FileName.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Customer.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.End_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.CCY.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Other.ToString());
+
+            DataTable dtFailed = new DataTable();
+            dtFailed = new DataTable("uploadFailed");
+            dtFailed.Columns.Add(enumErrorDescription.FileName.ToString());
+            dtFailed.Columns.Add(enumErrorDescription.Error.ToString());
+
+            foreach (DataRow dr in dtFiles.Rows)
+            {
+                try
+                {
+                    DT.Clear();
+
+                    fileName = dr["FileName"].ToString();
+
+                    string _ExportPath = STBUSA_APP_FILES + clsUI.NTUserName + @"\";
+                    string deleteFile = string.Empty;
+
+                    _ExportPath += DateTime.Now.ToString("MM-dd-yyyy") + @"\";
+
+                    if (!Directory.Exists(_ExportPath))
+                        System.IO.Directory.CreateDirectory(_ExportPath);
+
+                    string savedFileNamePath = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(fileName) + "_" + DateTime.Now.ToString("HHmmss") + System.IO.Path.GetExtension(fileName);
+
+
+                    //flUpload.PostedFile.SaveAs(savedFileNamePath);                    
+                    if (!File.Exists(dr["FilePath"].ToString()))
+                    {
+                        strErrorMessage.Append("File - " + fileName + " does not exists. <br/>");
+                        //_rowFailed = dtFailed.NewRow();
+                        //_rowFailed[enumErrorDescription.FileName.ToString()] = fileName;
+                        //_rowFailed[enumErrorDescription.Error.ToString()] = "File does not exist.";
+                        break;
+                    }
+
+                    File.Copy(dr["FilePath"].ToString(), savedFileNamePath, true);
+                    //Read Excel Data
+                    MSExcelFileParser objParser = new MSExcelFileParser(savedFileNamePath);
+                    objParser.Parse();
+
+                    WorkBook wb = objParser.WorkBook;
+                    NoOfSheets = wb.Sheets.Count;
+
+                    for (int i = 1; i <= NoOfSheets; i++)  // Loop For Sheets
+                    {
+                        WorkSheet sheet = wb.Sheets[i];
+                        clientName = sheet.Cells[3, 2].Text.ToString();
+
+                        for (int row = 8; row <= 12; row++)
+                        {
+                            if (!String.IsNullOrEmpty(sheet.Cells[row, 2].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 3].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 4].Text.ToString()) ||
+                                !String.IsNullOrEmpty(sheet.Cells[row, 5].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 6].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 7].Text.ToString()) ||
+                                !String.IsNullOrEmpty(sheet.Cells[row, 8].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 9].Text.ToString()) || !String.IsNullOrEmpty(sheet.Cells[row, 10].Text.ToString()))
+                            {
+                                DataRow _row = DT.NewRow();
+
+                                _row[enumRepoColumnsNameFromUploadTemplate.FileName.ToString()] = fileName;
+                                _row[enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString()] = i;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Customer.ToString()] = sheet.Cells[row, 2].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString()] = sheet.Cells[row, 3].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString()] = sheet.Cells[row, 4].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString()] = sheet.Cells[row, 5].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.End_Date.ToString()] = sheet.Cells[row, 6].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString()] = sheet.Cells[row, 7].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString()] = sheet.Cells[row, 8].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.CCY.ToString()] = sheet.Cells[row, 9].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString()] = sheet.Cells[row, 10].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Other.ToString()] = sheet.Cells[row, 11].Text;
+
+                                DT.Rows.Add(_row);
+                            }
+                        }
+
+                    } // For loop End  of Sheets
+
+                    int nReturnValue = 0;
+
+                    DataRow[] drfiles = DT.Select("FileName = '" + fileName + "'");
+                    if (drfiles.Count() == 0)
+                    {
+                        strErrorMessage.Append(Common.GetMessage("RepoRequest", "RepoRequestNotFound") + fileName + "<br/>");
+                        //isDeleteFile = false;
+                        //_rowFailed = dtFailed.NewRow();
+                        //_rowFailed[enumErrorDescription.FileName.ToString()] = fileName;
+                        //_rowFailed[enumErrorDescription.Error.ToString()] = "Request not found in file.";
+                    }
+                    else
+                    {
+                        StringWriter sw = new StringWriter();
+                        DT.WriteXml(sw);
+
+                        Byte[] byteData = null;
+                        objDS = SaveMethodCall(enumSaveSQLIdentifier.SAVE_UPLOAD_NEW_REPO_REQUEST.ToString(), ref IsValid, ref nReturnValue, savedFileNamePath, sw.ToString(), clsUI.NTUserName, System.IO.Path.GetFileName(fileName).ToString(), txtUploadFileShortName.Text, chkDuplicates.Checked, clientName, byteData);
+
+                    }
+                    //if (nReturnValue == 2)
+                    //{
+                    //    IsValid = false;
+                    //    if (objDS.Tables.Count > 0)
+                    //    {
+                    //        if (objDS.Tables[0].Rows.Count > 0)
+                    //        {
+                    //            //_ErrorString.Append(Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ".");
+                    //            strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ". <br/>" );
+                    //        }
+                    //    }
+                    //    _show_error_row = _ErrorInfoBlank;
+                    //}
+                    //else
+                    if (nReturnValue == 3)
+                    {
+                        IsValid = false;
+                        strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "DuplicateRequest") + "<br/>");
+                        File.Delete(savedFileNamePath);
+                    }
+                    else
+                    {
+                        if (objDS.Tables.Count > 0)
+                        {
+                            if (objDS.Tables[0].Rows.Count > 0)
+                            {
+                                //_ErrorString.Append(Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ".");
+                                //strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "RepoUploadError") + objDS.Tables[0].Rows[0]["Customer"].ToString() + ". <br/>");
+                                DataRow[] drDuplicate = objDS.Tables[0].Select("isDuplicate = 1");
+                                if (drDuplicate.Count() > 0)
+                                {
+                                    strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "PartialDuplicateRequest") + "<br/>");
+                                }
+                            }
+                        }
+
+                        File.Delete(dr["FilePath"].ToString());
+                    }
+
+                    //Delete extra file created with suffix _SaveAs
+
+                    deleteFile = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(savedFileNamePath) + Path.GetExtension(savedFileNamePath) + "_saveas" + Path.GetExtension(savedFileNamePath);
+                    File.Delete(deleteFile);
+
+                    //Send email
+                    if (objDS.Tables.Count > 1)
+                    {
+                        if (objDS.Tables[1].Rows.Count > 0)
+                        {
+                            isRepoAck = Convert.ToBoolean(objDS.Tables[1].Rows[0]["IsRepoUploadAckRequired"]);
+                        }
+                        else
+                        {
+                            isRepoAck = false;
+                        }
+                    }
+
+                    if (isRepoAck)
+                    {
+                        if (objDS.Tables.Count > 0)
+                        {
+                            if (objDS.Tables[0].Rows.Count > 0)
+                            {
+                                DataRow[] drHardBlock = objDS.Tables[0].Select("StatusID = 150");
+                                if (drHardBlock.Count() == 0)
+                                {
+                                    SendRepoUploadAck(objDS);
+                                }
+                            }
+                        }
+                    }
+
+                    pnlFetchFiles.Visible = true;
+                    grdBulkRepoFileSelect.DataSource = null;
+                    grdBulkRepoFileSelect.DataBind();
+
+                }
+                catch (Exception Exc)
+                {
+                    strErrorMessage.Append(fileName + "-" + Exc.Message + "</br>");
+                }
+                //}
+            } //Filename for loop ends
+
+            LoadUploadRepoTemplates();
+        }
+
+        /// <summary>
+        /// Validate While uploading New Repo Request from Excel
+        /// </summary>
+        /// <returns></returns>
+        private void BulkUploadNewRepoRequest(DataTable dtFiles, ref StringBuilder strErrorMessage)  // False error
+        {
+            string fileName = string.Empty;
+
+            _show_error_row = _ErrorInfoNone;
+            _ErrorString = new StringBuilder("");
+            bool IsValid = true;
+            DataSet objDS = new DataSet();
+            strErrorMessage = new StringBuilder();
+            MethodName = "BulkUploadNewRepoRequest()";
+            int NoOfSheets;
+            DataTable DT = new DataTable("repoData");
+            string clientName = string.Empty;
+            bool isRepoAck = false;
+            //bool isDeleteFile = true;
+
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FileName.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Customer.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.End_Date.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.CCY.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString());
+            DT.Columns.Add(enumRepoColumnsNameFromUploadTemplate.Other.ToString());
+
+            DataTable dtFailed = new DataTable();
+            dtFailed = new DataTable("uploadFailed");
+            dtFailed.Columns.Add(enumErrorDescription.FileName.ToString());
+            dtFailed.Columns.Add(enumErrorDescription.Error.ToString());
+
+            foreach (DataRow dr in dtFiles.Rows)
+            {
+                try
+                {
+                    DT.Clear();
+
+                    fileName = dr["FileName"].ToString();
+
+                    string _ExportPath = STBUSA_APP_FILES + clsUI.NTUserName + @"\";
+                    string deleteFile = string.Empty;
+
+                    _ExportPath += DateTime.Now.ToString("MM-dd-yyyy") + @"\";
+
+                    if (!Directory.Exists(_ExportPath))
+                        System.IO.Directory.CreateDirectory(_ExportPath);
+
+                    string savedFileNamePath = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(fileName) + "_" + DateTime.Now.ToString("HHmmss") + System.IO.Path.GetExtension(fileName);
+
+
+                    //flUpload.PostedFile.SaveAs(savedFileNamePath);                    
+                    if (!File.Exists(dr["FilePath"].ToString()))
+                    {
+                        strErrorMessage.Append("File - " + fileName + " does not exists. <br/>");
+                        //_rowFailed = dtFailed.NewRow();
+                        //_rowFailed[enumErrorDescription.FileName.ToString()] = fileName;
+                        //_rowFailed[enumErrorDescription.Error.ToString()] = "File does not exist.";
+                        break;
+                    }
+
+                    File.Copy(dr["FilePath"].ToString(), savedFileNamePath, true);
+
+                    //Save file in binary format
+                    FileStream fs = new FileStream(savedFileNamePath, FileMode.Open, FileAccess.Read);
+                    BinaryReader br = new BinaryReader(fs);
+                    Byte[] bytes = br.ReadBytes((Int32)fs.Length);
+                    br.Close();
+                    fs.Close();
+
+                    //Read Excel Data
+                    C1XLBook wbExcelBulk = new C1XLBook();
+                    if (Path.GetExtension(savedFileNamePath) == ".xls")
+                    {
+                        wbExcelBulk.Load(savedFileNamePath, FileFormat.Biff8);
+                    }
+                    else
+                    {
+                        wbExcelBulk.Load(savedFileNamePath, FileFormat.OpenXml);
+                    }
+
+                    NoOfSheets = wbExcelBulk.Sheets.Count;
+                    decimal n;
+
+                    for (int i = 0; i < NoOfSheets; i++)  // Loop For Sheets
+                    {
+                        XLSheet sheet = wbExcelBulk.Sheets[i];
+                        clientName = Regex.Replace(sheet.GetCell(2, 1).Value.ToString(), @"\s", "").Replace(".", "");
+
+                        for (int row = 7; row <= 11; row++)
+                        {
+                            if (!String.IsNullOrEmpty(sheet[row, 1].Text.Trim().ToString()))
+                            {
+                                DataRow _row = DT.NewRow();
+
+                                _row[enumRepoColumnsNameFromUploadTemplate.FileName.ToString()] = fileName;
+                                _row[enumRepoColumnsNameFromUploadTemplate.RepoUploadSheetNbr.ToString()] = i;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Customer.ToString()] = sheet[row, 1].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.AccountNbr.ToString()] = sheet[row, 2].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Trade_Date.ToString()] = sheet[row, 3].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Start_Date.ToString()] = sheet[row, 4].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.End_Date.ToString()] = sheet[row, 5].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.SecCategory.ToString()] = sheet[row, 6].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.Security_ISIN.ToString()] = sheet[row, 7].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.CCY.ToString()] = sheet[row, 8].Text;
+                                _row[enumRepoColumnsNameFromUploadTemplate.FaceAmount.ToString()] = decimal.TryParse(sheet[row, 9].Text, out n) == false ? "0" : sheet[row, 9].Text.ToString();
+                                _row[enumRepoColumnsNameFromUploadTemplate.Other.ToString()] = sheet[row, 10].Text;
+
+                                DT.Rows.Add(_row);
+                            }
+                        }
+
+                    } // For loop End  of Sheets
+
+                    int nReturnValue = 0;
+
+                    DataRow[] drfiles = DT.Select("FileName = '" + fileName + "'");
+                    if (drfiles.Count() == 0)
+                    {
+                        strErrorMessage.Append(Common.GetMessage("RepoRequest", "RepoRequestNotFound") + fileName + "<br/>");
+                    }
+                    else
+                    {
+                        StringWriter sw = new StringWriter();
+                        DT.WriteXml(sw);
+
+                        objDS = SaveMethodCall(enumSaveSQLIdentifier.SAVE_UPLOAD_NEW_REPO_REQUEST.ToString(), ref IsValid, ref nReturnValue, savedFileNamePath, sw.ToString(), clsUI.NTUserName, System.IO.Path.GetFileName(fileName).ToString(), txtUploadFileShortName.Text, chkDuplicates.Checked, clientName, bytes);
+
+                        if (nReturnValue == 3)
+                        {
+                            IsValid = false;
+                            strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "DuplicateRequest") + "<br/>");
+                            File.Delete(savedFileNamePath);
+                        }
+                        else
+                        {
+                            if (objDS.Tables.Count > 0)
+                            {
+                                if (objDS.Tables[0].Rows.Count > 0)
+                                {
+                                    DataRow[] drDuplicate = objDS.Tables[0].Select("isDuplicate = 1");
+                                    if (drDuplicate.Count() > 0)
+                                    {
+                                        strErrorMessage.Append(fileName + " - " + Common.GetMessage("RepoRequest", "PartialDuplicateRequest") + "<br/>");
+                                    }
+                                }
+                            }
+
+                            File.Delete(dr["FilePath"].ToString());
+                        }
+                    }
+
+                    //Delete extra file created with suffix _SaveAs
+                    //deleteFile = _ExportPath + System.IO.Path.GetFileNameWithoutExtension(savedFileNamePath) + Path.GetExtension(savedFileNamePath) + "_saveas" + Path.GetExtension(savedFileNamePath);
+                    //File.Delete(deleteFile);
+
+                    //Send email
+                    if (objDS.Tables.Count > 1)
+                    {
+                        if (objDS.Tables[1].Rows.Count > 0)
+                        {
+                            isRepoAck = Convert.ToBoolean(objDS.Tables[1].Rows[0]["IsRepoUploadAckRequired"]);
+                        }
+                        else
+                        {
+                            isRepoAck = false;
+                        }
+                    }
+
+                    if (isRepoAck)
+                    {
+                        if (objDS.Tables.Count > 0)
+                        {
+                            if (objDS.Tables[0].Rows.Count > 0)
+                            {
+                                DataRow[] drHardBlock = objDS.Tables[0].Select("StatusID = 150");
+                                if (drHardBlock.Count() == 0)
+                                {
+                                    SendRepoUploadAck(objDS);
+                                }
+                            }
+                        }
+                    }
+
+                    pnlFetchFiles.Visible = true;
+                    grdBulkRepoFileSelect.DataSource = null;
+                    grdBulkRepoFileSelect.DataBind();
+
+                }
+                catch (Exception Exc)
+                {
+                    strErrorMessage.Append(fileName + "-" + Exc.Message + "</br>");
+                    _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                }
+                //}
+            } //Filename for loop ends
+
+            LoadUploadRepoTemplates();
+        }
+
+        /// <summary>
+        /// Page Navigation for grid
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        protected void PageNavigation_Click(object sender, System.Web.UI.WebControls.CommandEventArgs e)
+        {
+            // get the parameters from hidden controls. 
+            _PageChange = "True";
+            MethodName = "PageNavigation_Click";
+            try
+            {
+                switch (e.CommandName.ToUpper())
+                {
+                    case FIRST:						//first
+                        _PageNo = 1;
+                        txtGoTo1.Text = txtGoTo2.Text = string.Empty;
+                        break;
+
+                    case PREVIOUS:					//prev
+                        _PageNo--;
+                        txtGoTo1.Text = txtGoTo2.Text = string.Empty;
+                        if (_PageNo < 1)
+                            _PageNo = 1;
+                        break;
+
+                    case NEXT:						//next
+                        _PageNo++;
+                        txtGoTo1.Text = txtGoTo2.Text = string.Empty;
+                        if (_PageNo > _TotPage)
+                            _PageNo = _TotPage;
+                        break;
+
+                    case LAST:						//last
+                        _PageNo = _TotPage;
+                        txtGoTo1.Text = txtGoTo2.Text = string.Empty;
+                        break;
+
+                    case GOTO1:
+                        _PageNo = Int32.Parse(this.txtGoTo1.Text);
+                        break;
+
+                    case GOTO2:
+                        _PageNo = Int32.Parse(this.txtGoTo2.Text);
+                        break;
+                }
+
+                // refresh the page based on the navigation
+                LoadUploadRepoTemplates();
+            }
+            catch (Exception Exc)
+            {
+                _ErrorString = new StringBuilder();
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                _show_error_row = string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Load Upload Template 
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void LoadUploadRepoTemplates()
+        {
+            MethodName = "LoadUploadRepoTemplates()";
+            PagedDataSource objPagedDS = new PagedDataSource();
+
+            try
+            {
+                DataSet DS = new DataSet();
+
+                DS = GetMethodCall(enumGetSQLIdentifier.GET_UPLOADED_NEW_REPO_REQUEST.ToString());
+
+                objPagedDS.DataSource = DS.Tables[0].DefaultView;
+                objPagedDS.AllowPaging = true;
+
+                if (objPagedDS.DataSourceCount < _PAGESIZE)
+                    objPagedDS.PageSize = objPagedDS.DataSourceCount;
+                else
+                    objPagedDS.PageSize = _PAGESIZE;
+
+                // delete the last page record contains only one record
+                // will load pageN - 1
+                if (_PageNo > objPagedDS.PageCount)
+                    _PageNo = objPagedDS.PageCount;
+
+                if (_PageNo <= 0)
+                    _PageNo = 1;
+
+                objPagedDS.CurrentPageIndex = _PageNo - 1;
+                _TotPage = objPagedDS.PageCount;
+
+                if (objPagedDS.Count == 0)
+                {
+                    _PageNo = 0;
+                    _TotPage = 0;
+                }
+
+                PageNofM = _PageNo.ToString() + " of " + _TotPage.ToString();
+
+
+                if (objPagedDS.Count > 0)
+                {
+                    pnlSRRMsg.Visible = false;
+                    cmdDeleteRepoTemplate.Visible = true;
+                    grdRepoUpload.DataSource = objPagedDS;
+                    grdRepoUpload.DataBind();
                 }
                 else
                 {
-                    t = _wb.Sheets[(int)index - 1];
+                    grdRepoUpload.DataSource = null;
+                    grdRepoUpload.DataBind();
+                    pnlSRRMsg.Visible = true;
+                    cmdDeleteRepoTemplate.Visible = false;
                 }
-                _ws = new WorkSheet(t);
-                return _ws;
+
+
+                //if ((DS != null) && (DS.Tables.Count > 0))
+                //{
+                //    if (DS.Tables[0].Rows.Count > 0)
+                //    {
+                //        grdRepoUpload.DataSource = DS.Tables[0];
+                //        grdRepoUpload.DataBind();
+
+                //        pnlSRRMsg.Visible = false;
+                //        cmdDeleteRepoTemplate.Visible = true;
+                //    }
+                //    else
+                //    {
+                //        grdRepoUpload.DataSource = null;
+                //        grdRepoUpload.DataBind();
+                //        pnlSRRMsg.Visible = true;
+                //        cmdDeleteRepoTemplate.Visible = false;
+                //    }
+                //}
+            }
+
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+            }
+            finally
+            {
+
             }
         }
 
-        public int Count
-        {
-            get
-            {
-                return this._wb.Sheets.Count;
-            }
-        }
 
-        public string[] Names
+        /// <summary>
+        /// Download File
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        protected void DownloadFile(object sender, EventArgs e)
         {
-            get
+            MethodName = "DownloadFile()";
+            try
             {
-                int count = this._wb.Sheets.Count;
-                string[] names = new string[count];
+                string FilePath = (sender as LinkButton).CommandArgument;
+                string FileName = Path.GetFileName(FilePath);
 
-                for (int i = 0; i < count; i++)
+                using (FileStream fs = new FileStream(FilePath, FileMode.Open, FileAccess.Read))
                 {
-                    names[i] = this._wb.Sheets[i].Name;
+                    HttpContext.Current.Response.Charset = "";
+                    HttpContext.Current.Response.ContentType = "application/vnd.ms-excel";
+                    HttpContext.Current.Response.AddHeader("Content-Disposition", "attachment;filename=" + FileName + "");
+
+                    byte[] temp = new byte[fs.Length];
+                    fs.Read(temp, 0, temp.Length);
+                    HttpContext.Current.Response.BinaryWrite(temp);
+                    fs.Close();
                 }
-
-                return names;
+            }
+            catch (Exception ex)
+            {
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append(ex.Message);
+                _show_info_row = _ErrorInfoNone;
+                _show_error_row = _ErrorInfoBlank;
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
             }
         }
-    }
 
-	public class WorkSheet{
-		//private msExcel.Worksheet _ws;
-        private XLSheet _ws;
-		private Cells _cc;
-
-		public WorkSheet(object ws){
-            if (ws is XLSheet)
-            {
-				if(_ws != null){					
-                    this._ws = null;
-				}
-                this._ws = (XLSheet)ws;
-			}
-		}
-
-		~WorkSheet(){
-			if(_ws != null){				
-				this._ws = null;
-			}
-		}
-
-		public Cells Cells{
-			get{
-				object t = (object)this._ws;
-				this._cc = new Cells(ref t);
-				return this._cc;
-			}
-		}
-	}
-
-	public class Cells{
-		//private msExcel.Worksheet _ws;
-        private XLSheet _ws;
-		private Range _r;
-		
-		public Cells(ref object ws){
-            if (ws is XLSheet)
-            {
-				if(_ws != null){					
-					this._ws = null;
-				}
-                this._ws = (XLSheet)ws;
-			}
-		}
-
-		~Cells(){
-			if(_ws != null){				
-				this._ws = null;
-			}
-		}
-
-		public Range this[object rowIndex, object columnIndex] {
-			get {
-				if(this._ws == null)
-					throw new ApplicationException("Object reference to worksheet not set");
-				object t = _ws.GetCell((int)rowIndex -1, (int)columnIndex -1);
-				this._r = new Range(ref t);
-				return this._r;
-			}			
-		}
-	}
-
-	public class Range{		
-        private XLCell _r;
-		public enum RangeFormat {Text, Number, Date}; 
- 
-		public Range(ref object r){
-            if (r is XLCell)
-            {
-				if(this._r != null){					
-					_r = null;
-				}
-                this._r = (XLCell)r;
-			}
-		}
-
-		~Range(){
-			if(this._r != null){				
-				_r = null;
-			}
-		}
-
-		public object Text{
-			get{
-				return this._r.Text.ToString().Trim();
-			}
-		}
-
-        public object Self
+        /// <summary>
+        /// Used for calling p_GetData_UploadedRepoRequest sp
+        /// </summary>
+        /// <param name="Identifier"></param>
+        /// <param name="Param0"></param>
+        /// <returns></returns>
+        private DataSet GetMethodCall(string Identifier)
         {
-            get
+            Database clsDB = new Database();
+            DataReader clsReader = new DataReader();
+            DataSet objDS = new DataSet();
+            string[] SqlCondition = new string[1] { "" };
+            MethodName = "GetMethodCall()";
+
+            try
             {
-                return this._r;
+                if (clsDB.Open() == false)
+                    return null;
+
+                clsReader.Connection = clsDB.Connection;
+                clsReader.SqlIdentifier = Identifier;
+
+                SqlCondition[0] = txtAsOfDate.Text;
+
+                // get the data from either current or history table.
+                if (clsReader.GetData(ref objDS, SqlObjects.p_GetData_UploadedRepoRequest, SqlCondition) == false)
+                    return null;
+                else
+                    return objDS;
+            }
+
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                return null;
+            }
+            finally
+            {
+                clsDB.Dispose();
             }
         }
 
-		public void Format(RangeFormat format){			
-            this._r.Style.Format = "@";
-		}
-	}
+
+        /// <summary>
+        /// Used for calling p_SaveData_UploadRepoRequest sp
+        /// </summary>
+        /// <param name="Identifier"></param>
+        /// <param name="Param0"></param>
+        /// <param name="IsValid"></param>
+        /// <param name="nReturnValue"></param>
+        /// <param name="savedFileNamePath"></param>
+        /// <param name="RepoDataXML"></param>
+        /// <param name="UserName"></param>
+        /// <param name="FileNameToSave"></param>
+        /// <param name="FileShortName"></param>
+        /// <returns></returns>
+        private DataSet SaveMethodCall(string Identifier, ref Boolean IsValid, ref int nReturnValue, string savedFileNamePath, string RepoDataXML, string UserName, string FileNameToSave, string FileShortName, bool doNotAllowDuplicate, string clientName, Byte[] excelFileBytes)
+        {
+            Database clsDB = new Database();
+            DataReader clsReader = new DataReader();
+            string[] SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
+            MethodName = "SaveMethodCall()";
+            DataSet ds = new DataSet();
+
+            try
+            {
+                if (clsDB.Open() == false)
+                    return null;
+
+                clsReader.Connection = clsDB.Connection;
+                clsReader.SqlIdentifier = Identifier;
+
+                SqlCondition[0] = savedFileNamePath;
+                SqlCondition[1] = RepoDataXML;
+                SqlCondition[2] = UserName;
+                SqlCondition[3] = FileNameToSave;
+                SqlCondition[4] = FileShortName;
+                SqlCondition[5] = doNotAllowDuplicate.ToString();
+                SqlCondition[6] = clientName;
+                SqlCondition[7] = excelFileBytes == null ? "" : Convert.ToBase64String(excelFileBytes);
+
+                // get the data from either current or history table.
+                if (clsReader.GetData(ref ds, SqlObjects.p_SaveData_UploadRepoRequest, ref nReturnValue, SqlCondition) == false)
+                {
+                    IsValid = false;
+                    _logger.Error(Common.GetMessage("Common", "ErrorExecSP") + SqlObjects.p_SaveData_UploadRepoRequest);
+                    return null;
+                }
+                else
+                {
+                    _logger.InfoFormat("Successfully uploaded Repo Request file into LAVA via {0}.", SqlObjects.p_SaveData_UploadRepoRequest.ToString());
+                    IsValid = true;
+                    return ds;
+                }
+            }
+            catch (Exception Exc)
+            {
+                _show_error_row = _ErrorInfoBlank;
+                _ErrorString = new StringBuilder("");
+                _ErrorString.Append(Exc.Message);
+                _logger.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                return null;
+            }
+            finally
+            {
+                clsDB.Dispose();
+            }
+        }
+
+
+
+
+    }
 }
+
+
