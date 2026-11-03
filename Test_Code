@@ -1,73 +1,139 @@
-The name 'FileFormat' does not exist in the current context
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The name 'FileFormat' does not exist in the current context
-The name 'FileFormat' does not exist in the current context
-The type or namespace name 'XLSheet' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLStyle' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLAlignHorzEnum' does not exist in the current context
-The name 'XLAlignVertEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The name 'XLLineStyleEnum' does not exist in the current context
-The type or namespace name 'XLNamedRangeCollection' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLNamedRange' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLCellRange' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLCellRange' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLReferenceType' does not exist in the current context
-The name 'XLReferenceType' does not exist in the current context
-The name 'XLReferenceType' does not exist in the current context
-The name 'XLReferenceType' does not exist in the current context
-The name 'XLRangeType' does not exist in the current context
-The name 'FileFormat' does not exist in the current context
-The name 'FileFormat' does not exist in the current context
+using System;
+using System.Reflection;
+
+using NativeC1XLBook = C1.C1Excel.C1XLBook;
+using NativeXLSheet = C1.C1Excel.XLSheet;
+using NativeFileFormat = C1.C1Excel.FileFormat;
+
+namespace STBUSA.Excel.Util.C1Compatibility
+{
+    /// <summary>
+    /// Compatibility wrapper for Excel operations
+    /// used by SingleLoanFromAvailability.
+    /// </summary>
+    public enum FileFormat
+    {
+        Biff8,
+        OpenXml
+    }
+
+    /// <summary>
+    /// Wrapper for ComponentOne C1XLBook.
+    /// </summary>
+    public sealed class C1XLBook : IDisposable
+    {
+        private readonly NativeC1XLBook _book;
+
+        public C1XLBook()
+        {
+            _book = new NativeC1XLBook();
+        }
+
+        public void Load(string filePath, FileFormat format)
+        {
+            NativeFileFormat nativeFormat;
+
+            switch (format)
+            {
+                case FileFormat.Biff8:
+                    nativeFormat = NativeFileFormat.Biff8;
+                    break;
+
+                case FileFormat.OpenXml:
+                    nativeFormat = NativeFileFormat.OpenXml;
+                    break;
+
+                default:
+                    throw new ArgumentOutOfRangeException("format");
+            }
+
+            _book.Load(filePath, nativeFormat);
+        }
+
+        public XLSheets Sheets
+        {
+            get
+            {
+                return new XLSheets(_book);
+            }
+        }
+
+        public void Dispose()
+        {
+            _book.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for ComponentOne worksheet collection.
+    /// </summary>
+    public sealed class XLSheets
+    {
+        private readonly NativeC1XLBook _book;
+
+        internal XLSheets(NativeC1XLBook book)
+        {
+            _book = book;
+        }
+
+        public XLSheet this[int index]
+        {
+            get
+            {
+                return new XLSheet(_book.Sheets[index]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for ComponentOne XLSheet.
+    /// </summary>
+    public sealed class XLSheet
+    {
+        private readonly NativeXLSheet _sheet;
+
+        internal XLSheet(NativeXLSheet sheet)
+        {
+            _sheet = sheet;
+        }
+
+        public XLCell this[int row, int column]
+        {
+            get
+            {
+                return new XLCell(_sheet[row, column]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper for ComponentOne Excel cell.
+    /// </summary>
+    public sealed class XLCell
+    {
+        private readonly object _cell;
+
+        internal XLCell(object cell)
+        {
+            _cell = cell;
+        }
+
+        public string Text
+        {
+            get
+            {
+                PropertyInfo textProperty =
+                    _cell.GetType().GetProperty("Text");
+
+                if (textProperty == null)
+                {
+                    throw new InvalidOperationException(
+                        "Text property not found on Excel cell.");
+                }
+
+                return Convert.ToString(
+                    textProperty.GetValue(_cell, null));
+            }
+        }
+    }
+}
