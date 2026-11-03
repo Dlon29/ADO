@@ -1,2960 +1,1065 @@
-using C1.C1Excel;
-using Common.Logging;
-using SMTBUSA.FileCompression;
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Configuration;
-using System.Data;
-using System.Data.SqlClient;
 using System.Drawing;
-using System.Globalization;
+using System.Drawing.Printing;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Web.UI;
-using System.Web.UI.WebControls;
-using System.Xml.Linq;
 
-namespace Lava.RepoRequest
+using NativeC1XLBook = C1.C1Excel.C1XLBook;
+using NativeXLSheet = C1.C1Excel.XLSheet;
+using NativeXLCell = C1.C1Excel.XLCell;
+using NativeXLStyle = C1.C1Excel.XLStyle;
+using NativeFileFormat = C1.C1Excel.FileFormat;
+using NativeXLAlignHorzEnum = C1.C1Excel.XLAlignHorzEnum;
+using NativeXLAlignVertEnum = C1.C1Excel.XLAlignVertEnum;
+using NativeXLLineStyleEnum = C1.C1Excel.XLLineStyleEnum;
+using NativeXLNamedRange = C1.C1Excel.XLNamedRange;
+using NativeXLNamedRangeCollection = C1.C1Excel.XLNamedRangeCollection;
+using NativeXLCellRange = C1.C1Excel.XLCellRange;
+using NativeXLReferenceType = C1.C1Excel.XLReferenceType;
+using NativeXLRangeType = C1.C1Excel.XLRangeType;
+
+namespace STBUSA.Excel.Util.C1Compatibility
 {
-    public partial class RepoRequestDashBoard : Lava.PageTemplate
+    #region Enums
+
+    public enum FileFormat
     {
-        #region Variables
-        protected string _section = "Availability";
-        protected string _page = "RepoRequest";
-        protected string _pageTitle = "Repo DashBoard";
-        protected StringBuilder _ErrorString;
-        protected bool IsUI = true;
-        protected string _UserAccess = "";
-        protected string _ModuleName = "RepoRequestDashBoard";
-        protected string _SecIDExisting;
-        private string _BussDate = GlobalVariable.SystemDate;
-        Decimal totalQtyEUR = 0;
-        Decimal totalQtyUSD = 0;
-        Decimal totalAmountEUR = 0;
-        Decimal totalAmountUSD = 0;
-        String totalRepoCount = string.Empty;
-        int countExcel = 0;
-        int countRepoTicket = 0;
-        string reloadParent = "";
-        protected int repoExcelID = 0;        
-        protected string argsPopUpMenu;
-        private const string REBOOK = "REBOOK";
-        private const string RE_EXECUTE = "REEXECUTE";
-        string EventTarget = string.Empty;
-        int namedCellRangePosition = 0;
-        private string _LendingProcessType = "";        
-        #endregion
-
-        #region Error Logging variable declaration
-        private ILog log = LogManager.GetLogger(typeof(RepoRequestDashBoard));
-        private string ModuleName = "RepoRequestUpload";
-        private string MethodName = "";
-        private string ErrorMessageToLog = Common.GetMessage("Common", "ErrorMessageToLog");
-        #endregion
-
-        #region Constants
-        private const string _ErrorInfoNone = "NONE";
-        private const string _ErrorInfoBlank = "";
-        protected string _show_info_row = "NONE";
-        protected string _show_error_row = "NONE";
-
-        private const string UPLOAD_NEW_REPO = "UPLOAD_NEW_REPO";
-        private const string DELETE_REPO_TEMPLATE = "DELETE_REPO_TEMPLATE";
-        private const string ActionID_GETFIDETAILS = "GET_FI_DETAILS";
-
-        //Export To Excel Constants
-        private const string EXTRACT_TEMPLATE_NAME = "RepoRequestDashboardReport";
-        private const string EXCEL_FILENAME = "RepoRequestDashboardReport_";
-        private const string EXCEL_TITLE = "Repo Request Dashboard";
-
-        //Print Area Settings
-        private const string PRINT_AREA_NAME = "Print_Area";
-        private const string PRINT_AREA_COLUMN_COUNT = "PrintAreaColumnCount";
-        private const string PRINT_AREA_ROW_COUNT = "PrintAreaRowCount";
-
-        #endregion
-
-        #region Enum
-
-        enum enumConfirmationHeaders
-        {
-            [Description("Customer")]
-            Customer,
-            [Description("Account Number")]
-            AccountNumber,
-            [Description("Trade Date")]
-            TradeDate,
-            [Description("Start Date")]
-            StartDate,
-            [Description("End Date")]
-            EndDate,
-            [Description("Sec Category")]
-            SecCategory,
-            [Description("Sec ID (ISIN)")]
-            SecID,
-            [Description("CCY")]
-            CCY,
-            [Description("Face Amount (MM)")]
-            FaceAmount,
-            [Description("SECURITY DESCRIPTION")]
-            SECURITYDESCRIPTION,
-            [Description("Coupon (%)")]
-            Coupon,
-            [Description("Maturity")]
-            Maturity,
-            [Description("Clean Price")]
-            CleanPrice,
-            [Description("Re-Investment Rate(%)")]
-            ReinvestmentRate,
-            [Description("Repo Rate(%)")]
-            RepoRate,
-            [Description("Cash Collateral Amount")]
-            CashCollateralAmount,
-            [Description("Broker")]
-            Broker,
-            [Description("Location")]
-            Location,
-            [Description("Traded Price")]
-            TradedPrice,
-            [Description("Other")]
-            Other
-        }
-
-        enum enumUserAccess
-        {
-            Full,
-            ReadOnly,
-            None
-        }
-
-        enum enumUserAccessCode
-        {
-            F,
-            R,
-            N
-        }
-
-        protected enum enumRepoTradeStatus
-        {
-            [Description("Uploaded Error")]
-            UploadedError = 100,
-            [Description("Uploaded Error With HardBlock")]
-            UploadedErrorWithHardBlock = 150,
-            [Description("Uploaded With HardBlock Error")]
-            SuccessfullyUploaded = 200,
-            [Description("Pending Approval")]
-            PendingApproval = 35,
-            [Description("Request Send to G1")]
-            RequestSendToG1 = 40,
-            [Description("Partially Approved")]
-            PartiallyApproved = 300,
-            [Description("Failed on G1")]
-            FailedOnG1 = 350,
-            [Description("Approved")]
-            Approved = 400,
-            [Description("Rejected")]
-            Rejected = 500,
-            [Description("Confirmation Generated")]
-            ConfirmationGenerated = 550,
-            [Description("Completed")]
-            Completed = 700,
-            [Description("Cancelled")]
-            Cancelled = 800,
-            [Description("Unexecuted")]
-            Unexecuted = 900
-        }
-        /// <summary>
-        /// Create XML Formats for different actions
-        /// </summary>
-        enum enumGetSQLIndentifier
-        {
-            GET_DATA_REPO_DASHBOARD
-        }
-
-        #endregion
-
-        #region Properties
-
-        /// <summary>
-        /// BadData Reports Ids - due to wrong Hash key
-        /// </summary>
-        private Boolean InCorrectCode
-        {
-            get
-            {
-                if (Session["InCorrectCode"] != null)
-                    return Convert.ToBoolean(Session["InCorrectCode"].ToString());
-                else
-                    return false;
-            }
-            set { Session["InCorrectCode"] = value; }
-        }
-
-        /// <summary>
-        /// InCorrect Encryption Code or Encryption Pasth not found
-        /// </summary>
-        private bool IncorrectEncryptionCode
-        {
-            get { return Convert.ToBoolean(ViewState["IncorrectEncryptionCode"]); }
-            set { ViewState["IncorrectEncryptionCode"] = value; }
-        }
-
-        /// <summary>
-        /// Encryption Code
-        /// </summary>
-        private string EncryptionCode
-        {
-            get
-            {
-                if (ViewState["EncryptionCode"] != null)
-                    return ViewState["EncryptionCode"].ToString();
-                else
-                    return string.Empty;
-            }
-            set { ViewState["EncryptionCode"] = value; }
-        }
-
-        #endregion
-
-        #region Page Event
-        /// <summary>
-        /// Page Load Event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void Page_Load(object sender, EventArgs e)
-        {
-            try
-            {
-                EventTarget = Request.Form["__EVENTTARGET"] != null ? Request.Form["__EVENTTARGET"].ToString() : string.Empty;
-                ViewState["EventTarget"] = EventTarget == string.Empty ? Convert.ToString(ViewState["EventTarget"]) : EventTarget;
-
-                SetModule(ViewState["EventTarget"].ToString());
-
-                _AccessTypeCode = getUserAppAccessTypeCode(_ModuleName, clsUI.NTUserName);
-                _AccessTypeCode = _AccessTypeCode == enumUserAccessCode.F.ToString() ? getUserAppAccessTypeCode(_ModuleName, clsUI.NTUserName) : _AccessTypeCode;
-
-                if (Request.QueryString[Common.QRYSTR_PARAM_LENDINGPROCESSTYPE] != null)
-                {
-                    _LendingProcessType = Request.QueryString[Common.QRYSTR_PARAM_LENDINGPROCESSTYPE];
-                }
-
-                if (_AccessTypeCode == enumUserAccessCode.R.ToString())
-                {
-                    _UserAccess = enumUserAccess.ReadOnly.ToString();
-                    EnableDisablePageButtons(false);
-                }
-                else if (_AccessTypeCode == enumUserAccessCode.N.ToString())
-                {
-                    Response.Redirect(string.Format(Common.ACCESSDENIEDPAGE, Common.AUTHORIZATIONFAIL, _page));
-                }
-                else if (_AccessTypeCode == enumUserAccessCode.F.ToString())
-                {
-                    _UserAccess = enumUserAccess.Full.ToString();
-                    EnableDisablePageButtons(true);
-                }
-
-                _SecIDExisting = Request["hdnSecIDExisting"];
-                legHardBlock.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_HardBlock"]);
-                legSoftBlock.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_SoftBlock"]);
-                legRejected.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_Rejected"]);
-
-                if (!Page.IsPostBack)
-                {
-                    //SetEncryptionCode();                    
-                    lnkCalTradeDate.HRef = "javascript:OpenCalendar('" + txtTradeDate.ClientID + "', false)";
-                    lnkCalSettlementDate.HRef = "javascript:OpenCalendar('" + txtsettlementDate.ClientID + "', false)";
-                    lnkCalTermDate.HRef = "javascript:OpenCalendar('" + txtTermDate.ClientID + "', false)";
-                    lnkCalUploadedDate.HRef = "javascript:OpenCalendar('" + txtUploadedDate.ClientID + "', false)";
-                    txtUploadedDate.Text = _BussDate;
-                    txtConfUploadDate.Text = _BussDate;
-                    //repoExcelID = Convert.ToInt32(Request.QueryString["RepoExcelID"]);
-
-                    //if (repoExcelID != 0)
-                    //    SearchRepoRequest(repoExcelID);
-
-                    if (FillDropDownList("") == false)
-                        Response.Write(Common.GetMessage("Common", "ErrorGetComboBox"));
-
-                    if (FillDropDownListConfirmation("") == false)
-                        Response.Write(Common.GetMessage("Common", "ErrorGetComboBox"));
-
-                    reloadParent = Request.QueryString["IsPostback"];
-
-                    SearchRepoRequest(0);
-
-                    //if (EventTarget == "RefreshParent")
-                    if (reloadParent == "1")
-                        SearchRepoRequest(0);
-                }
-
-                if (EventTarget == "RCD")
-                {
-                    RepoConfDash.Attributes.Add("style", "display:inline");
-                    RepoReqDash.Attributes.Add("style", "display:none");
-                    RepoConfDashboard.Attributes.Add("class", "selected");
-                    RepoViewDashboard.Attributes.Add("class", "notselected");
-                    SearchRepoConfirmation();
-                }
-                else if (EventTarget == "RRD")
-                {
-                    RepoConfDash.Attributes.Add("style", "display:none");
-                    RepoReqDash.Attributes.Add("style", "display:inline");
-                    RepoViewDashboard.Attributes.Add("class", "selected");
-                    RepoConfDashboard.Attributes.Add("class", "notselected");
-                    SearchRepoRequest(0);
-                }
-
-            }
-
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(ex.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
-            }
-
-        }
-
-        protected override void OnInit(EventArgs e)
-        {
-            base.OnInit(e);
-
-             if (User.Identity.IsAuthenticated)
-                ViewStateUserKey = Session.SessionID;
-        }
-        #endregion
-
-        /// <summary>
-        /// Set module name
-        /// </summary>
-        /// <param name="p"></param>
-        private void SetModule(string p)
-        {
-            switch (p)
-            {
-                case "RRD":
-                    _ModuleName = "RepoRequestDashBoard";
-                    break;
-                case "RCD":
-                    _ModuleName = "RepoRequestConfirmation";
-                    break;
-                default:
-                    _ModuleName = "RepoRequestDashBoard";
-                    break;
-            }
-        }
-        /// <summary>
-        /// Enable / disable Page buttons from the screen
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void EnableDisablePageButtons(bool val)
-        {
-            this.btnUnexecute.Enabled = val;
-            this.btnCancel.Enabled = val;
-            this.btnGenerate.Enabled = val;
-            this.btnConfSendAll.Enabled = val;
-        }
-
-
-
-        /// <summary>
-        /// Common event for Dropdownlist index change
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void IndexChanged(Object sender, EventArgs e)
-        {
-            MethodName = "IndexChanged()";
-
-            try
-            {
-                if (FillDropDownList(((DropDownList)sender).ID) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorGetComboBox"));
-                    Response.Write(Common.GetMessage("Common", "ErrorGetComboBox"));
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// Common event for Dropdownlist index change
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void IndexChanged_Confirmation(Object sender, EventArgs e)
-        {
-            MethodName = "IndexChanged_Confirmation()";
-
-            try
-            {
-                if (FillDropDownListConfirmation(((DropDownList)sender).ID) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorGetComboBox"));
-                    Response.Write(Common.GetMessage("Common", "ErrorGetComboBox"));
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        #region FillDropDown
-        /// <summary>
-        /// This method will bind dropdown values
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <returns></returns>
-        private bool FillDropDownList(string sender)
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            SqlDataReader clsDR = null;
-            string[] SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-            MethodName = "FillDropDownList()";
-
-            try
-            {
-                if (clsDB.Open() == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                    return false;
-                }
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.StoredProcedure = SqlObjectsStaticClass.p_GetData_Maintenance;
-
-
-                #region BrokerCreditGroup Binding
-                if (sender != "ddlBrokerCrGroup" && sender != "ddlBrokerGroup")
-                {
-                    // fill up the combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_CREDIT_GROUP_FROM_AVALIBILITY.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = DateTime.Now.ToShortDateString();
-                    SqlCondition[1] = DateTime.Now.ToShortDateString();
-                    SqlCondition[2] = this.ddlSecType.SelectedValue;
-                    SqlCondition[3] = "CR";
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    ddlBrokerCrGroup.DataSource = clsDR;
-                    ddlBrokerCrGroup.DataTextField = "BrkCrGrpName";
-                    ddlBrokerCrGroup.DataValueField = "BrkCrGrpId";
-                    ddlBrokerCrGroup.DataBind();
-                    ddlBrokerCrGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-
-                    if (ddlBrokerCrGroup.Items.Count == 0)
-                        ddlBrokerCrGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    clsDR.Close();
-                }
-                #endregion BrokerCreditGroup Binding
-
-                #region BrokerGroup Binding
-                if (sender != "ddlBrokerGroup")
-                {
-                    // fill up the reason code combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_GROUP.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = DateTime.Now.ToShortDateString();
-                    SqlCondition[1] = DateTime.Now.ToShortDateString();
-                    SqlCondition[2] = "";
-                    //if (sender == "ddlBrokerCrGroup")
-                    //{
-                    SqlCondition[3] = this.ddlBrokerCrGroup.SelectedValue;
-                    //SqlCondition[4] = "";
-
-
-                    if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    ddlBrokerGroup.DataSource = clsDR;
-                    ddlBrokerGroup.DataTextField = "BrkGrpNameCode";
-                    ddlBrokerGroup.DataValueField = "BrkGrpId";
-                    ddlBrokerGroup.DataBind();
-                    ddlBrokerGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-                    //}
-                    //else if (sender == "")
-                    //{
-                    //    if (ddlBrokerGroup.Items.Count == 0)
-                    //        ddlBrokerGroup.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    //}
-                }
-                #endregion BrokerGroup Binding
-
-                #region Broker Mapping
-                //if (sender != "ddlBroker")
-                //{
-
-                SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                // fill up the reason code combo box
-                clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_FROM_LOAN_TYPE.ToString();
-
-                // always bring for the search date
-                SqlCondition[0] = DateTime.Now.ToShortDateString();
-                SqlCondition[1] = DateTime.Now.ToShortDateString();
-                SqlCondition[2] = "";
-                SqlCondition[6] = this.ddlSecType.SelectedValue;
-                SqlCondition[7] = "0";// this.cboWLCollSched.SelectedValue;
-
-                //if (sender == "ddlBrokerGroup")
-                //{
-                SqlCondition[3] = this.ddlBrokerCrGroup.SelectedValue;
-                SqlCondition[4] = "1";
-                SqlCondition[5] = this.ddlBrokerGroup.SelectedValue;
-
-                //Response.Write(String.Format("step4: sender {0} Credit {1} Group {2} <br>", sender, SqlCondition[3], SqlCondition[5]));
-
-                if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                ddlBroker.DataSource = clsDR;
-                ddlBroker.DataTextField = "BrkNameCode";
-                ddlBroker.DataValueField = "BrkNbr";
-                ddlBroker.DataBind();
-                ddlBroker.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                clsDR.Close();
-                //}
-                //else if (sender == "")
-                //{
-                //    if (ddlBroker.Items.Count == 0)
-                //        ddlBroker.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                //}
-                // }
-
-                #endregion Broker Mapping
-
-                #region  Finder-Number Binding
-                //Finder Number Binding
-                clsReader.SqlIdentifier = SqlIdentifier.CBO_FINDERNBR.ToString();
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                ddlFinder.DataSource = clsDR;
-                ddlFinder.DataTextField = "FinderValueDesc";
-                ddlFinder.DataValueField = "FinderNbr";
-                ddlFinder.DataBind();
-                ddlFinder.Items.Insert(0, new ListItem("All", "0"));
-                clsDR.Close();
-
-                #endregion  Finder-Number Binding
-
-                #region  BO Status Binding
-                clsReader.SqlIdentifier = SqlIdentifier.BO_STATUS.ToString();
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                drpBOStatus.DataSource = clsDR;
-                drpBOStatus.DataTextField = "BOStatusDescription";
-                drpBOStatus.DataValueField = "BOStatusID";
-                drpBOStatus.DataBind();
-                drpBOStatus.Items.Insert(0, new ListItem("All", "0"));
-                clsDR.Close();
-                #endregion
-
-
-                #region  Collateral Schedule Binding
-                if (sender == "ddlBroker" || sender == "")
-                {
-                    //if (cboCollSched.Items.Count == 0)
-                    //    cboCollSched.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    clsReader.SqlIdentifier = SqlIdentifier.GET_COLL_SCHED.ToString();
-
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = ddlBroker.SelectedValue;
-                    SqlCondition[2] = "CR";
-                    SqlCondition[3] = ddlSecType.ToString();
-                    SqlCondition[4] = "";
-                    SqlCondition[5] = "";
-                    SqlCondition[6] = "";
-                    SqlCondition[7] = "";
-
-                    if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    cboCollSched.DataSource = clsDR;
-                    cboCollSched.DataTextField = "CollSchedName";
-                    cboCollSched.DataValueField = "CollSchedId";
-                    cboCollSched.DataBind();
-                    cboCollSched.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-                }
-                if (sender == "")
-                {
-                    #region Customer Account Group
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_REPO_ACCOUNT.ToString();
-
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = "0";
-                    SqlCondition[2] = "";
-                    SqlCondition[3] = "";
-                    SqlCondition[4] = "";
-                    SqlCondition[5] = "";
-                    SqlCondition[6] = "";
-                    SqlCondition[7] = "";
-
-
-                    if (clsDR != null && !clsDR.IsClosed)
-                        clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    ddlCustomerAccountGrp.DataSource = clsDR;
-                    ddlCustomerAccountGrp.DataTextField = "AcctName";
-                    ddlCustomerAccountGrp.DataValueField = "AcctID";
-                    ddlCustomerAccountGrp.DataBind();
-                    ddlCustomerAccountGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    clsDR.Close();
-
-                    #endregion Customer Account Group
-
-                    #region Repo Request Status
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    clsReader.SqlIdentifier = SqlIdentifier.REPO_REQUEST_STATUS.ToString();
-
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = "0";
-                    SqlCondition[2] = "";
-                    SqlCondition[3] = "";
-                    SqlCondition[4] = "";
-                    SqlCondition[5] = "";
-                    SqlCondition[6] = "";
-                    SqlCondition[7] = "";
-
-
-                    if (clsDR != null && !clsDR.IsClosed)
-                        clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    lstTradeStatus.DataSource = clsDR;
-                    lstTradeStatus.DataValueField = "StatusID";
-                    lstTradeStatus.DataTextField = "StatusDescription";
-                    lstTradeStatus.DataBind();
-                    lstTradeStatus.Items.Insert(0, new ListItem(Common.cboAllText, Common.cboAllVal));
-
-                    foreach (ListItem list in lstTradeStatus.Items)
-                    {
-                        if (list.Value == "100" || list.Value == "200" || list.Value == "900")
-                        {
-                            list.Selected = true;
-                        }
-                    }
-
-                    clsDR.Close();
-
-                    #endregion Customer Account Group
-                }
-                #endregion Collateral Schedule Binding
-
-
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return false;
-            }
-            finally
-            {
-                if (clsDR != null && !clsDR.IsClosed)
-                    clsDR.Close();
-
-                clsReader.Dispose();
-                clsDB.Dispose();
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// This method will bind dropdown values
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <returns></returns>
-        private bool FillDropDownListConfirmation(string sender)
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            SqlDataReader clsDR = null;
-            string[] SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-            MethodName = "FillDropDownListConfirmation()";
-
-            try
-            {
-                if (clsDB.Open() == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                    return false;
-                }
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.StoredProcedure = SqlObjectsStaticClass.p_GetData_Maintenance;
-
-                #region BrokerCreditGroup Binding
-                if (sender != "drpConfBrkCrGrp" && sender != "drpConfBrkGrp" && sender != "drpConfBrkNbr")
-                {
-                    // fill up the combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_CREDIT_GROUP_FROM_AVALIBILITY.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-                    SqlCondition[2] = this.ddlSecType.SelectedValue;
-                    SqlCondition[3] = "CR";
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    drpConfBrkCrGrp.DataSource = clsDR;
-                    drpConfBrkCrGrp.DataTextField = "BrkCrGrpName";
-                    drpConfBrkCrGrp.DataValueField = "BrkCrGrpId";
-                    drpConfBrkCrGrp.DataBind();
-                    drpConfBrkCrGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-
-                    if (drpConfBrkCrGrp.Items.Count == 0)
-                        drpConfBrkCrGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    clsDR.Close();
-                }
-                #endregion BrokerCreditGroup Binding
-
-                #region BrokerGroup Binding
-                if (sender != "drpConfBrkGrp" && sender != "drpConfBrkNbr")
-                {
-                    // fill up the reason code combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_GROUP.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-                    SqlCondition[2] = "";
-                    //if (sender == "drpConfBrkCrGrp")
-                    //{
-                    SqlCondition[3] = this.drpConfBrkCrGrp.SelectedValue;
-                    SqlCondition[4] = "";
-
-
-                    if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    drpConfBrkGrp.DataSource = clsDR;
-                    drpConfBrkGrp.DataTextField = "BrkGrpNameCode";
-                    drpConfBrkGrp.DataValueField = "BrkGrpId";
-                    drpConfBrkGrp.DataBind();
-                    drpConfBrkGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-                    //}
-                    //else if (sender == "")
-                    //{
-                    //    if (drpConfBrkGrp.Items.Count == 0)
-                    //        drpConfBrkGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    //}
-                }
-                #endregion BrokerGroup Binding
-
-                #region Broker Mapping
-                if (sender != "drpConfBrkNbr")
-                {
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    // fill up the reason code combo box
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_BROKER_FROM_LOAN_TYPE.ToString();
-
-                    // always bring for the search date
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = _BussDate;
-                    SqlCondition[2] = "";
-                    SqlCondition[6] = this.ddlSecType.SelectedValue;
-                    SqlCondition[7] = "0";// this.cboWLCollSched.SelectedValue;
-
-                    //if (sender == "drpConfBrkGrp")
-                    //{
-                    SqlCondition[3] = this.drpConfBrkCrGrp.SelectedValue;
-                    SqlCondition[4] = "1";
-                    SqlCondition[5] = this.drpConfBrkGrp.SelectedValue;
-
-                    //Response.Write(String.Format("step4: sender {0} Credit {1} Group {2} <br>", sender, SqlCondition[3], SqlCondition[5]));
-
-                    if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    drpConfBrkNbr.DataSource = clsDR;
-                    drpConfBrkNbr.DataTextField = "BrkNameCode";
-                    drpConfBrkNbr.DataValueField = "BrkNbr";
-                    drpConfBrkNbr.DataBind();
-                    drpConfBrkNbr.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-                    //}
-                    //else if (sender == "")
-                    //{
-                    //    if (drpConfBrkNbr.Items.Count == 0)
-                    //        drpConfBrkNbr.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    //}
-                }
-
-                #endregion Broker Mapping
-
-                #region  Finder-Number Binding
-                //Finder Number Binding
-                clsReader.SqlIdentifier = SqlIdentifier.CBO_FINDERNBR.ToString();
-                if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                    return false;
-
-                ddlConfFinder.DataSource = clsDR;
-                ddlConfFinder.DataTextField = "FinderValueDesc";
-                ddlConfFinder.DataValueField = "FinderNbr";
-                ddlConfFinder.DataBind();
-                ddlConfFinder.Items.Insert(0, new ListItem("All", "0"));
-                clsDR.Close();
-
-                #endregion  Finder-Number Binding
-
-                #region  Collateral Schedule Binding
-
-                if (sender == "ddlBroker" || sender == "")
-                {
-                    //if (cboCollSched.Items.Count == 0)
-                    //    cboCollSched.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    clsReader.SqlIdentifier = SqlIdentifier.GET_COLL_SCHED.ToString();
-
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = ddlBroker.SelectedValue;
-                    SqlCondition[2] = "CR";
-                    SqlCondition[3] = ddlSecType.ToString();
-                    SqlCondition[4] = "";
-                    SqlCondition[5] = "";
-                    SqlCondition[6] = "";
-                    SqlCondition[7] = "";
-
-                    if (clsDR != null && !clsDR.IsClosed) clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    drpConfCollSch.DataSource = clsDR;
-                    drpConfCollSch.DataTextField = "CollSchedName";
-                    drpConfCollSch.DataValueField = "CollSchedId";
-                    drpConfCollSch.DataBind();
-                    drpConfCollSch.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-                    clsDR.Close();
-                }
-                if (sender == "")
-                {
-                    #region Customer Account Group
-
-                    SqlCondition = new string[8] { "", "", "", "", "", "", "", "" };
-
-                    clsReader.SqlIdentifier = SqlIdentifier.CBO_REPO_ACCOUNT.ToString();
-
-                    SqlCondition[0] = _BussDate;
-                    SqlCondition[1] = "0";
-                    SqlCondition[2] = "";
-                    SqlCondition[3] = "";
-                    SqlCondition[4] = "";
-                    SqlCondition[5] = "";
-                    SqlCondition[6] = "";
-                    SqlCondition[7] = "";
-
-
-                    if (clsDR != null && !clsDR.IsClosed)
-                        clsDR.Close();
-
-                    if (clsReader.GetData(ref clsDR, SqlCondition) == false)
-                        return false;
-
-                    ddlConfAcctGrp.DataSource = clsDR;
-                    ddlConfAcctGrp.DataTextField = "AcctName";
-                    ddlConfAcctGrp.DataValueField = "AcctID";
-                    ddlConfAcctGrp.DataBind();
-                    ddlConfAcctGrp.Items.Insert(0, new ListItem(Common.cboSelectText, Common.cboSelectVal));
-
-                    clsDR.Close();
-
-                    #endregion Customer Account Group
-
-                }
-                #endregion Collateral Schedule Binding
-
-
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return false;
-            }
-            finally
-            {
-                if (clsDR != null && !clsDR.IsClosed)
-                    clsDR.Close();
-
-                clsReader.Dispose();
-                clsDB.Dispose();
-            }
-            return true;
-        }
-        #endregion
-
-
-        #region Button Click/ Hyperlink Click Event
-
-        /// <summary>
-        /// Invoked on click of unexecute button click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnExportReport_Click(object sender, EventArgs e)
-        {
-            GetExcelExtract();
-        }
-
-        /// <summary>
-        /// Invoked on click of unexecute button click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnUnexecute_Click(object sender, EventArgs e)
-        {
-            MethodName = "btnUnexecute_Click()";
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            int nReturnValue = 0;
-            string[] SqlCondition = new string[10] { "", "", "", "", "", "0", "0", "", "0", "" };
-            StringBuilder TradeStatusList = new StringBuilder();
-            _ErrorString = new StringBuilder();
-            try
-            {
-                var checkedRepoBrkDetID = (from GridViewRow row in grdRepoDashBoard.Rows
-                                           //where ((CheckBox)row.FindControl("chkInclude")).Checked && ((CheckBox)row.FindControl("chkInclude")).Enabled//
-                                           where ((CheckBox)row.FindControl("chkInclude")).Checked && ((Label)row.FindControl("lblStatusID")).Text == enumRepoTradeStatus.SuccessfullyUploaded.GetHashCode().ToString()
-                                           select new
-                                           {
-                                               RepoTicketBrokerDetailID = ((Label)row.FindControl("lblRepoTicketBrokerDetailID")).Text,
-                                               RepoTicketID = ((Label)row.FindControl("lblRepoTicketID")).Text
-                                           }).ToList();
-
-                XElement xml = new XElement("RepoRequestDet", checkedRepoBrkDetID.Select(i => new XElement("RepoRequest",
-                new XAttribute("RepoTicketBrokerDetailID", i.RepoTicketBrokerDetailID == string.Empty ? "0" : i.RepoTicketBrokerDetailID),
-                new XAttribute("RepoTicketID", i.RepoTicketID)
-                )));
-
-                clsDB.Open();
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = SqlIdentifier.UNEXECUTE_REPOREQUEST.ToString();
-
-                SqlCondition[1] = xml.ToString();
-                SqlCondition[2] = "0";
-                SqlCondition[7] = clsUI.NTUserName;
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_SaveData_RepoDashBoard, ref nReturnValue, SqlCondition) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorExecSP"));
-                    _ErrorString.Append(Common.GetMessage("Common", "ErrorExecSP"));
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    _ErrorString.Append(Common.GetMessage("RepoRequest", "SuccessUnexecute"));
-                    _show_info_row = "";
-                    SearchRepoRequest(0);
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                //_ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-
-        /// <summary>
-        /// On Search Repo Button Click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnSearchRepoclick(object sender, EventArgs e)
-        {
-            MethodName = "btnSearchRepoclick()";
-            try
-            {
-                if (ValidateSearchRepoInputFields())   // true  == error
-                {
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    _show_error_row = _ErrorInfoNone;
-                    _show_info_row = _ErrorInfoNone;
-                    SearchRepoRequest(0);
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-
-        /// <summary>
-        /// On Search Repo Button Click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnSearchRepoConfirmationclick(object sender, EventArgs e)
-        {
-            MethodName = "btnSearchRepoConfirmationclick()";
-            try
-            {
-                if (ValidateRepoConfirmationInputFields())   // true  == error
-                {
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    _show_error_row = _ErrorInfoNone;
-                    _show_info_row = _ErrorInfoNone;
-                    SearchRepoConfirmation();
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-
-        /// <summary>
-        /// Event invoked on generate button click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnGenerate_Click(object sender, EventArgs e)
-        {
-            MethodName = "btnGenerate_Click()";
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            int nReturnValue = 0;
-            string[] SqlCondition = new string[1] { "" };
-            StringBuilder TradeStatusList = new StringBuilder();
-            _ErrorString = new StringBuilder();
-            try
-            {
-                var checkedRepoExcelID = (from GridViewRow row in grdRepoConfDashBoard.Rows
-                                          where ((CheckBox)row.FindControl("chkRepoConfInclude")).Checked
-                                          select new
-                                          {
-                                              RepoExcelID = ((Label)row.FindControl("lblRepoExcelID")).Text
-                                          }).Distinct().ToList();
-
-                XElement xml = new XElement("RepoRequestDet", checkedRepoExcelID.Select(i => new XElement("RepoRequest",
-                new XAttribute("RepoExcelID", i.RepoExcelID == string.Empty ? "0" : i.RepoExcelID))));
-
-                clsDB.Open();
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = SqlIdentifier.GENERATE_CONFIRMATION.ToString();
-
-                SqlCondition[0] = xml.ToString();
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_Send_RepoRequestConfirmation, ref nReturnValue, SqlCondition) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorExecSP"));
-                    _ErrorString.Append(Common.GetMessage("Common", "ErrorExecSP"));
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    GenerateConfirmation(objDS);
-                    SearchRepoConfirmation();
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-
-        /// <summary>
-        /// Event invoked on send button click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnSendAll_Click(object sender, EventArgs e)
-        {
-            MethodName = "btnSendAll_Click()";
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            int nReturnValue = 0;
-            string[] SqlCondition = new string[1] { "" };
-            _ErrorString = new StringBuilder();
-
-            try
-            {
-                var checkedRepoExcelID = (from GridViewRow row in grdRepoConfDashBoard.Rows
-                                          where ((CheckBox)row.FindControl("chkRepoConfInclude")).Checked
-                                          select new
-                                          {
-                                              RepoExcelID = ((Label)row.FindControl("lblRepoExcelID")).Text
-                                          }).Distinct().ToList();
-
-                XElement xml = new XElement("RepoRequestDet", checkedRepoExcelID.Select(i => new XElement("RepoRequest",
-                new XAttribute("RepoExcelID", i.RepoExcelID == string.Empty ? "0" : i.RepoExcelID))));
-
-                clsDB.Open();
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = SqlIdentifier.SEND_CONFIRMATION.ToString();
-
-                SqlCondition[0] = xml.ToString();
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_Send_RepoRequestConfirmation, ref nReturnValue, SqlCondition) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorExecSP"));
-                    _ErrorString.Append(Common.GetMessage("Common", "ErrorExecSP"));
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    SendConfirmation(objDS);
-                    SearchRepoConfirmation();
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-
-        /// <summary>
-        /// Functionality on Click of ReBook
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void lnkReBook_Click(object sender, System.Web.UI.WebControls.CommandEventArgs e)
-        {
-            Database clsDB = new Database();
-            DataCommand clsCmd = new DataCommand();
-            MethodName = "lnkReBook_Click()";
-
-            DataReader clsReader = new DataReader();
-            DataSet ds = new DataSet();
-            int nReturnValue = 0;
-
-            string[] SqlCondition;
-
-            try
-            {
-                //Get the button that raised the event
-                LinkButton btn = (LinkButton)sender;
-
-                //Get the row that contains this button
-                GridViewRow row = (GridViewRow)btn.NamingContainer;
-
-                if (row != null)
-                {
-
-                    Label lblRepoTicketBrokerDetailID = ((Label)row.FindControl("lblRepoTicketBrokerDetailID"));
-                    Label lblRepoTicketID = ((Label)row.FindControl("lblRepoTicketID"));
-                    Label lblFaceAmount = ((Label)row.FindControl("lblFaceAmount"));
-                    Label lblRepoTicketLoanID = ((Label)row.FindControl("lblRepoTicketLoanID"));
-
-                    switch (e.CommandName.ToUpper())
-                    {
-                        case REBOOK:
-                            if ((!string.IsNullOrEmpty(lblRepoTicketID.Text)) && (!string.IsNullOrEmpty(lblRepoTicketBrokerDetailID.Text)))
-                            {
-
-                                if (clsDB.Open() == false)
-                                {
-                                    log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                                    throw new Exception(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                                }
-
-                                clsReader.Connection = clsDB.Connection;
-
-                                SqlCondition = new string[7] { "", "", "", "", "", "", "" };
-                                SqlCondition[0] = lblRepoTicketID.Text;
-                                SqlCondition[1] = lblRepoTicketBrokerDetailID.Text;
-                                SqlCondition[2] = enumRepoTradeStatus.RequestSendToG1.GetHashCode().ToString();
-                                SqlCondition[3] = enumRepoTradeStatus.FailedOnG1.GetHashCode().ToString();
-                                SqlCondition[4] = clsUI.NTUserName;
-                                SqlCondition[5] = lblFaceAmount.Text;
-                                SqlCondition[6] = lblRepoTicketLoanID.Text;
-
-
-                                if (clsReader.GetData(ref ds, SqlObjects.p_RepoTktRebook, ref nReturnValue, SqlCondition) == false)
-                                {
-                                    log.Debug(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                                    throw new Exception(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                                }
-                                else
-                                {
-                                    SearchRepoRequest(0);
-                                }
-                            }
-                            break;
-
-                        case RE_EXECUTE:
-                            if (clsDB.Open() == false)
-                            {
-                                log.Debug(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                                throw new Exception(Common.GetMessage("Common", "ErrorCantOpenDB"));
-                            }
-
-                            clsReader.Connection = clsDB.Connection;
-
-                            SqlCondition = new string[4] { "", "", "", "" };
-                            SqlCondition[0] = lblRepoTicketID.Text;
-                            SqlCondition[1] = lblRepoTicketBrokerDetailID.Text == string.Empty ? "0" : lblRepoTicketBrokerDetailID.Text;
-                            SqlCondition[2] = clsUI.NTUserName;
-
-                            if (clsReader.GetData(ref ds, SqlObjects.p_RepoTktReExecute, ref nReturnValue, SqlCondition) == false)
-                            {
-                                log.Debug(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                                throw new Exception(Common.GetMessage("Common", "ErrorExecSP") + clsCmd.StoredProcedure);
-                            }
-                            else
-                            {
-                                Common.WriteJavascript("alert('" + Common.GetMessage("RepoRequest", "ReExecuteSuccess") + "');");
-                                SearchRepoRequest(0);
-                            }
-
-
-                            break;
-                    }
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(Exc.Message);
-                _show_error_row = "";
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-
-            }
-        }
-
-
-        /// <summary>
-        /// Invoked on click of unexecute button click
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void btnCancel_Click(object sender, EventArgs e)
-        {
-            MethodName = "btnCancel_Click()";
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            int nReturnValue = 0;
-            string[] SqlCondition = new string[8] { "", "", "", "", "", "0", "0", "" };
-            StringBuilder TradeStatusList = new StringBuilder();
-            _ErrorString = new StringBuilder();
-            try
-            {
-                var checkedRepoBrkDetID = (from GridViewRow row in grdRepoDashBoard.Rows
-                                           where ((CheckBox)row.FindControl("chkInclude")).Checked
-                                           select new
-                                           {
-                                               RepoTicketBrokerDetailID = ((Label)row.FindControl("lblRepoTicketBrokerDetailID")).Text,
-                                               RepoTicketID = ((Label)row.FindControl("lblRepoTicketID")).Text,
-                                               StatusID = ((Label)row.FindControl("lblStatusID")).Text,
-                                           }).ToList();
-
-                XElement xml = new XElement("RepoRequestDet", checkedRepoBrkDetID.Select(i => new XElement("RepoRequest",
-                new XAttribute("RepoTicketBrokerDetailID", i.RepoTicketBrokerDetailID == string.Empty ? "0" : i.RepoTicketBrokerDetailID),
-                new XAttribute("RepoTicketID", i.RepoTicketID),
-                new XAttribute("StatusID", i.StatusID)
-                )));
-
-
-                clsDB.Open();
-
-                clsReader.Connection = clsDB.Connection;
-
-                SqlCondition[0] = xml.ToString();
-                SqlCondition[1] = clsUI.NTUserName;
-
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_RepoTicket_CancelLoan, ref nReturnValue, SqlCondition) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorExecSP"));
-                    _ErrorString.Append(Common.GetMessage("Common", "ErrorExecSP"));
-                    _show_error_row = _ErrorInfoBlank;
-                }
-                else
-                {
-                    _ErrorString.Append(Common.GetMessage("RepoRequest", "SuccessCancelled"));
-                    _show_info_row = "";
-                    SearchRepoRequest(0);
-                }
-
-            }
-            catch (Exception Exc)
-            {
-                //_ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-        }
-        #endregion
-
-        /// <summary>
-        /// Update Status on Unexecute
-        /// </summary>
-        /// <param name="repoExcelID"></param>
-        /// <param name="statusID"></param>
-        /// <param name="confirmationPath"></param>
-        private void UpdateStatus(string repoExcelID, string statusID, string confirmationPath)
-        {
-            MethodName = "UpdateStatus()";
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            int nReturnValue = 0;
-            string[] SqlCondition = new string[6] { "", "", "", "", "", "" };
-            StringBuilder TradeStatusList = new StringBuilder();
-            _ErrorString = new StringBuilder();
-            try
-            {
-
-                clsDB.Open();
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = SqlIdentifier.UPDATE_REPO_STATUS.ToString();
-
-                SqlCondition[1] = repoExcelID;
-                SqlCondition[2] = statusID;
-                SqlCondition[3] = confirmationPath;
-
-                if (clsReader.GetData(ref objDS, SqlObjects.p_Save_RepoStatus, ref nReturnValue, SqlCondition) == false)
-                {
-                    log.Debug(Common.GetMessage("Common", "ErrorExecSP"));
-                    _ErrorString.Append(Common.GetMessage("Common", "ErrorExecSP"));
-                    _show_error_row = _ErrorInfoBlank;
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        ///  Zip files
-        /// </summary>
-        /// <param name="RecievedFilePath"></param>
-        /// <param name="FileName"></param>
-        /// <param name="Password"></param>
-        /// <returns></returns>
-        private void CompressFiles(string RecievedFilePath, string FileName, string Password)
-        {
-            MethodName = "CompressFiles()";
-            try
-            {
-                FileArchiver archiver = new FileArchiver();
-                archiver.SourceFolder = RecievedFilePath + "\\";
-                archiver.ArchiveFolder = RecievedFilePath + "\\" + FileName.Trim();
-                archiver.ArchiveFileName = RecievedFilePath + "\\" + Path.GetFileNameWithoutExtension(FileName.Trim()) + ".zip";
-                archiver.Password = Password;
-                archiver.CompressFiles();
-
-                DirectoryInfo directory = new DirectoryInfo(RecievedFilePath);
-                List<FileInfo> fileInfos = directory.GetFiles().ToList();
-
-                foreach (FileInfo f in fileInfos)
-                {
-                    if (Path.GetExtension(f.FullName) == ".xlsx" || Path.GetExtension(f.FullName) == ".xls" || Path.GetExtension(f.FullName) == ".xlsm")
-                        File.Delete(f.FullName);
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-            }
-        }
-
-        /// <summary>
-        /// Generate confirmation excel
-        /// </summary>
-        /// <param name="DS_Result"></param>
-        private void GenerateConfirmation(DataSet DS_Result)
-        {
-            DataTable dtResponse;
-            string confFilePath = string.Empty;
-            string clientName = string.Empty;
-            string templateTypeID = string.Empty;
-            StringBuilder strMessage;
-            Byte[] bytesRepoExcel = null;
-            int NoOfSheets;
-            int headerRowNo = Common.RepoDashBoard_headerRowNo;
-            int colHeader;
-            int confirmationRowNo;
-            string _compressPassword = string.Empty;
-            string repoExcelID = string.Empty;
-            string fileNameLoad = string.Empty;
-            string password = string.Empty;
-
-            try
-            {
-                foreach (DataRow dr in DS_Result.Tables[0].Rows)
-                {
-
-                    confFilePath = ConfigurationManager.AppSettings["RepoTemplateConfirmationPath"];// +dr["RepoExcelID"];
-                    confFilePath = confFilePath + "\\" + DateTime.Now.Year.ToString() + "\\" + DateTime.Now.Month.ToString() + "\\" + DateTime.Now.Date.Day.ToString();
-
-                    if (!Directory.Exists(confFilePath))
-                        System.IO.Directory.CreateDirectory(confFilePath);
-
-                    templateTypeID = dr["TemplateTypeID"].ToString();
-                    bytesRepoExcel = (Byte[])dr["RepoExcelFile"];
-                    repoExcelID = dr["RepoExcelID"].ToString();
-                    password = dr["Password"].ToString();
-
-                    dtResponse = new DataTable("RepoResponse");
-                    if (DS_Result.Tables[1].Rows.Count > 0)
-                        dtResponse = DS_Result.Tables[1].Select("RepoExcelID = " + dr["RepoExcelID"]).CopyToDataTable();
-
-                    using (C1XLBook wbExcel = new C1XLBook())
-                    {
-                        fileNameLoad = confFilePath + "\\" + Path.GetFileNameWithoutExtension(dr["FileName"].ToString()) + Path.GetExtension(dr["FileName"].ToString());
-
-                        using (FileStream fsNew = new FileStream(fileNameLoad, FileMode.Create, FileAccess.Write))
-                        {
-                            fsNew.Write(bytesRepoExcel, 0, bytesRepoExcel.Length);
-                        }
-
-                        if (Path.GetExtension(fileNameLoad) == ".xls")
-                        {
-                            wbExcel.Load(fileNameLoad, FileFormat.Biff8);
-                        }
-                        else
-                        {
-                            wbExcel.Load(fileNameLoad, FileFormat.OpenXml);
-                        }
-
-                        NoOfSheets = wbExcel.Sheets.Count;
-
-                        #region Write Confirmation into excel
-
-                        for (int sheetNbr = 0; sheetNbr < NoOfSheets; sheetNbr++)  // Loop For Sheets
-                        {
-                            colHeader = 1;
-                            confirmationRowNo = Common.RepoDashBoard_confirmationRowNo;
-                            XLSheet sheet = wbExcel.Sheets[sheetNbr];
-                            sheet.Scale = 70;
-
-                            #region WriteHeaders
-                            //Remove Header                        
-                            //sheet.Rows.RemoveAt(headerRowNo);
-
-                            //Clear Confirmation section from  header Row to sheet.Row.Count
-                            //This will clear the entire Bottom Section from Confirmation header Row.
-                            for (int i = sheet.Rows.Count; i >= (headerRowNo); i--)
-                            {
-                                if (sheet.Rows[i] != null)
-                                    sheet.Rows.RemoveAt(i);
-                            }
-
-                            //Header Style
-                            XLStyle styleHeader = new XLStyle(wbExcel);
-                            styleHeader.ForeColor = System.Drawing.Color.Black;
-                            styleHeader.BackColor = System.Drawing.Color.FromArgb(216, 240, 254);
-                            styleHeader.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleHeader.WordWrap = true;
-                            styleHeader.AlignHorz = XLAlignHorzEnum.Center;
-                            styleHeader.AlignVert = XLAlignVertEnum.Center;
-                            styleHeader.BorderBottom = XLLineStyleEnum.Thin;
-                            styleHeader.BorderTop = XLLineStyleEnum.Thin;
-                            styleHeader.BorderLeft = XLLineStyleEnum.Thin;
-                            styleHeader.BorderRight = XLLineStyleEnum.Thin;
-
-                            //Write Header and apply header Style.
-                            foreach (enumConfirmationHeaders headers in Enum.GetValues(typeof(enumConfirmationHeaders)))
-                            {
-                                sheet[headerRowNo, colHeader].Style = styleHeader;
-                                var enumMember = headers.GetType().GetMember(headers.ToString()).FirstOrDefault();
-                                if (headers == enumConfirmationHeaders.CleanPrice || headers == enumConfirmationHeaders.ReinvestmentRate)
-                                {
-                                    if (templateTypeID == "1")
-                                    {
-                                        sheet.GetCell(headerRowNo, colHeader).Value = ((DescriptionAttribute)(enumMember.GetCustomAttribute(typeof(DescriptionAttribute)))).Description;
-                                        colHeader++;
-                                    }
-                                }
-                                else
-                                {
-                                    sheet.GetCell(headerRowNo, colHeader).Value = ((DescriptionAttribute)(enumMember.GetCustomAttribute(typeof(DescriptionAttribute)))).Description;
-                                    colHeader++;
-                                }
-
-                            }
-                            #endregion
-
-                            #region Write Confirmation Row
-
-                            //Column Style
-                            XLStyle styleRow = new XLStyle(wbExcel);
-                            styleRow.ForeColor = System.Drawing.Color.Black;
-                            styleRow.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRow.AlignHorz = XLAlignHorzEnum.Center;
-                            styleRow.AlignVert = XLAlignVertEnum.Center;
-                            styleRow.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRow.BorderTop = XLLineStyleEnum.Thin;
-                            styleRow.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRow.BorderRight = XLLineStyleEnum.Thin;
-                            styleRow.WordWrap = true;
-
-                            //Date Column Style
-                            XLStyle styleRowDate = new XLStyle(wbExcel);
-                            styleRowDate.ForeColor = System.Drawing.Color.Black;
-                            styleRowDate.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRowDate.AlignHorz = XLAlignHorzEnum.Center;
-                            styleRowDate.AlignVert = XLAlignVertEnum.Center;
-                            styleRowDate.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRowDate.BorderTop = XLLineStyleEnum.Thin;
-                            styleRowDate.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRowDate.BorderRight = XLLineStyleEnum.Thin;
-                            styleRowDate.WordWrap = true;
-                            styleRowDate.Format = "MM/dd/YYYY";
-
-                            //Column style for two decimals
-                            XLStyle styleRow2Dec = new XLStyle(wbExcel);
-                            styleRow2Dec.ForeColor = System.Drawing.Color.Black;
-                            styleRow2Dec.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRow2Dec.AlignHorz = XLAlignHorzEnum.Right;
-                            styleRow2Dec.AlignVert = XLAlignVertEnum.Center;
-                            styleRow2Dec.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRow2Dec.BorderTop = XLLineStyleEnum.Thin;
-                            styleRow2Dec.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRow2Dec.BorderRight = XLLineStyleEnum.Thin;
-                            styleRow2Dec.Format = "#,##0.00";
-
-                            //Column style for three decimals
-                            XLStyle styleRow3Dec = new XLStyle(wbExcel);
-                            styleRow3Dec.ForeColor = System.Drawing.Color.Black;
-                            styleRow3Dec.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRow3Dec.AlignHorz = XLAlignHorzEnum.Right;
-                            styleRow3Dec.AlignVert = XLAlignVertEnum.Center;
-                            styleRow3Dec.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRow3Dec.BorderTop = XLLineStyleEnum.Thin;
-                            styleRow3Dec.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRow3Dec.BorderRight = XLLineStyleEnum.Thin;
-                            styleRow3Dec.Format = "#,##0.000";
-
-                            //Column style for four decimals
-                            XLStyle styleRow4Dec = new XLStyle(wbExcel);
-                            styleRow4Dec.ForeColor = System.Drawing.Color.Black;
-                            styleRow4Dec.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRow4Dec.AlignHorz = XLAlignHorzEnum.Right;
-                            styleRow4Dec.AlignVert = XLAlignVertEnum.Center;
-                            styleRow4Dec.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRow4Dec.BorderTop = XLLineStyleEnum.Thin;
-                            styleRow4Dec.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRow4Dec.BorderRight = XLLineStyleEnum.Thin;
-                            styleRow4Dec.Format = "#,##0.0000";
-
-                            //Column style for seven decimals
-                            XLStyle styleRow7Dec = new XLStyle(wbExcel);
-                            styleRow7Dec.ForeColor = System.Drawing.Color.Black;
-                            styleRow7Dec.Font = new Font("Times New Roman", 14, FontStyle.Bold);
-                            styleRow7Dec.AlignHorz = XLAlignHorzEnum.Right;
-                            styleRow7Dec.AlignVert = XLAlignVertEnum.Center;
-                            styleRow7Dec.BorderBottom = XLLineStyleEnum.Thin;
-                            styleRow7Dec.BorderTop = XLLineStyleEnum.Thin;
-                            styleRow7Dec.BorderLeft = XLLineStyleEnum.Thin;
-                            styleRow7Dec.BorderRight = XLLineStyleEnum.Thin;
-                            styleRow7Dec.Format = "#,##0.0000000";
-
-                            int totalCol = 0;
-
-                            //GET Request Rows for the sheet 
-                            DataTable RequestSheetTable = dtResponse.AsEnumerable()
-                              .Where(row => row.Field<int>("SheetNumber") == sheetNbr)
-                              .CopyToDataTable();
-
-
-                            //Check if Original uploaded sheet has thoes many rows present (No of rows need to write), if not then add Rows in sheet.
-                            while (sheet.Rows.Count < (RequestSheetTable.Rows.Count + confirmationRowNo + 5))
-                            {
-                                sheet.Rows.Add();
-                            }
-
-                            foreach (DataRow ResRow in RequestSheetTable.Rows)
-                            {
-                                //sheet.Columns[10].Width = 2000;
-                                sheet.Columns[3].Width = 1600;
-                                sheet.Columns[4].Width = 1600;
-                                sheet.Columns[5].Width = 1600;
-                                sheet.Columns[12].Width = 1600;
-
-                                if (sheet.Rows[confirmationRowNo] != null)
-                                {
-                                    sheet.Rows[confirmationRowNo].Height = 800;
-                                
-                                    sheet[confirmationRowNo, 1].Value = System.Convert.IsDBNull(ResRow["CustomerName"]) ? "" : ResRow["CustomerName"].ToString();
-                                    sheet[confirmationRowNo, 2].Value = System.Convert.IsDBNull(ResRow["AcctNbr"]) ? "" : ResRow["AcctNbr"].ToString();                                
-                                    sheet[confirmationRowNo, 3].Value = System.Convert.IsDBNull(ResRow["TradeDate"]) ? "" : ResRow["TradeDate"].ToString();                                
-                                    sheet[confirmationRowNo, 4].Value = System.Convert.IsDBNull(ResRow["StartDate"]) ? "" : ResRow["StartDate"].ToString();
-                                    sheet[confirmationRowNo, 5].Value = System.Convert.IsDBNull(ResRow["EndDate"]) ? "" : ResRow["EndDate"].ToString();
-                                    sheet[confirmationRowNo, 6].Value = System.Convert.IsDBNull(ResRow["SecCategoryCode"]) ? "" : ResRow["SecCategoryCode"].ToString();
-                                    sheet[confirmationRowNo, 7].Value = System.Convert.IsDBNull(ResRow["SecCode"]) ? "" : ResRow["SecCode"].ToString();
-                                    sheet[confirmationRowNo, 8].Value = System.Convert.IsDBNull(ResRow["CCY"]) ? "" : ResRow["CCY"].ToString();                               
-                                    sheet[confirmationRowNo, 9].Value = System.Convert.IsDBNull(ResRow["FaceAmount"]) ? "" : ResRow["FaceAmount"];
-                                    sheet[confirmationRowNo, 10].Value = System.Convert.IsDBNull(ResRow["SecDesc"]) ? "" : ResRow["SecDesc"].ToString();                                
-                                    sheet[confirmationRowNo, 11].Value = System.Convert.IsDBNull(ResRow["Coupon"]) ? "" : ResRow["Coupon"];                               
-                                    sheet[confirmationRowNo, 12].Value = System.Convert.IsDBNull(ResRow["Maturity"]) ? "" : ResRow["Maturity"].ToString();
-
-                                    if (templateTypeID == "1")
-                                    {
-                                        sheet.Columns[13].Width = 2000;
-                                        sheet.Columns[14].Width = 1800;
-                                        sheet.Columns[15].Width = 1200;
-                                        sheet.Columns[17].Width = 3500;
-                                        sheet.Columns[19].Width = 2000;
-                                        sheet.Columns[20].Width = 3500;
-                                        sheet[confirmationRowNo, 13].Value = System.Convert.IsDBNull(ResRow["CleanPrice"]) ? "" : ResRow["CleanPrice"];                                    
-                                        sheet[confirmationRowNo, 14].Value = System.Convert.IsDBNull(ResRow["InterpolationLibor"]) ? "" : ResRow["InterpolationLibor"];
-                                        sheet[confirmationRowNo, 15].Value = System.Convert.IsDBNull(ResRow["RepoRate"]) ? "" : ResRow["RepoRate"];
-                                        sheet[confirmationRowNo, 16].Value = System.Convert.IsDBNull(ResRow["CashCollateralAmount"]) ? "" : ResRow["CashCollateralAmount"];
-                                        sheet[confirmationRowNo, 17].Value = System.Convert.IsDBNull(ResRow["Broker"]) ? "" : ResRow["Broker"].ToString();
-                                        sheet[confirmationRowNo, 18].Value = System.Convert.IsDBNull(ResRow["Location"]) ? "" : ResRow["Location"].ToString();
-                                        sheet[confirmationRowNo, 19].Value = System.Convert.IsDBNull(ResRow["TradedPrice"]) ? "" : ResRow["TradedPrice"];
-                                        sheet[confirmationRowNo, 20].Value = System.Convert.IsDBNull(ResRow["Other"]) ? "" : ResRow["Other"].ToString();
-
-                                        totalCol = 20;
-                                    }
-                                    else
-                                    {
-                                        sheet.Columns[13].Width = 1200;
-                                        sheet.Columns[15].Width = 3500;
-                                        sheet.Columns[17].Width = 2000;
-                                        sheet.Columns[18].Width = 3500;                                   
-                                        sheet[confirmationRowNo, 13].Value = System.Convert.IsDBNull(ResRow["RepoRate"]) ? "" : ResRow["RepoRate"];
-                                        sheet[confirmationRowNo, 14].Value = System.Convert.IsDBNull(ResRow["CashCollateralAmount"]) ? "" : ResRow["CashCollateralAmount"];
-                                        sheet[confirmationRowNo, 15].Value = System.Convert.IsDBNull(ResRow["Broker"]) ? "" : ResRow["Broker"].ToString();
-                                        sheet[confirmationRowNo, 16].Value = System.Convert.IsDBNull(ResRow["Location"]) ? "" : ResRow["Location"].ToString();                                    
-                                        sheet[confirmationRowNo, 17].Value = System.Convert.IsDBNull(ResRow["TradedPrice"]) ? "" : ResRow["TradedPrice"];
-                                        sheet[confirmationRowNo, 18].Value = System.Convert.IsDBNull(ResRow["Other"]) ? "" : ResRow["Other"].ToString();
-
-                                        totalCol = 18;
-                                    }
-
-                                    for (int ColCount = 1; ColCount <= totalCol; ColCount++)
-                                    {
-                                        if (templateTypeID == "1")
-                                        {
-                                            if (ColCount == 14)
-                                            {                                            
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow4Dec;
-                                            }
-                                            else if (ColCount == 11 || ColCount == 9 || ColCount == 15)
-                                            {                                            
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow3Dec;
-                                            }
-                                            else if (ColCount == 13 || ColCount == 19)
-                                            {                                            
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow7Dec;
-                                            }
-                                            else if (ColCount == 16)
-                                            {                                            
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow2Dec;
-                                            }
-                                            else if (ColCount == 3 || ColCount == 4 || ColCount == 5 || ColCount == 12)
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRowDate;
-                                            }
-                                            else
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow;
-                                            }
-                                        }
-                                        else
-                                        {                                       
-                                            if (ColCount == 11 || ColCount == 9 || ColCount == 13)
-                                            {                                            
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow3Dec;
-                                            }
-                                            else if (ColCount == 17)
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow7Dec;
-                                            }
-                                            else if (ColCount == 14)
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow2Dec;
-                                            }
-                                            else if (ColCount == 3 || ColCount == 4 || ColCount == 5 || ColCount == 12)
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRowDate;
-                                            }
-                                            else
-                                            {
-                                                sheet[confirmationRowNo, ColCount].Style = styleRow;
-                                            }
-                                        }
-                                    }
-                                    confirmationRowNo++;
-                                }
-
-                            }
-
-                            #endregion
-
-                            #region Print Settings
-                            sheet.PrintSettings.Landscape = true;
-                            sheet.PrintSettings.MarginBottom = 0.196850393700787;
-                            sheet.PrintSettings.MarginFooter = 0.511811023622047;
-                            sheet.PrintSettings.MarginLeft = 0.4;
-                            sheet.PrintSettings.MarginRight = 0.393700787401575;
-                            sheet.PrintSettings.MarginTop = 0.590551181102362;
-                            sheet.PrintSettings.MarginHeader = 0.511811023622047;
-                            sheet.PrintSettings.ScaleWithDocument = true;
-                            sheet.PrintSettings.PaperKind = System.Drawing.Printing.PaperKind.A4;
-                            sheet.PrintSettings.FitPagesAcross = 1;
-                            sheet.PrintSettings.FitPagesDown = 1;
-
-                            //sheet.PrintSettings.PrintGridlines = true;
-                            //sheet.Columns[20].PageBreak = true;
-                            #endregion
-                        }
-
-                        #endregion
-
-                        #region Set Print Area For Excel
-                        XLNamedRangeCollection excelNamedRangeColl = wbExcel.NamedRanges;
-                        int sheetCntPrintArea = 0;
-
-                        if (excelNamedRangeColl != null)
-                        {
-                            //Search for existing print area. If does not exist, create new print area. 
-                            if (excelNamedRangeColl.Count > 0)
-                            {
-                                foreach (XLNamedRange excelNamedRange in excelNamedRangeColl)
-                                {
-                                    if (excelNamedRange != null)
-                                    {
-                                        if (excelNamedRange.Name.Contains(PRINT_AREA_NAME))
-                                        {
-                                            if (!excelNamedRange.IsEmpty)
-                                            {
-                                                if (excelNamedRange.CellRanges.Count() > 0)
-                                                {
-                                                    excelNamedRange.CellRanges[namedCellRangePosition].ColumnTo = String.IsNullOrEmpty(ConfigurationManager.AppSettings[PRINT_AREA_COLUMN_COUNT].ToString()) ? 0 : Convert.ToInt32(ConfigurationManager.AppSettings[PRINT_AREA_COLUMN_COUNT].ToString());
-                                                    excelNamedRange.CellRanges[namedCellRangePosition].RowTo = String.IsNullOrEmpty(ConfigurationManager.AppSettings[PRINT_AREA_ROW_COUNT].ToString()) ? 0 : Convert.ToInt32(ConfigurationManager.AppSettings[PRINT_AREA_ROW_COUNT].ToString());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                XLCellRange cellRange = new XLCellRange(sheetCntPrintArea, sheetCntPrintArea, 0, String.IsNullOrEmpty(ConfigurationManager.AppSettings[PRINT_AREA_ROW_COUNT].ToString()) ? 0 : Convert.ToInt32(ConfigurationManager.AppSettings[PRINT_AREA_ROW_COUNT].ToString()), 0,
-                                    String.IsNullOrEmpty(ConfigurationManager.AppSettings[PRINT_AREA_COLUMN_COUNT].ToString()) ? 0 : Convert.ToInt32(ConfigurationManager.AppSettings[PRINT_AREA_COLUMN_COUNT].ToString()), XLReferenceType.Absolute, XLReferenceType.Absolute, XLReferenceType.Absolute, XLReferenceType.Absolute);
-                                cellRange.RangeType = XLRangeType.Formula;
-                                excelNamedRangeColl.Add(PRINT_AREA_NAME + sheetCntPrintArea, cellRange);
-                            }
-                        }
-
-                        #endregion
-
-                        #region SaveExcel
-                        if (Path.GetExtension(fileNameLoad) == ".xls")
-                        {
-                            wbExcel.Save(fileNameLoad, FileFormat.Biff8);
-                        }
-                        else if (Path.GetExtension(fileNameLoad) == ".xlsx")
-                        {
-                            wbExcel.Save(fileNameLoad, FileFormat.OpenXml);
-                        }
-                        else
-                        {
-                            wbExcel.Save(fileNameLoad, FileFormat.OpenXmlMacro);
-                        }
-                        #endregion
-
-                    }
-
-
-                    CompressFiles(Path.GetDirectoryName(fileNameLoad), Path.GetFileName(fileNameLoad), password);
-
-                    //Update status and confirmation path                                        
-                    UpdateStatus(dr["RepoExcelID"].ToString(), enumRepoTradeStatus.ConfirmationGenerated.GetHashCode().ToString(), Path.GetDirectoryName(fileNameLoad) + "\\" + Path.GetFileNameWithoutExtension(fileNameLoad) + ".zip");
-                }
-                trConfPath.Style.Add("visibility", "visible");
-                lnkConfPath.InnerText = Path.GetDirectoryName(fileNameLoad);
-                lnkConfPath.HRef = Path.GetDirectoryName(fileNameLoad);
-
-                strMessage = new StringBuilder();
-                strMessage.Append("\t" + Common.GetMessage("RepoRequest", "ConfirmationGeneratedSuccessMessage") + "\n");
-
-                _ErrorString.Append(strMessage);
-                _show_error_row = _ErrorInfoNone;
-                _show_info_row = _ErrorInfoBlank;
-
-            }
-            catch (Exception exc)
-            {
-
-                throw exc;
-            }
-        }
-
-        /// <summary>
-        /// Method invoked on send confirmation click
-        /// </summary>
-        /// <param name="DS_Result"></param>
-        private void SendConfirmation(DataSet DS_Result)
-        {
-            DataTable dtEmailDetails;            
-            ArrayList arrToList = null;
-            ArrayList arrCcList = null;
-            ArrayList arrBccList = null;
-            ArrayList arrAttachment = null;
-            string strRepoExcelID = string.Empty;
-            string strRepoExcelIDFailed = string.Empty;
-            StringBuilder strMessage = null;
-            string subject = string.Empty;
-            string emailBody = string.Empty;
-            string clientID = string.Empty;
-
-            try
-            {
-                strMessage = new StringBuilder();
-                foreach (DataRow dr in DS_Result.Tables[0].Rows)
-                {
-                    if (String.IsNullOrEmpty(dr["RepoConfirmationPath"].ToString()) || !File.Exists(dr["RepoConfirmationPath"].ToString()))
-                    {
-                        strRepoExcelID = strRepoExcelID == string.Empty ? dr["RepoExcelID"].ToString() : strRepoExcelID + "," + dr["RepoExcelID"].ToString();
-                    }
-                    else if (Convert.ToBoolean(dr["SendEmail"]) == false)
-                    {
-                        strRepoExcelIDFailed = strRepoExcelIDFailed == string.Empty ? dr["RepoExcelID"].ToString() : strRepoExcelIDFailed + "," + dr["RepoExcelID"].ToString();
-                    }
-                    else
-                    {
-                        dtEmailDetails = new DataTable("EmailDetails");
-                        if (DS_Result.Tables[1].Rows.Count > 0)
-                        {
-                            dtEmailDetails = DS_Result.Tables[1].Select("RepoExcelID = " + dr["RepoExcelID"]).CopyToDataTable();
-                        }
-
-                        if (dtEmailDetails.Rows.Count > 0)
-                        {
-
-                            arrToList = new ArrayList();
-                            arrCcList = new ArrayList();
-                            arrBccList = new ArrayList();                            
-
-                            //Get distinct email details for EmailTo
-                            var EmailToInfos = dtEmailDetails.AsEnumerable().
-                                                Select(Email => new
-                                                                {
-                                                                    EmailTO = string.IsNullOrEmpty(Email.Field<string>("EmailTO")) ? "" : Email.Field<string>("EmailTO"),                                                                  
-                                                                }).Distinct();
-
-                            //Get distinct email details for EmailCC
-                            var EmailCCInfos = dtEmailDetails.AsEnumerable().
-                                                Select(Email => new
-                                                {                                                    
-                                                    EmailCC = string.IsNullOrEmpty(Email.Field<string>("EmailCC")) ? "" : Email.Field<string>("EmailCC"),                                                   
-                                                }).Distinct();
-
-                            //Get distinct email details for EmailBCC
-                            var EmailBCCInfos = dtEmailDetails.AsEnumerable().
-                                                Select(Email => new
-                                                {                                                   
-                                                    EmailBCC = string.IsNullOrEmpty(Email.Field<string>("EmailBCC")) ? "" : Email.Field<string>("EmailBCC"),                                                   
-                                                }).Distinct();
-                            
-                            foreach (var info in EmailToInfos)
-                            {
-                                arrToList.Add(info.EmailTO);                                                              
-                            }
-
-                            foreach (var info in EmailCCInfos)
-                            {
-                                arrCcList.Add(info.EmailCC);                                                             
-                            }
-
-                            foreach (var info in EmailBCCInfos)
-                            {
-                                arrBccList.Add(info.EmailBCC);                                                               
-                            }
-
-                            arrAttachment = new ArrayList();
-                            arrAttachment.Add(dtEmailDetails.Rows[0]["RepoConfirmationPath"].ToString());
-                        }
-
-                        if (DS_Result.Tables[2].Rows.Count > 0)
-                        {
-                            subject = DS_Result.Tables[2].Rows[0]["Value"].ToString();
-                            emailBody = DS_Result.Tables[2].Rows[1]["Value"].ToString();
-                            emailBody = emailBody.Replace("#FileName#", Path.GetFileName(dtEmailDetails.Rows[0]["RepoConfirmationPath"].ToString()));
-                        }
-
-                        if (Common.SendMailWithAttachment(arrToList, arrCcList, arrBccList, false, subject, emailBody, true, arrAttachment,"",true) == true)
-                        {
-                            //Update status and confirmation path
-                            UpdateStatus(dr["RepoExcelID"].ToString(), enumRepoTradeStatus.Completed.GetHashCode().ToString(), "");
-                        }
-                    }
-                }
-                if (!String.IsNullOrEmpty(strRepoExcelID))
-                {
-                    strMessage.Append("\t" + Common.GetMessage("RepoRequest", "SendConfirmationFailedMessage"));
-                    strMessage.Append(strRepoExcelID + "\n");
-
-                    _ErrorString.Append(strMessage);
-                    _show_error_row = _ErrorInfoBlank;
-                }
-
-                if (!String.IsNullOrEmpty(strRepoExcelIDFailed))
-                {
-                    strMessage = new StringBuilder();
-                    strMessage.Append("\t" + Common.GetMessage("RepoRequest", "SendConfirmationFailedMessageForInvalidRequest"));
-                    strMessage.Append(strRepoExcelIDFailed + "\n");
-
-                    _ErrorString.Append(strMessage);
-                    _show_error_row = _ErrorInfoBlank;
-                }
-
-                if (String.IsNullOrEmpty(strRepoExcelIDFailed) && String.IsNullOrEmpty(strRepoExcelID))
-                {
-                    strMessage = new StringBuilder();
-                    strMessage.Append("\t" + Common.GetMessage("RepoRequest", "SendConfirmationSuccessMessage") + "\n");
-
-                    _ErrorString.Append(strMessage);
-                    _show_error_row = _ErrorInfoNone;
-                    _show_info_row = _ErrorInfoBlank;
-                }
-
-            }
-            catch (Exception exc)
-            {
-                throw exc;
-            }
-        }
-
-        /// <summary>
-        /// Search Repo Request data on Repo Dashboard
-        /// </summary>
-        /// <param name="repoExcelID"></param>
-        private void SearchRepoRequest(int repoExcelID)
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            string[] SqlCondition = new string[21] { "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "" };
-            MethodName = "SearchRepoRequest()";
-            StringBuilder TradeStatusList = new StringBuilder();
-            try
-            {
-                if (clsDB.Open() == false)
-                    return;
-
-
-                for (int i = 0; i < lstTradeStatus.Items.Count; i++)
-                {
-                    if (lstTradeStatus.Items[i].Selected)
-                    {
-                        if (lstTradeStatus.Items[i].Value == "0")
-                        {
-                            TradeStatusList.Append(lstTradeStatus.Items[i].Value);
-                            break;
-                        }
-                        else
-                        {
-                            if (lstTradeStatus.Items[i].Value == "100")
-                            {
-                                TradeStatusList.Append(enumRepoTradeStatus.UploadedErrorWithHardBlock.GetHashCode().ToString() + "|");
-                            }
-                            TradeStatusList.Append(lstTradeStatus.Items[i].Value + "|");
-                        }
-                    }
-                }
-
-
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = enumGetSQLIndentifier.GET_DATA_REPO_DASHBOARD.ToString();
-
-                SqlCondition[0] = ddlSecType.SelectedValue.ToString();
-                SqlCondition[1] = txtSecCode.Text;
-                SqlCondition[2] = txtRateFee.Text;
-                SqlCondition[3] = TradeStatusList.ToString();
-                SqlCondition[4] = txtBDASShell.Text.Trim();
-                SqlCondition[5] = string.Empty;//txtTransNumber.Text;
-                SqlCondition[6] = ddlBrokerCrGroup.SelectedValue;
-                SqlCondition[7] = ddlBrokerGroup.SelectedValue;
-                SqlCondition[8] = ddlBroker.SelectedValue;
-                SqlCondition[9] = "";
-                SqlCondition[10] = ddlCustomerAccountGrp.SelectedValue;
-                SqlCondition[11] = ddlFinder.SelectedValue;
-                SqlCondition[12] = txtTradeDate.Text;
-                SqlCondition[13] = txtsettlementDate.Text;
-                SqlCondition[14] = txtTermDate.Text;
-                SqlCondition[15] = txtUploadedDate.Text;
-                SqlCondition[16] = cboCollSched.SelectedValue;
-                SqlCondition[17] = null; // RepoTicketID
-                //SqlCondition[18] = Convert.ToString(repoExcelID);
-                SqlCondition[19] = clsUI.NTUserName;
-                SqlCondition[20] = drpBOStatus.SelectedValue;
-
-
-                // get the data from either current or history table.
-                if (clsReader.GetData(ref objDS, SqlObjects.p_GetData_RepoDashBoard, SqlCondition) == false)
-                    return;
-
-
-                if (objDS.Tables.Count > 0)
-                {
-                    if (objDS.Tables[0].Rows.Count > 0)
-                    {
-                        grdRepoDashBoard.DataSource = objDS.Tables[0];
-                        grdRepoDashBoard.DataBind();
-
-                        pnlSRRMsg.Visible = false;
-                        pnlRepoDash.Visible = true;
-                    }
-                    else
-                    {
-                        grdRepoDashBoard.DataSource = null;
-                        grdRepoDashBoard.DataBind();
-
-                        pnlSRRMsg.Visible = true;
-                        pnlRepoDash.Visible = false;
-
-                    }
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-            finally
-            {
-                clsReader.Dispose();
-                clsDB.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// This method will generate report in Excel
-        /// </summary>
-        /// <returns></returns>
-        private bool GetExcelExtract()
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            string[] SqlCondition = new string[21] { "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "" };
-            string fileName = string.Empty;
-            MethodName = "GetExcelExtract()";
-            StringBuilder TradeStatusList = new StringBuilder();
-
-            try
-            {
-                if (clsDB.Open() == false)
-                    return false;
-
-                clsReader.Connection = clsDB.Connection;
-                STBUSA.Excel.ExcelReportGenerator erg = null;
-
-                for (int i = 0; i < lstTradeStatus.Items.Count; i++)
-                {
-                    if (lstTradeStatus.Items[i].Selected)
-                    {
-                        if (lstTradeStatus.Items[i].Value == "0")
-                        {
-                            TradeStatusList.Append(lstTradeStatus.Items[i].Value);
-                            break;
-                        }
-                        else
-                        {
-                            if (lstTradeStatus.Items[i].Value == "100")
-                            {
-                                TradeStatusList.Append(enumRepoTradeStatus.UploadedErrorWithHardBlock.GetHashCode().ToString() + "|");
-                            }
-                            TradeStatusList.Append(lstTradeStatus.Items[i].Value + "|");
-                        }
-                    }
-                }
-
-                clsReader.Connection = clsDB.Connection;
-                clsReader.SqlIdentifier = enumGetSQLIndentifier.GET_DATA_REPO_DASHBOARD.ToString();
-
-                SqlCondition[0] = ddlSecType.SelectedValue.ToString();
-                SqlCondition[1] = txtSecCode.Text;
-                SqlCondition[2] = txtRateFee.Text;
-                SqlCondition[3] = TradeStatusList.ToString();
-                SqlCondition[4] = txtBDASShell.Text;
-                SqlCondition[5] = string.Empty;//txtTransNumber.Text;
-                SqlCondition[6] = ddlBrokerCrGroup.SelectedValue;
-                SqlCondition[7] = ddlBrokerGroup.SelectedValue;
-                SqlCondition[8] = ddlBroker.SelectedValue;
-                SqlCondition[9] = "";
-                SqlCondition[10] = ddlCustomerAccountGrp.SelectedValue;
-                SqlCondition[11] = ddlFinder.SelectedValue;
-                SqlCondition[12] = txtTradeDate.Text;
-                SqlCondition[13] = txtsettlementDate.Text;
-                SqlCondition[14] = txtTermDate.Text;
-                SqlCondition[15] = txtUploadedDate.Text;
-                SqlCondition[16] = cboCollSched.SelectedValue;
-                SqlCondition[17] = null; // RepoTicketID
-                //SqlCondition[18] = Convert.ToString(repoExcelID);
-                SqlCondition[19] = clsUI.NTUserName;
-                SqlCondition[20] = drpBOStatus.SelectedValue;
-
-                // get the data from either current or history table.
-                if (clsReader.GetData(ref objDS, SqlObjects.p_GetData_RepoDashBoard, SqlCondition) == false)
-                    return false;
-
-                Lava.ExcelTemplates.RepoRequestDashboardReport gxst = null;
-                gxst = new Lava.ExcelTemplates.RepoRequestDashboardReport(objDS);
-
-                gxst.ExtractTemplate = EXTRACT_TEMPLATE_NAME;
-                fileName = EXCEL_FILENAME + System.DateTime.Now.ToString("yyyyMMdd");
-                gxst.ExtractTitle = EXCEL_TITLE;// +txtAsOfDate.Text.Trim() + ")";
-
-                gxst.OutputFormat = Common.EXCEL_OUTPUT_FORMAT;
-
-                erg = new STBUSA.Excel.ExcelReportGenerator(gxst);
-
-                byte[] temp = erg.Generate();
-
-                if (temp != null)
-                {
-                    IsUI = false;
-                    _show_error_row = "NONE";
-
-                    Common.GenerateExcelInXLSFormat(Response, fileName, temp);
-                }
-                else
-                {
-                    Common.WriteJavascript("alert('" + Common.GetMessage("Common", "NoRecordsFound") + "');");
-                }
-            }
-            catch (Exception Exc)
-            {
-                Response.ClearContent();
-                Response.ContentType = Common.HTML_CONTENT_TYPE;
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                _show_error_row = "";
-                return false;
-            }
-            finally
-            {
-                clsReader.Dispose();
-                clsDB.Dispose();
-                objDS.Dispose();
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// Search confirmation data on Repo Confirmation Dashboard
-        /// </summary>
-        private void SearchRepoConfirmation()
-        {
-            Database clsDB = new Database();
-            DataReader clsReader = new DataReader();
-            DataSet objDS = new DataSet();
-            string[] SqlCondition = new string[18] { "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "0" };
-            MethodName = "SearchRepoConfirmation()";
-
-            try
-            {
-                if (clsDB.Open() == false)
-                    return;
-
-                clsReader.Connection = clsDB.Connection;
-
-                SqlCondition[0] = ddlConfBusLine.SelectedValue.ToString();
-                SqlCondition[1] = txtConfSecCode.Text;
-                SqlCondition[2] = txtConfRateFee.Text;
-                SqlCondition[3] = "0";// TradeStatusList.ToString();
-                SqlCondition[4] = txtConfBDAS.Text;
-                SqlCondition[5] = string.Empty;// txtTransNumber.Text;
-                SqlCondition[6] = drpConfBrkCrGrp.SelectedValue;
-                SqlCondition[7] = drpConfBrkGrp.SelectedValue;
-                SqlCondition[8] = drpConfBrkNbr.SelectedValue;
-                SqlCondition[9] = "";
-                SqlCondition[10] = ddlConfAcctGrp.SelectedValue;
-                SqlCondition[11] = ddlConfFinder.SelectedValue;
-                SqlCondition[12] = txtConfTradeDate.Text;
-                SqlCondition[13] = txtConfSettDate.Text;
-                SqlCondition[14] = txtConfTermDate.Text;
-                SqlCondition[15] = txtConfUploadDate.Text;
-                SqlCondition[16] = drpConfCollSch.SelectedValue;
-
-
-                // get the data from either current or history table.
-                if (clsReader.GetData(ref objDS, SqlObjects.p_GetData_RepoConfirmation, SqlCondition) == false)
-                    return;
-
-
-                if (objDS.Tables.Count > 0)
-                {
-                    if (objDS.Tables[0].Rows.Count > 0)
-                    {
-                        grdRepoConfDashBoard.DataSource = objDS.Tables[0];
-                        grdRepoConfDashBoard.DataBind();
-
-                        pnlRepoConfMsg.Visible = false;
-                        pnlRepoConf.Visible = true;
-                    }
-                    else
-                    {
-                        grdRepoConfDashBoard.DataSource = null;
-                        grdRepoConfDashBoard.DataBind();
-
-                        pnlRepoConfMsg.Visible = true;
-                        pnlRepoConf.Visible = false;
-
-                    }
-                }
-            }
-            catch (Exception Exc)
-            {
-                _ErrorString = new StringBuilder();
-                _ErrorString.Append(Exc.Message);
-                _show_info_row = _ErrorInfoNone;
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
-                return;
-            }
-            finally
-            {
-                clsReader.Dispose();
-                clsDB.Dispose();
-            }
-        }
-
-        #region Validation on search
-        /// <summary>
-        /// Validate on Search of Repo Dashboard
-        /// </summary>
-        /// <returns></returns>
-        private bool ValidateSearchRepoInputFields()
-        {
-            bool isError = false;
-            MethodName = "ValidateSearchRepoInputFields()";
-            _ErrorString = new StringBuilder();
-
-            try
-            {
-                if (!string.IsNullOrEmpty(txtTradeDate.Text))
-                {
-                    switch (Common.ValidateDate(txtTradeDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtTradeDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidTradeDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(txtsettlementDate.Text))
-                {
-                    switch (Common.ValidateDate(txtsettlementDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtsettlementDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidSettlementDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-
-
-                if (!string.IsNullOrEmpty(txtTermDate.Text))
-                {
-                    switch (Common.ValidateDate(txtTermDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtTermDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidTermDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-
-                if (!string.IsNullOrEmpty(txtUploadedDate.Text))
-                {
-                    switch (Common.ValidateDate(txtUploadedDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtUploadedDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidUploadedFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(ex.Message);
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
-            }
-            return isError;
-        }
-
-        /// <summary>
-        /// Validate on Search of Repo Confirmation Dashboard
-        /// </summary>
-        /// <returns></returns>
-        private bool ValidateRepoConfirmationInputFields()   // true  == error
-        {
-            bool isError = false;
-            MethodName = "ValidateSearchRepoInputFields()";
-            _ErrorString = new StringBuilder();
-
-            try
-            {
-                if (!string.IsNullOrEmpty(txtConfTradeDate.Text))
-                {
-                    switch (Common.ValidateDate(txtConfTradeDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtConfTradeDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidTradeDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(txtConfSettDate.Text))
-                {
-                    switch (Common.ValidateDate(txtConfSettDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtsettlementDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidSettlementDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-
-
-                if (!string.IsNullOrEmpty(txtConfTermDate.Text))
-                {
-                    switch (Common.ValidateDate(txtConfTermDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtConfTermDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidTermDateFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-
-
-                if (!string.IsNullOrEmpty(txtConfUploadDate.Text))
-                {
-                    switch (Common.ValidateDate(txtConfUploadDate.Text))
-                    {
-                        case -1:
-                            isError = true;
-                            _ErrorString.Append("<a href = \"#\" OnClick = SetFocus('txtConfUploadDate');>\n");
-                            _ErrorString.Append("\t" + Common.GetMessage("RepoRequest", "InvalidUploadedFormat") + "\n");
-                            _ErrorString.Append("</a> <br>\n");
-                            break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(ex.Message);
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
-            }
-            return isError;
-        }
-
-        #endregion
-
-        #region GridEvent
-        /// <summary>
-        /// GridViewSearchRepoConfirmation RowDataBound
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void grdRepoConfDashBoard_RowDataBound(object sender, GridViewRowEventArgs e)
-        {
-            MethodName = "grdRepoConfDashBoard_RowDataBound()";
-            string rPath = string.Empty;
-            try
-            {
-                if (e.Row.RowType == DataControlRowType.DataRow)
-                {
-                    #region Open Window for SecCode link
-
-                    HyperLink lnkConfSecurityCode = (HyperLink)e.Row.FindControl("lnkConfSecurityCode");
-                    HiddenField hdnConfSecurityType = (HiddenField)e.Row.FindControl("hdnConfSecurityType");
-
-                    StringBuilder QueryStringParams = new StringBuilder();
-                    StringBuilder QueryStringJavascript = new StringBuilder();
-
-                    StringBuilder fncCaller = new StringBuilder("PopUpRightMenu");
-
-                    string SecType = "";
-                    string SecCode = "";
-                    string ActionID = "";
-
-                    SecCode = lnkConfSecurityCode.Text;
-                    SecType = hdnConfSecurityType.Value;
-
-                    if (SecType != "&nbsp;")
-                    {
-                        ActionID = ActionID_GETFIDETAILS;
-
-                        //pass the sec code and other required parameters here
-                        QueryStringParams.Append("?AsOfDate=");
-                        QueryStringParams.Append(_BussDate);
-
-                        QueryStringParams.Append("&SecCode=");
-                        QueryStringParams.Append(SecCode);
-
-                        QueryStringParams.Append("&ActionID=");
-                        QueryStringParams.Append(ActionID);
-
-                        QueryStringParams.Append("&SecType=");
-                        QueryStringParams.Append(SecType);
-
-                        QueryStringParams.Append("&ExclusiveSelection=");
-                        QueryStringParams.Append("IE");
-
-                        QueryStringParams.Append("&ProjectedDate=");
-                        QueryStringParams.Append("");
-
-                        QueryStringParams.Append("&HasProjection=");
-                        QueryStringParams.Append("0");
-
-                        QueryStringParams.Append("&RequestOrigin=");
-                        QueryStringParams.Append("Reports");
-
-                        QueryStringParams.Append("&WinMode=PopUp");
-
-                        argsPopUpMenu = QueryStringParams.ToString();
-
-                        QueryStringJavascript.Append("Javascript: PopUpWindow('" + Common.POSITIONDETAILPAGEURL + "");
-                        QueryStringJavascript.Append(argsPopUpMenu);
-                        QueryStringJavascript.Append("', '', '" + Common.POSITIONDETAILPOPUPWINPOSITION + "', 'false', '0')");
-
-                        fncCaller.Append("('show',this.id,'");
-                        fncCaller.Append(argsPopUpMenu);
-                        fncCaller.Append("')");
-
-                        lnkConfSecurityCode.Attributes.Add("onMouseOut", "PopUpRightMenu('hide', this.id,'')");
-                        lnkConfSecurityCode.NavigateUrl = QueryStringJavascript.ToString();
-                    }
-
-                    #endregion
-
-
-                    Label lblStatusID = (Label)e.Row.FindControl("lblConfStatusID");
-                    CheckBox chkRepoConf = (CheckBox)e.Row.FindControl("chkRepoConfInclude");
-                    HiddenField hdnConfPath = (HiddenField)e.Row.FindControl("hdnConfPath");
-                    HiddenField hdnAsOfDate = (HiddenField)e.Row.FindControl("hdnConfAsofDate");
-
-                    #region OpenFolder
-                    HyperLink lnkShowXLS = (HyperLink)e.Row.FindControl("lnkShowXLS");
-                    if (File.Exists(hdnConfPath.Value))
-                    {
-                        lnkShowXLS.NavigateUrl = hdnConfPath.Value;
-                        lnkShowXLS.ImageUrl = "/" + GlobalVariable.AppRoot + "/images/excel-symbol.gif";
-                        lnkShowXLS.Text = "";
-                    }
-                    #endregion
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.Completed.GetHashCode().ToString())
-                    {
-                        chkRepoConf.Enabled = false;
-                    }
-
-                    if (!DateTime.Equals(Convert.ToDateTime(hdnAsOfDate.Value).ToShortDateString(), _BussDate))
-                    {
-                        chkRepoConf.Enabled = false;
-                        //chkRepoConfAll.Enabled = false;
-                    }
-
-                    //For ReadOnly Do not display Action Controls.
-                    if (_UserAccess == enumUserAccess.ReadOnly.ToString())
-                    {
-                        chkRepoConf.Enabled = false;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(ex.Message);
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
-            }
-        }
-        /// <summary>
-        /// GridViewSearchRepo RowDataBound
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void grdRepoDashBoard_RowDataBound(object sender, GridViewRowEventArgs e)
-        {
-            MethodName = "grdRepoDashBoard_RowDataBound()";
-            DataRowView drData = null;
-            DataView dv = null;
-            try
-            {
-                if (e.Row.RowType == DataControlRowType.DataRow)
-                {
-                    drData = (DataRowView)e.Row.DataItem;
-                    dv = drData.DataView;
-
-                    Label lblStatusID = (Label)e.Row.FindControl("lblStatusID");
-                    Label lblSecID = (Label)e.Row.FindControl("lblSecID");
-                    HyperLink lnkSecurityCode = (HyperLink)e.Row.FindControl("lnkSecurityCode");
-                    Label lblAcctNbr = (Label)e.Row.FindControl("lblAcctNbr");
-                    //Label lblSettleDate = (Label)e.Row.FindControl("lblSettleDate");
-                    Label lblFaceAmount = (Label)e.Row.FindControl("lblFaceAmount");
-                    Label lblCCYCode = (Label)e.Row.FindControl("lblCCYCode");
-                    Label lblRepoTicketID = (Label)e.Row.FindControl("lblRepoTicketID");
-                    Label lblTermDate = (Label)e.Row.FindControl("lblTermDate");
-                    Label lblPrice = (Label)e.Row.FindControl("lblPrice");
-                    Label lblBrkGrpCode = (Label)e.Row.FindControl("lblBrkGrpCode");
-                    Label lblBrkCrGrpId = (Label)e.Row.FindControl("lblBrkCrGrpId");
-                    CheckBox chkUnexecute = (CheckBox)e.Row.FindControl("chkInclude");
-
-                    LinkButton lnkCorrectUploadedError = (LinkButton)e.Row.FindControl("lnkCorrectUploadedError");
-                    LinkButton lnkBookLoan = (LinkButton)e.Row.FindControl("lnkBookLoan");
-                    LinkButton lnkReBook = (LinkButton)e.Row.FindControl("lnkReBook");
-                    LinkButton lnkReExecute = (LinkButton)e.Row.FindControl("lnkReExecute");
-
-                    Label lblRepoTicketBrokerDetailID = (Label)e.Row.FindControl("lblRepoTicketBrokerDetailID");
-
-                    Label lblIsUserMaker = (Label)e.Row.FindControl("lblIsUserMaker");
-                    Label lblIsUserChecker = (Label)e.Row.FindControl("lblIsUserChecker");
-                    HiddenField hdnSecurityType = (HiddenField)e.Row.FindControl("hdnSecurityType");
-                    HiddenField hdnAsOfDate = (HiddenField)e.Row.FindControl("hdnAsOfDate");
-                    Label lblIsReinvestmentRatePresent = (Label)e.Row.FindControl("lblIsReinvestmentRatePresent");
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.UploadedError.GetHashCode().ToString())
-                    {
-                        e.Row.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_SoftBlock"]);
-                        //chkUnexecute.Enabled = false;
-                    }
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.UploadedErrorWithHardBlock.GetHashCode().ToString())
-                    {
-                        e.Row.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_HardBlock"]);
-                        chkUnexecute.Enabled = false;
-                    }
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.Rejected.GetHashCode().ToString())
-                    {
-                        e.Row.Style.Add("background-color", ConfigurationManager.AppSettings["RepoRequest_Rejected"]);
-                    }
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.Unexecuted.GetHashCode().ToString())
-                    {
-                        lnkReExecute.Visible = true;
-                    }
-
-
-                    totalQtyEUR = dv.Table.AsEnumerable().Where(y => y.Field<string>("CCYCode") == "EUR").Sum(x => x.Field<Decimal>("FaceAmount"));
-                    totalQtyUSD = dv.Table.AsEnumerable().Where(y => y.Field<string>("CCYCode") == "USD").Sum(x => x.Field<Decimal>("FaceAmount"));
-
-                    totalAmountEUR = dv.Table.AsEnumerable().Where(y => y.Field<string>("CCYCode") == "EUR").Sum(x => x.Field<Decimal>("Principal"));
-                    totalAmountUSD = dv.Table.AsEnumerable().Where(y => y.Field<string>("CCYCode") == "USD").Sum(x => x.Field<Decimal>("Principal"));
-
-                    countExcel = dv.Table.AsEnumerable().Where(y => y.Field<int>("StatusID") != 150).Select(x => x.Field<int>("RepoExcelID")).Distinct().Count();
-                    countRepoTicket = dv.Table.AsEnumerable().Where(y => y.Field<int>("StatusID") != 150).Select(x => x.Field<int>("RepoTicketID")).Distinct().Count();
-                    lnkBookLoan.Visible = false;
-                    lnkReBook.Visible = false;
-                    lnkCorrectUploadedError.Visible = false;
-
-                    #region Open Window for SecCode link
-
-                    StringBuilder QueryStringParams = new StringBuilder();
-                    StringBuilder QueryStringJavascript = new StringBuilder();
-
-                    StringBuilder fncCaller = new StringBuilder("PopUpRightMenu");
-
-                    string SecType = "";
-                    string SecCode = "";
-                    string ActionID = "";
-
-                    SecCode = lnkSecurityCode.Text;
-                    SecType = hdnSecurityType.Value;
-
-                    if (SecType != "&nbsp;")
-                    {
-                        ActionID = ActionID_GETFIDETAILS;
-
-                        //pass the sec code and other required parameters here
-                        QueryStringParams.Append("?AsOfDate=");
-                        QueryStringParams.Append(_BussDate);
-
-                        QueryStringParams.Append("&SecCode=");
-                        QueryStringParams.Append(SecCode);
-
-                        QueryStringParams.Append("&ActionID=");
-                        QueryStringParams.Append(ActionID);
-
-                        QueryStringParams.Append("&SecType=");
-                        QueryStringParams.Append(SecType);
-
-                        QueryStringParams.Append("&ExclusiveSelection=");
-                        QueryStringParams.Append("IE");
-
-                        QueryStringParams.Append("&ProjectedDate=");
-                        QueryStringParams.Append("");
-
-                        QueryStringParams.Append("&HasProjection=");
-                        QueryStringParams.Append("0");
-
-                        QueryStringParams.Append("&RequestOrigin=");
-                        QueryStringParams.Append("Reports");
-
-                        QueryStringParams.Append("&WinMode=PopUp");
-
-                        argsPopUpMenu = QueryStringParams.ToString();
-
-                        QueryStringJavascript.Append("Javascript: PopUpWindow('" + Common.POSITIONDETAILPAGEURL + "");
-                        QueryStringJavascript.Append(argsPopUpMenu);
-                        QueryStringJavascript.Append("', '', '" + Common.POSITIONDETAILPOPUPWINPOSITION + "', 'false', '0')");
-
-                        fncCaller.Append("('show',this.id,'");
-                        fncCaller.Append(argsPopUpMenu);
-                        fncCaller.Append("')");
-
-                        lnkSecurityCode.Attributes.Add("onMouseOut", "PopUpRightMenu('hide', this.id,'')");
-                        lnkSecurityCode.NavigateUrl = QueryStringJavascript.ToString();
-                    }
-
-                    #endregion
-
-
-                    if (lblStatusID.Text == enumRepoTradeStatus.UploadedError.GetHashCode().ToString() || lblStatusID.Text == enumRepoTradeStatus.UploadedErrorWithHardBlock.GetHashCode().ToString())
-                        lnkCorrectUploadedError.Visible = true;
-
-
-                    if (lblIsUserMaker.Text.ToString() == "True")
-                    {
-                        if (Convert.ToInt32(lblStatusID.Text) < Convert.ToInt32(enumRepoTradeStatus.PendingApproval.GetHashCode().ToString()))
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Book";
-                        }
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.SuccessfullyUploaded.GetHashCode().ToString()))
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Book";
-                        }
-
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.Rejected.GetHashCode().ToString()))
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Book";
-                        }
-
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.Cancelled.GetHashCode().ToString()))
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Book";
-                        }
-                    }
-
-                    if (lblIsUserChecker.Text.ToString() == "True")
-                    {
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.PendingApproval.GetHashCode().ToString())) //StatusID = 35
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Verify";
-                        }
-
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.FailedOnG1.GetHashCode().ToString())) //StatusID = 350
-                        {
-                            lnkReBook.Visible = true;
-                            lnkReBook.Text = "Rebook";
-                        }
-                        if (Convert.ToInt32(lblStatusID.Text) == Convert.ToInt32(enumRepoTradeStatus.Cancelled.GetHashCode().ToString()))
-                        {
-                            lnkBookLoan.Visible = true;
-                            lnkBookLoan.Text = "Book";
-                        }
-                    }
-
-                    if (Convert.ToInt32(lblStatusID.Text) >= Convert.ToInt32(enumRepoTradeStatus.Completed.GetHashCode().ToString()))
-                    {
-                        chkUnexecute.Enabled = false;
-                    }
-
-                    if (!txtUploadedDate.Text.Equals(_BussDate))
-                    {
-                        lnkReBook.Visible = lnkBookLoan.Visible = lnkCorrectUploadedError.Visible = chkUnexecute.Enabled = false;
-                    }
-
-                    #region  Call SingloLoanBokking Scree Start
-                    object[] args = new object[25];
-                    args[0] = _BussDate;  //"12/18/2015"; //asofdate
-                    args[1] = lblSecID.Text;  //secID
-                    args[2] = lnkSecurityCode.Text; //SecCode;
-                    args[3] = ActionID_GETFIDETAILS; //_ActionID;
-                    args[4] = ddlSecType.SelectedValue; //litSecType.Text;
-                    args[5] = "0"; //Request.QueryString["HasProjection"];
-                    args[6] = "";  //Request.QueryString["ProjectedDate"];
-                    args[7] = "Reports"; //Request.QueryString["RequestOrigin"];
-                    args[8] = "Popup"; //Request.QueryString["WinMode"];
-                    args[9] = "1";//Request.QueryString["ShowDetails"];
-                    args[10] = "0"; // Request.QueryString["IsExclusive"];
-                    args[11] = "NE"; // Request.QueryString["ExclusiveSelection"];
-                    args[12] = lblAcctNbr.Text; //Request.QueryString["AcctNbr"];
-                    args[13] = lblBrkCrGrpId.Text; //Request.QueryString["RequestBrokerCrGrpID"]; 
-                    args[14] = lblBrkGrpCode.Text;  // Request.QueryString["RequestBrkGroupID"];
-                    args[15] = Common.LoanBookingType.REPO_TICKET_BOOKING.ToString();   //Request.QueryString["LoanBookRequestIdentifie"];
-
-                    //if (_LendingProcessType == Common.LendingProcess.REPO.ToString())
-                    //{
-                    //    args[15] = Common.LoanBookingType.REPO_TICKET_BOOKING.ToString();   //Request.QueryString["LoanBookRequestIdentifie"];
-                    //}
-                    //if (_LendingProcessType == Common.LendingProcess.REVREPO.ToString())
-                    //{
-                    //    args[15] = Common.LoanBookingType.REVREPO_TICKET_BOOKING.ToString();   //Request.QueryString["LoanBookRequestIdentifie"];
-                    //}
-
-                    args[16] = 1;  //Request.QueryString["RequestRepoTicketSecurityType"];
-                    args[17] = "";//string.IsNullOrEmpty(lblSettleDate.Text) ? _BussDate : lblSettleDate.Text;  //Request.QueryString["RepoTktSettlementDate"]
-                    args[18] = lblFaceAmount.Text.Trim();   //Request.QueryString["RepoTktQty"]  Quantity / Winning Qty used for booking Loan.
-                    args[19] = lblRepoTicketBrokerDetailID.Text.Trim();  // Request.QueryString["lblRepoTicketBrokerDetailID"] lblRepoTicketBrokerDetailID
-                    args[20] = lblCCYCode.Text.Trim();  // Request.QueryString["RepoTktCurr"] Coll CCY
-                    args[21] = lblAcctNbr.Text.Trim();  // Request.QueryString["RepoAcctNbr"] 
-                    args[22] = lblRepoTicketID.Text.ToString();  // Request.QueryString["RepoTktID"] 
-                    args[23] = lblTermDate.Text.Trim() == "01/01/1900" ? "" : lblTermDate.Text.Trim();  // Request.QueryString["RepoTktTermEndDate"] 
-                    args[24] = lblPrice.Text;
-
-                    string QueryString = null;
-                    QueryString = "JavaScript: PopUpWindow('" + Common.SINGLELOANBOOKINPAGEURL + "";
-                    QueryString += String.Format("?AsOfDate={0}&SecID={1}&SecCode={2}&ActionID={3}&SecType={4}&HasProjection={5}"
-                        + "&ProjectedDate={6}&RequestOrigin={7}&WinMode={8}&ShowDetails={9}&IsExclusive={10}&ExclusiveSelection={11}"
-                        + "&AcctNbr={12}&RequestBrokerCrGrpID={13}&RequestBrkGroupID={14}&LoanBookRequestIdentifier={15}&RequestRepoTicketSecurityType={16}"
-                        + "&RepoTktSettlementDate={17}&RepoTktQty={18}&RepoTicketBrokerID={19}&RepoTktCurr={20}&RepoAcctNbr={21}&RepoTktID={22}&RepoTktTermEndDate={23}", args);
-                    QueryString += "', '', 'width=1100,height=900,resizable=no,scrollbars=yes,screenX=0,screenY=0,left=0,top=0')";
-                    QueryString += "; return false";
-
-
-                    if (lblIsReinvestmentRatePresent.Text == "FALSE")
-                    {
-                        QueryString = "JavaScript: alert('" + Common.GetMessage("RepoRequest", "ReinvestmentRateNotPresent") + "'); return false;";
-                    }
-
-                    lnkBookLoan.Attributes.Add("onClick", QueryString.ToString());
-
-
-                    //#region For clone Request Starts
-                    //    args[13] = ""; //Request.QueryString["RequestBrokerCrGrpID"]; 
-                    //    args[14] = "";  // Request.QueryString["RequestBrkGroupID"];
-
-                    //    string QueryStringForCloneRequest= null;
-                    //    QueryStringForCloneRequest = "JavaScript: PopUpWindow('" + Common.SINGLELOANBOOKINPAGEURL + "";
-                    //    QueryStringForCloneRequest += String.Format("?AsOfDate={0}&SecID={1}&SecCode={2}&ActionID={3}&SecType={4}&HasProjection={5}"
-                    //        + "&ProjectedDate={6}&RequestOrigin={7}&WinMode={8}&ShowDetails={9}&IsExclusive={10}&ExclusiveSelection={11}"
-                    //        + "&AcctNbr={12}&RequestBrokerCrGrpID={13}&RequestBrkGroupID={14}&LoanBookRequestIdentifier={15}&RequestRepoTicketSecurityType={16}"
-                    //        + "&RepoTktSettlementDate={17}&RepoTktQty={18}&RepoTktBidRate={19}&RepoTktCurr={20}&RepoAcctNbr={21}&RepoTktID={22}&RepoTktTermEndDate={23}", args);
-                    //    QueryStringForCloneRequest += "', '', 'width=1100,height=900,resizable=no,scrollbars=yes,screenX=0,screenY=0,left=0,top=0')";
-                    //    QueryStringForCloneRequest += "; return false";
-
-                    //    //lnkClone.Attributes.Add("onClick", QueryStringForCloneRequest.ToString());
-                    //#endregion For clone Request Ends
-
-
-                    #endregion  Call SingloLoanBokking Scree End
-
-                    #region Open Repo Upload Correction PopUp
-                    lnkCorrectUploadedError.OnClientClick = "javascript:return fnUploadCorrectPopUp('" + lblRepoTicketID.Text.Trim() + "');";
-                    #endregion
-
-                    if (!DateTime.Equals(Convert.ToDateTime(hdnAsOfDate.Value).ToShortDateString(), _BussDate))
-                    {
-                        chkUnexecute.Enabled = false;
-                        lnkBookLoan.Visible = false;
-                        lnkReBook.Visible = false;
-                        lnkReExecute.Visible = false;
-                        lnkCorrectUploadedError.Visible = false;
-                    }
-
-                    //For ReadOnly Do not display Action Controls.
-                    if (_UserAccess == enumUserAccess.ReadOnly.ToString())
-                    {
-                        chkUnexecute.Enabled = false;
-                        lnkBookLoan.Enabled = false;
-                        lnkReBook.Enabled = false;
-                        lnkReExecute.Enabled = false;
-                        lnkCorrectUploadedError.Enabled = false;
-
-                        lnkBookLoan.Attributes.Add("onClick", "");
-                        lnkCorrectUploadedError.OnClientClick = "";
-                    }
-                }
-                if (e.Row.RowType == DataControlRowType.Footer)
-                {
-                    Label lblTotalEUR = (Label)e.Row.FindControl("lblTotalEUR");
-                    lblTotalEUR.Text = String.Format("{0:#,##0.###}", totalQtyEUR);
-
-                    Label lblTotalUSD = (Label)e.Row.FindControl("lblTotalUSD");
-                    lblTotalUSD.Text = String.Format("{0:#,##0.###}", totalQtyUSD); ;// String.Format("{0:#,##0.###}", Convert.ToString(totalQtyUSD));
-
-                    Label lblAmountEUR = (Label)e.Row.FindControl("lblAmountEUR");
-                    lblAmountEUR.Text = String.Format("{0:#,##0.####}", totalAmountEUR);
-
-                    Label lblAmountUSD = (Label)e.Row.FindControl("lblAmountUSD");
-                    lblAmountUSD.Text = String.Format("{0:#,##0.####}", totalAmountUSD);
-
-                    int RowIndex = e.Row.RowIndex;
-                    int DataItemIndex = e.Row.DataItemIndex;
-                    int Columnscount = grdRepoDashBoard.Columns.Count;
-                    GridViewRow row = new GridViewRow(RowIndex, DataItemIndex, DataControlRowType.Footer, DataControlRowState.Normal);
-                    for (int i = 0; i < Columnscount; i++)
-                    {
-                        TableCell tablecell = new TableCell();
-                        row.Cells.Add(tablecell);
-                    }
-                    for (int i = 9; i < Columnscount - 1; i++)
-                    {
-                        row.Cells.RemoveAt(1);
-                    }
-                    row.Cells[9].ColumnSpan = Columnscount - 1;
-                    row.Cells[9].Text = countExcel + " Files Uploaded, " + countRepoTicket + " Tickets in Dashboard";
-                    row.Cells[9].HorizontalAlign = HorizontalAlign.Left;
-                    this.grdRepoDashBoard.Controls[0].Controls.Add(row);
-
-                    //this.grdRepoDashBoard.FooterRow.Controls[0].Controls.Add(row);
-                    //e.Row.Cells[0].ColumnSpan = 4;
-                }
-            }
-            catch (Exception ex)
-            {
-                _ErrorString = new StringBuilder("");
-                _ErrorString.Append(ex.Message);
-                _show_error_row = _ErrorInfoBlank;
-                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, ex));
-            }
-        }
-
-        #endregion
-
+        Biff8,
+        OpenXml,
+        OpenXmlMacro
     }
+
+    public enum XLAlignHorzEnum
+    {
+        Left,
+        Center,
+        Right
+    }
+
+    public enum XLAlignVertEnum
+    {
+        Top,
+        Center,
+        Bottom
+    }
+
+    public enum XLLineStyleEnum
+    {
+        None,
+        Thin
+    }
+
+    public enum XLReferenceType
+    {
+        Absolute,
+        Relative
+    }
+
+    public enum XLRangeType
+    {
+        Formula,
+        Value
+    }
+
+    #endregion
+
+    #region Native Access Helper
+
+    internal static class NativeAccess
+    {
+        public static object GetProperty(object target, string propertyName)
+        {
+            if (target == null)
+                throw new ArgumentNullException("target");
+
+            PropertyInfo property = target.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Public | BindingFlags.Instance);
+
+            if (property == null)
+                throw new MissingMemberException(
+                    target.GetType().FullName, propertyName);
+
+            return property.GetValue(target, null);
+        }
+
+        public static void SetProperty(
+            object target, string propertyName, object value)
+        {
+            if (target == null)
+                throw new ArgumentNullException("target");
+
+            PropertyInfo property = target.GetType().GetProperty(
+                propertyName,
+                BindingFlags.Public | BindingFlags.Instance);
+
+            if (property == null || !property.CanWrite)
+                throw new MissingMemberException(
+                    target.GetType().FullName, propertyName);
+
+            if (value != null)
+            {
+                Type targetType = Nullable.GetUnderlyingType(
+                    property.PropertyType) ?? property.PropertyType;
+
+                if (targetType.IsEnum && value.GetType() != targetType)
+                {
+                    value = Enum.Parse(
+                        targetType,
+                        value.ToString(),
+                        false);
+                }
+                else if (!targetType.IsAssignableFrom(value.GetType()))
+                {
+                    value = Convert.ChangeType(value, targetType);
+                }
+            }
+
+            property.SetValue(target, value, null);
+        }
+
+        public static T Get<T>(object target, string propertyName)
+        {
+            object value = GetProperty(target, propertyName);
+
+            if (value == null)
+                return default(T);
+
+            return (T)value;
+        }
+
+        public static object GetIndexedValue(
+            object target, params object[] indexes)
+        {
+            if (target == null)
+                throw new ArgumentNullException("target");
+
+            PropertyInfo property = null;
+
+            PropertyInfo[] properties = target.GetType().GetProperties(
+                BindingFlags.Public | BindingFlags.Instance);
+
+            foreach (PropertyInfo candidate in properties)
+            {
+                if (candidate.Name == "Item" &&
+                    candidate.GetIndexParameters().Length == indexes.Length)
+                {
+                    property = candidate;
+                    break;
+                }
+            }
+
+            if (property == null)
+                throw new MissingMemberException(
+                    target.GetType().FullName, "Item");
+
+            return property.GetValue(target, indexes);
+        }
+
+        public static object Invoke(
+            object target,
+            string methodName,
+            params object[] arguments)
+        {
+            if (target == null)
+                throw new ArgumentNullException("target");
+
+            MethodInfo[] methods = target.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance);
+
+            foreach (MethodInfo method in methods)
+            {
+                if (method.Name != methodName)
+                    continue;
+
+                ParameterInfo[] parameters = method.GetParameters();
+
+                if (parameters.Length != arguments.Length)
+                    continue;
+
+                bool compatible = true;
+
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    if (arguments[i] == null)
+                    {
+                        if (parameters[i].ParameterType.IsValueType &&
+                            Nullable.GetUnderlyingType(
+                                parameters[i].ParameterType) == null)
+                        {
+                            compatible = false;
+                            break;
+                        }
+                    }
+                    else if (!parameters[i].ParameterType.IsAssignableFrom(
+                        arguments[i].GetType()))
+                    {
+                        compatible = false;
+                        break;
+                    }
+                }
+
+                if (compatible)
+                    return method.Invoke(target, arguments);
+            }
+
+            throw new MissingMethodException(
+                target.GetType().FullName, methodName);
+        }
+    }
+
+    #endregion
+
+    #region C1XLBook
+
+    public sealed class C1XLBook : IDisposable
+    {
+        private readonly NativeC1XLBook _book;
+        private bool _disposed;
+
+        internal NativeC1XLBook NativeBook
+        {
+            get
+            {
+                EnsureNotDisposed();
+                return _book;
+            }
+        }
+
+        public C1XLBook()
+        {
+            _book = new NativeC1XLBook();
+        }
+
+        public void Load(string filePath)
+        {
+            EnsureNotDisposed();
+            _book.Load(filePath);
+        }
+
+        public void Load(string filePath, FileFormat format)
+        {
+            EnsureNotDisposed();
+
+            _book.Load(filePath, ToNativeFileFormat(format));
+        }
+
+        public void Load(Stream stream)
+        {
+            EnsureNotDisposed();
+            _book.Load(stream);
+        }
+
+        public void Save(string filePath)
+        {
+            EnsureNotDisposed();
+            _book.Save(filePath);
+        }
+
+        public void Save(string filePath, FileFormat format)
+        {
+            EnsureNotDisposed();
+
+            _book.Save(filePath, ToNativeFileFormat(format));
+        }
+
+        public int SheetCount
+        {
+            get
+            {
+                EnsureNotDisposed();
+                return _book.Sheets.Count;
+            }
+        }
+
+        public XLSheets Sheets
+        {
+            get
+            {
+                EnsureNotDisposed();
+                return new XLSheets(_book.Sheets);
+            }
+        }
+
+        public XLNamedRangeCollection NamedRanges
+        {
+            get
+            {
+                EnsureNotDisposed();
+
+                if (_book.NamedRanges == null)
+                    return null;
+
+                return new XLNamedRangeCollection(_book.NamedRanges);
+            }
+        }
+
+        private static NativeFileFormat ToNativeFileFormat(
+            FileFormat format)
+        {
+            switch (format)
+            {
+                case FileFormat.Biff8:
+                    return NativeFileFormat.Biff8;
+
+                case FileFormat.OpenXml:
+                    return NativeFileFormat.OpenXml;
+
+                case FileFormat.OpenXmlMacro:
+                    return NativeFileFormat.OpenXmlMacro;
+
+                default:
+                    throw new ArgumentOutOfRangeException("format");
+            }
+        }
+
+        private void EnsureNotDisposed()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException("C1XLBook");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            IDisposable disposable = (object)_book as IDisposable;
+
+            if (disposable != null)
+                disposable.Dispose();
+
+            _disposed = true;
+        }
+    }
+
+    #endregion
+
+    #region XLSheets
+
+    public sealed class XLSheets
+    {
+        private readonly object _sheets;
+
+        internal XLSheets(object sheets)
+        {
+            _sheets = sheets;
+        }
+
+        public int Count
+        {
+            get
+            {
+                return NativeAccess.Get<int>(_sheets, "Count");
+            }
+        }
+
+        public XLSheet this[int index]
+        {
+            get
+            {
+                object sheet = NativeAccess.GetIndexedValue(
+                    _sheets, index);
+
+                return sheet == null ? null : new XLSheet(sheet);
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLSheet
+
+    public sealed class XLSheet
+    {
+        private readonly NativeXLSheet _sheet;
+
+        internal XLSheet(NativeXLSheet sheet)
+        {
+            _sheet = sheet;
+        }
+
+        internal XLSheet(object sheet)
+        {
+            _sheet = (NativeXLSheet)sheet;
+        }
+
+        public int Scale
+        {
+            get { return _sheet.Scale; }
+            set { _sheet.Scale = value; }
+        }
+
+        public XLRows Rows
+        {
+            get
+            {
+                return new XLRows(_sheet.Rows);
+            }
+        }
+
+        public XLColumns Columns
+        {
+            get
+            {
+                return new XLColumns(_sheet.Columns);
+            }
+        }
+
+        public XLPrintSettings PrintSettings
+        {
+            get
+            {
+                return new XLPrintSettings(_sheet.PrintSettings);
+            }
+        }
+
+        public XLCell this[int row, int column]
+        {
+            get
+            {
+                NativeXLCell cell = _sheet[row, column];
+
+                return cell == null ? null : new XLCell(cell);
+            }
+        }
+
+        public XLCell GetCell(int row, int column)
+        {
+            NativeXLCell cell = _sheet.GetCell(row, column);
+
+            return cell == null ? null : new XLCell(cell);
+        }
+    }
+
+    #endregion
+
+    #region XLCell
+
+    public sealed class XLCell
+    {
+        private readonly NativeXLCell _cell;
+
+        internal XLCell(NativeXLCell cell)
+        {
+            _cell = cell;
+        }
+
+        public string Text
+        {
+            get
+            {
+                return _cell.Text;
+            }
+        }
+
+        public object Value
+        {
+            get { return _cell.Value; }
+            set { _cell.Value = value; }
+        }
+
+        public XLStyle Style
+        {
+            get
+            {
+                if (_cell.Style == null)
+                    return null;
+
+                return new XLStyle(_cell.Style);
+            }
+            set
+            {
+                _cell.Style = value == null
+                    ? null
+                    : value.NativeStyle;
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLStyle
+
+    public sealed class XLStyle
+    {
+        private readonly NativeXLStyle _style;
+
+        internal NativeXLStyle NativeStyle
+        {
+            get { return _style; }
+        }
+
+        public XLStyle(C1XLBook workbook)
+        {
+            if (workbook == null)
+                throw new ArgumentNullException("workbook");
+
+            _style = new NativeXLStyle(workbook.NativeBook);
+        }
+
+        internal XLStyle(NativeXLStyle style)
+        {
+            _style = style;
+        }
+
+        public Color ForeColor
+        {
+            get { return _style.ForeColor; }
+            set { _style.ForeColor = value; }
+        }
+
+        public Color BackColor
+        {
+            get { return _style.BackColor; }
+            set { _style.BackColor = value; }
+        }
+
+        public Font Font
+        {
+            get { return _style.Font; }
+            set { _style.Font = value; }
+        }
+
+        public bool WordWrap
+        {
+            get { return _style.WordWrap; }
+            set { _style.WordWrap = value; }
+        }
+
+        public string Format
+        {
+            get { return _style.Format; }
+            set { _style.Format = value; }
+        }
+
+        public XLAlignHorzEnum AlignHorz
+        {
+            get
+            {
+                return (XLAlignHorzEnum)Enum.Parse(
+                    typeof(XLAlignHorzEnum),
+                    _style.AlignHorz.ToString());
+            }
+            set
+            {
+                _style.AlignHorz =
+                    (NativeXLAlignHorzEnum)Enum.Parse(
+                        typeof(NativeXLAlignHorzEnum),
+                        value.ToString());
+            }
+        }
+
+        public XLAlignVertEnum AlignVert
+        {
+            get
+            {
+                return (XLAlignVertEnum)Enum.Parse(
+                    typeof(XLAlignVertEnum),
+                    _style.AlignVert.ToString());
+            }
+            set
+            {
+                _style.AlignVert =
+                    (NativeXLAlignVertEnum)Enum.Parse(
+                        typeof(NativeXLAlignVertEnum),
+                        value.ToString());
+            }
+        }
+
+        public XLLineStyleEnum BorderBottom
+        {
+            get
+            {
+                return (XLLineStyleEnum)Enum.Parse(
+                    typeof(XLLineStyleEnum),
+                    _style.BorderBottom.ToString());
+            }
+            set
+            {
+                _style.BorderBottom = ToNativeLine(value);
+            }
+        }
+
+        public XLLineStyleEnum BorderTop
+        {
+            get
+            {
+                return (XLLineStyleEnum)Enum.Parse(
+                    typeof(XLLineStyleEnum),
+                    _style.BorderTop.ToString());
+            }
+            set
+            {
+                _style.BorderTop = ToNativeLine(value);
+            }
+        }
+
+        public XLLineStyleEnum BorderLeft
+        {
+            get
+            {
+                return (XLLineStyleEnum)Enum.Parse(
+                    typeof(XLLineStyleEnum),
+                    _style.BorderLeft.ToString());
+            }
+            set
+            {
+                _style.BorderLeft = ToNativeLine(value);
+            }
+        }
+
+        public XLLineStyleEnum BorderRight
+        {
+            get
+            {
+                return (XLLineStyleEnum)Enum.Parse(
+                    typeof(XLLineStyleEnum),
+                    _style.BorderRight.ToString());
+            }
+            set
+            {
+                _style.BorderRight = ToNativeLine(value);
+            }
+        }
+
+        private static NativeXLLineStyleEnum ToNativeLine(
+            XLLineStyleEnum value)
+        {
+            return (NativeXLLineStyleEnum)Enum.Parse(
+                typeof(NativeXLLineStyleEnum),
+                value.ToString());
+        }
+    }
+
+    #endregion
+
+    #region XLRows
+
+    public sealed class XLRows
+    {
+        private readonly object _rows;
+
+        internal XLRows(object rows)
+        {
+            _rows = rows;
+        }
+
+        public int Count
+        {
+            get
+            {
+                return NativeAccess.Get<int>(_rows, "Count");
+            }
+        }
+
+        public XLRow this[int index]
+        {
+            get
+            {
+                object row = NativeAccess.GetIndexedValue(
+                    _rows, index);
+
+                return row == null ? null : new XLRow(row);
+            }
+        }
+
+        public void Add()
+        {
+            NativeAccess.Invoke(_rows, "Add");
+        }
+
+        public void RemoveAt(int index)
+        {
+            NativeAccess.Invoke(_rows, "RemoveAt", index);
+        }
+    }
+
+    public sealed class XLRow
+    {
+        private readonly object _row;
+
+        internal XLRow(object row)
+        {
+            _row = row;
+        }
+
+        public int Height
+        {
+            get
+            {
+                return NativeAccess.Get<int>(_row, "Height");
+            }
+            set
+            {
+                NativeAccess.SetProperty(_row, "Height", value);
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLColumns
+
+    public sealed class XLColumns
+    {
+        private readonly object _columns;
+
+        internal XLColumns(object columns)
+        {
+            _columns = columns;
+        }
+
+        public XLColumn this[int index]
+        {
+            get
+            {
+                object column = NativeAccess.GetIndexedValue(
+                    _columns, index);
+
+                return column == null ? null : new XLColumn(column);
+            }
+        }
+    }
+
+    public sealed class XLColumn
+    {
+        private readonly object _column;
+
+        internal XLColumn(object column)
+        {
+            _column = column;
+        }
+
+        public int Width
+        {
+            get
+            {
+                return NativeAccess.Get<int>(_column, "Width");
+            }
+            set
+            {
+                NativeAccess.SetProperty(_column, "Width", value);
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLPrintSettings
+
+    public sealed class XLPrintSettings
+    {
+        private readonly object _settings;
+
+        internal XLPrintSettings(object settings)
+        {
+            _settings = settings;
+        }
+
+        public bool Landscape
+        {
+            get { return NativeAccess.Get<bool>(_settings, "Landscape"); }
+            set { NativeAccess.SetProperty(_settings, "Landscape", value); }
+        }
+
+        public double MarginBottom
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginBottom"); }
+            set { NativeAccess.SetProperty(_settings, "MarginBottom", value); }
+        }
+
+        public double MarginFooter
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginFooter"); }
+            set { NativeAccess.SetProperty(_settings, "MarginFooter", value); }
+        }
+
+        public double MarginLeft
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginLeft"); }
+            set { NativeAccess.SetProperty(_settings, "MarginLeft", value); }
+        }
+
+        public double MarginRight
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginRight"); }
+            set { NativeAccess.SetProperty(_settings, "MarginRight", value); }
+        }
+
+        public double MarginTop
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginTop"); }
+            set { NativeAccess.SetProperty(_settings, "MarginTop", value); }
+        }
+
+        public double MarginHeader
+        {
+            get { return NativeAccess.Get<double>(_settings, "MarginHeader"); }
+            set { NativeAccess.SetProperty(_settings, "MarginHeader", value); }
+        }
+
+        public bool ScaleWithDocument
+        {
+            get
+            {
+                return NativeAccess.Get<bool>(
+                    _settings, "ScaleWithDocument");
+            }
+            set
+            {
+                NativeAccess.SetProperty(
+                    _settings, "ScaleWithDocument", value);
+            }
+        }
+
+        public PaperKind PaperKind
+        {
+            get
+            {
+                return NativeAccess.Get<PaperKind>(
+                    _settings, "PaperKind");
+            }
+            set
+            {
+                NativeAccess.SetProperty(
+                    _settings, "PaperKind", value);
+            }
+        }
+
+        public int FitPagesAcross
+        {
+            get
+            {
+                return NativeAccess.Get<int>(
+                    _settings, "FitPagesAcross");
+            }
+            set
+            {
+                NativeAccess.SetProperty(
+                    _settings, "FitPagesAcross", value);
+            }
+        }
+
+        public int FitPagesDown
+        {
+            get
+            {
+                return NativeAccess.Get<int>(
+                    _settings, "FitPagesDown");
+            }
+            set
+            {
+                NativeAccess.SetProperty(
+                    _settings, "FitPagesDown", value);
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLNamedRangeCollection
+
+    public sealed class XLNamedRangeCollection :
+        IEnumerable<XLNamedRange>
+    {
+        private readonly NativeXLNamedRangeCollection _ranges;
+
+        internal XLNamedRangeCollection(
+            NativeXLNamedRangeCollection ranges)
+        {
+            _ranges = ranges;
+        }
+
+        public int Count
+        {
+            get { return _ranges.Count; }
+        }
+
+        public void Add(string name, XLCellRange range)
+        {
+            if (range == null)
+                throw new ArgumentNullException("range");
+
+            _ranges.Add(name, range.NativeRange);
+        }
+
+        public IEnumerator<XLNamedRange> GetEnumerator()
+        {
+            foreach (NativeXLNamedRange range in _ranges)
+            {
+                yield return range == null
+                    ? null
+                    : new XLNamedRange(range);
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    #endregion
+
+    #region XLNamedRange
+
+    public sealed class XLNamedRange
+    {
+        private readonly NativeXLNamedRange _range;
+
+        internal XLNamedRange(NativeXLNamedRange range)
+        {
+            _range = range;
+        }
+
+        public string Name
+        {
+            get { return _range.Name; }
+        }
+
+        public bool IsEmpty
+        {
+            get { return _range.IsEmpty; }
+        }
+
+        public XLCellRangeCollection CellRanges
+        {
+            get
+            {
+                return new XLCellRangeCollection(_range.CellRanges);
+            }
+        }
+    }
+
+    #endregion
+
+    #region XLCellRangeCollection
+
+    public sealed class XLCellRangeCollection :
+        IEnumerable<XLCellRange>
+    {
+        private readonly object _ranges;
+
+        internal XLCellRangeCollection(object ranges)
+        {
+            _ranges = ranges;
+        }
+
+        public int Count
+        {
+            get
+            {
+                return NativeAccess.Get<int>(_ranges, "Count");
+            }
+        }
+
+        public XLCellRange this[int index]
+        {
+            get
+            {
+                object range = NativeAccess.GetIndexedValue(
+                    _ranges, index);
+
+                return range == null
+                    ? null
+                    : new XLCellRange((NativeXLCellRange)range);
+            }
+        }
+
+        public IEnumerator<XLCellRange> GetEnumerator()
+        {
+            foreach (object range in (IEnumerable)_ranges)
+            {
+                yield return range == null
+                    ? null
+                    : new XLCellRange((NativeXLCellRange)range);
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    #endregion
+
+    #region XLCellRange
+
+    public sealed class XLCellRange
+    {
+        private readonly NativeXLCellRange _range;
+
+        internal NativeXLCellRange NativeRange
+        {
+            get { return _range; }
+        }
+
+        public XLCellRange(
+            int sheetFrom,
+            int sheetTo,
+            int rowFrom,
+            int rowTo,
+            int columnFrom,
+            int columnTo,
+            XLReferenceType rowFromType,
+            XLReferenceType rowToType,
+            XLReferenceType columnFromType,
+            XLReferenceType columnToType)
+        {
+            _range = new NativeXLCellRange(
+                sheetFrom,
+                sheetTo,
+                rowFrom,
+                rowTo,
+                columnFrom,
+                columnTo,
+                ToNativeReference(rowFromType),
+                ToNativeReference(rowToType),
+                ToNativeReference(columnFromType),
+                ToNativeReference(columnToType));
+        }
+
+        internal XLCellRange(NativeXLCellRange range)
+        {
+            _range = range;
+        }
+
+        public int ColumnTo
+        {
+            get { return _range.ColumnTo; }
+            set { _range.ColumnTo = value; }
+        }
+
+        public int RowTo
+        {
+            get { return _range.RowTo; }
+            set { _range.RowTo = value; }
+        }
+
+        public XLRangeType RangeType
+        {
+            set
+            {
+                _range.RangeType =
+                    (NativeXLRangeType)Enum.Parse(
+                        typeof(NativeXLRangeType),
+                        value.ToString());
+            }
+        }
+
+        private static NativeXLReferenceType ToNativeReference(
+            XLReferenceType value)
+        {
+            return (NativeXLReferenceType)Enum.Parse(
+                typeof(NativeXLReferenceType),
+                value.ToString());
+        }
+    }
+
+    #endregion
 }
