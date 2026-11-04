@@ -1,10 +1,228 @@
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The name 'FileFormat' does not exist in the current context
-The name 'FileFormat' does not exist in the current context
-The type or namespace name 'XLSheet' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-The name 'FileFormat' does not exist in the current context
-The name 'FileFormat' does not exist in the current context
-The type or namespace name 'XLSheet' could not be found (are you missing a using directive or an assembly reference?)
+using NativeXLRowCollection = C1.C1Excel.XLRowCollection;
+using NativeXLRow = C1.C1Excel.XLRow;
+using NativeXLColumnCollection = C1.C1Excel.XLColumnCollection;
+using NativeXLColumn = C1.C1Excel.XLColumn;
+using NativeXLPrintSettings = C1.C1Excel.XLPrintSettings;
+
+
+
+
+
+
+public sealed class XLRows
+{
+    private readonly NativeXLRowCollection _rows;
+
+    internal XLRows(NativeXLRowCollection rows)
+    {
+        _rows = rows;
+    }
+
+    public int Count
+    {
+        get { return _rows.Count; }
+    }
+
+    public XLRow this[int index]
+    {
+        get
+        {
+            NativeXLRow row = _rows[index];
+            return row == null ? null : new XLRow(row);
+        }
+    }
+
+    public void Add()
+    {
+        _rows.Add();
+    }
+
+    public void RemoveAt(int index)
+    {
+        _rows.RemoveAt(index);
+    }
+}
+
+public sealed class XLRow
+{
+    private readonly NativeXLRow _row;
+
+    internal XLRow(NativeXLRow row)
+    {
+        _row = row;
+    }
+
+    public int Height
+    {
+        get { return _row.Height; }
+        set { _row.Height = value; }
+    }
+}
+
+
+
+
+
+
+
+
+public sealed class XLColumns
+{
+    private readonly NativeXLColumnCollection _columns;
+
+    internal XLColumns(NativeXLColumnCollection columns)
+    {
+        _columns = columns;
+    }
+
+    public XLColumn this[int index]
+    {
+        get
+        {
+            NativeXLColumn column = _columns[index];
+            return column == null ? null : new XLColumn(column);
+        }
+    }
+}
+
+public sealed class XLColumn
+{
+    private readonly NativeXLColumn _column;
+
+    internal XLColumn(NativeXLColumn column)
+    {
+        _column = column;
+    }
+
+    public int Width
+    {
+        get { return _column.Width; }
+        set { _column.Width = value; }
+    }
+}
+
+
+
+
+
+
+
+
+public sealed class XLPrintSettings
+{
+    private readonly NativeXLPrintSettings _settings;
+
+    internal XLPrintSettings(NativeXLPrintSettings settings)
+    {
+        _settings = settings;
+    }
+
+    public bool Landscape
+    {
+        get { return _settings.Landscape; }
+        set { _settings.Landscape = value; }
+    }
+
+    public double MarginBottom
+    {
+        get { return _settings.MarginBottom; }
+        set { _settings.MarginBottom = value; }
+    }
+
+    public double MarginFooter
+    {
+        get { return _settings.MarginFooter; }
+        set { _settings.MarginFooter = value; }
+    }
+
+    public double MarginLeft
+    {
+        get { return _settings.MarginLeft; }
+        set { _settings.MarginLeft = value; }
+    }
+
+    public double MarginRight
+    {
+        get { return _settings.MarginRight; }
+        set { _settings.MarginRight = value; }
+    }
+
+    public double MarginTop
+    {
+        get { return _settings.MarginTop; }
+        set { _settings.MarginTop = value; }
+    }
+
+    public double MarginHeader
+    {
+        get { return _settings.MarginHeader; }
+        set { _settings.MarginHeader = value; }
+    }
+
+    public bool ScaleWithDocument
+    {
+        get { return _settings.ScaleWithDocument; }
+        set { _settings.ScaleWithDocument = value; }
+    }
+
+    public PaperKind PaperKind
+    {
+        get { return _settings.PaperKind; }
+        set { _settings.PaperKind = value; }
+    }
+
+    public int FitPagesAcross
+    {
+        get { return _settings.FitPagesAcross; }
+        set { _settings.FitPagesAcross = value; }
+    }
+
+    public int FitPagesDown
+    {
+        get { return _settings.FitPagesDown; }
+        set { _settings.FitPagesDown = value; }
+    }
+}
+
+
+
+
+
+
+
+public sealed class XLCellRangeCollection : IEnumerable<XLCellRange>
+{
+    private readonly NativeXLCellRange[] _ranges;
+
+    internal XLCellRangeCollection(NativeXLCellRange[] ranges)
+    {
+        _ranges = ranges ?? new NativeXLCellRange[0];
+    }
+
+    public int Count
+    {
+        get { return _ranges.Length; }
+    }
+
+    public XLCellRange this[int index]
+    {
+        get
+        {
+            NativeXLCellRange range = _ranges[index];
+            return range == null ? null : new XLCellRange(range);
+        }
+    }
+
+    public IEnumerator<XLCellRange> GetEnumerator()
+    {
+        foreach (NativeXLCellRange range in _ranges)
+        {
+            yield return range == null ? null : new XLCellRange(range);
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+}
