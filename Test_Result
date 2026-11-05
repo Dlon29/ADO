@@ -1,70 +1,31 @@
-
 public sealed class XLCellRangeCollection : IEnumerable<XLCellRange>
 {
     private readonly NativeXLCellRange[] _ranges;
-    private readonly NativeXLCellRangeCollection _collection;
 
-    // Existing constructor: used by NamedRange.CellRanges.
     internal XLCellRangeCollection(NativeXLCellRange[] ranges)
     {
         _ranges = ranges ?? new NativeXLCellRange[0];
     }
 
-    // New constructor: used by XLSheet.MergedCells.
-    internal XLCellRangeCollection(
-        NativeXLCellRangeCollection collection)
-    {
-        _collection = collection;
-    }
-
     public int Count
     {
-        get
-        {
-            return _collection != null
-                ? _collection.Count
-                : _ranges.Length;
-        }
+        get { return _ranges.Length; }
     }
 
     public XLCellRange this[int index]
     {
         get
         {
-            NativeXLCellRange range = _collection != null
-                ? _collection[index]
-                : _ranges[index];
-
+            NativeXLCellRange range = _ranges[index];
             return range == null ? null : new XLCellRange(range);
         }
     }
 
-    public XLCellRange Add(
-        int rowIndex,
-        int colIndex,
-        int rowCount,
-        int colCount)
-    {
-        if (_collection == null)
-        {
-            throw new NotSupportedException(
-                "Adding ranges is supported only for worksheet merged cells.");
-        }
-
-        NativeXLCellRange range = _collection.Add(
-            rowIndex,
-            colIndex,
-            rowCount,
-            colCount);
-
-        return range == null ? null : new XLCellRange(range);
-    }
-
     public IEnumerator<XLCellRange> GetEnumerator()
     {
-        for (int i = 0; i < Count; i++)
+        foreach (NativeXLCellRange range in _ranges)
         {
-            yield return this[i];
+            yield return range == null ? null : new XLCellRange(range);
         }
     }
 
