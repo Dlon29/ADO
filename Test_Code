@@ -1,32 +1,32 @@
 using STBUSA.Excel.Util.C1Compatibility;
 using Common.Logging;
+using MoBetter.DataAccessUtility;
 using MoBetterReports.CustomerReports.DataAccess;
+using MoBetterReports.Shared.Business;
 using MoBetterReports.Shared.Infrastructure;
 using MoBetterReports.Shared.Report;
+using STBUSA.Crystal;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
+using System.Data.SqlClient;
 
 namespace MoBetterReports.CustomerReports.BusinessLogic
 {
-    public class DailyPensionUnpaidBLL : ReportBuilderDynamicSection, IGenerateCustomerReportBLL
+    public class InvoiceDetailsRepoReportBLL : ReportBuilder, IGenerateCustomerReportBLL
     {
-        private static ILog _logger = LogManager.GetLogger(typeof(DailyPensionUnpaidBLL));
-        private ICustomerReportDataDAL _ObjDailyPensionUnpaidReportDAL;
-        private DailyPensionUnpaidReportDAL _ObjdailyPensionUnpaidForPackage;
+        private static ILog _logger = LogManager.GetLogger(typeof(InvoiceDetailsRepoReportBLL));
+        private ICustomerReportDataDAL _ObjInvoiceDetailsRepoReportDAL;
 
-        public DailyPensionUnpaidBLL(DailyPensionUnpaidReportDAL ObjDailyPensionUnpaidReportDAL)
+        public InvoiceDetailsRepoReportBLL(InvoiceDetailsRepoReportDAL ObjInvoiceDetailsRepoReportDAL)
         {
-            _ObjDailyPensionUnpaidReportDAL = ObjDailyPensionUnpaidReportDAL;
-            _ObjdailyPensionUnpaidForPackage = ObjDailyPensionUnpaidReportDAL;
+            _ObjInvoiceDetailsRepoReportDAL = ObjInvoiceDetailsRepoReportDAL;
         }
 
         #region Report Generation Logic
         /// <summary>
-        /// This method will generate Daily Pension Unpaid Report using component one and will return the path of report generated
+        /// This method will generate Repo Invoice Details Report using component one and will return the path of report generated
         /// </summary>
         /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
         /// <param name="batchRunDate">Date for which report is to be generated</param>
@@ -46,14 +46,15 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
                 if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
                 {
                     //Note: Getting template file name and package filene
-                    if (_ObjDailyPensionUnpaidReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
+                    if (_ObjInvoiceDetailsRepoReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
                     {
-                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
+                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate,source);
                     }
                 }
-                else if (_ObjDailyPensionUnpaidReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                else if (_ObjInvoiceDetailsRepoReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
                 {
-                    //Now pass this object to another report for report genaration using component one.
+                    //string FileType = String.Empty;
+                    //fileType = ObjSqlDataSet.Tables[0].Rows[0]["FileType"].ToString(); NOTE: File type can also be fetched from DB
                     bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
                     if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
                         ReportPath = BuildWorkBook(ObjSqlDataSet);
@@ -66,121 +67,31 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
             }
             catch (Exception ex)
             {
-                _logger.ErrorFormat("Exception occured while generating Daily Pension Unpaid Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                _logger.ErrorFormat("Exception occured while generating Repo Invoice Details Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
                 throw;
             }
         }
 
-        /// <summary>
-        /// This method will generate Daily Pension Unpaid Report for package only using component one and will return the path of report generated
-        /// </summary>
-        /// <param name="reportSetupID"></param>
-        /// <param name="batchRunDate"></param>
-        /// <param name="currBusDate"></param>
-        /// <param name="fileType"></param>
-        /// <param name="newFileSuffix"></param>
-        /// <param name="source"></param>
-        /// <param name="sourceInfo"></param>
-        /// <param name="appID"></param>
-        /// <param name="requestParams"></param>
-        /// <returns>Package Path with file package file name</returns>
-        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, DateTime currBusDate, string fileType, string newFileSuffix, string source, SourceInfo sourceInfo = null, int appID = 1, List<ReportRequestParams> requestParams = null)
+        public override void RenameWorksheet(ref XLSheet workSheetTemplate, string sheetName)
         {
-            try
-            {
-                string ReportPath = null;
-                ReportSource = (Source)Convert.ToInt32(source);
-                FileType = fileType;
-                PackagePath = sourceInfo.SourceInformation;
+            base.RenameWorksheet(ref workSheetTemplate, sheetName);
 
-                DataSet ObjSqlDataSet = new DataSet();
-                string sNewFile = "", sOldFile = "";
+            var fileNDateFormat = workSheetTemplate.Name.Split('{', '}');
 
-                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
-                {
-                    //Note: Getting template file name and package filene
-                    if (_ObjDailyPensionUnpaidReportDAL.GetReportInformation(reportSetupID, currBusDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
-                    {
-                        sOldFile = ObjSqlDataSet.Tables[0].Rows[0]["FileName"].ToString();
-                        sNewFile = sOldFile.Replace(Path.GetFileNameWithoutExtension(sOldFile), Path.GetFileNameWithoutExtension(sOldFile) + newFileSuffix);
-                        ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sNewFile;
-                        ObjSqlDataSet.Tables[0].Rows[0]["ToDate"] = batchRunDate;
-                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, currBusDate, source);
-                    }
-                }
-                else if (_ObjDailyPensionUnpaidReportDAL.GetReportData(reportSetupID, currBusDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
-                {
-                    sOldFile = ObjSqlDataSet.Tables[0].Rows[0]["FileName"].ToString();
-                    sNewFile = sOldFile.Replace(Path.GetFileNameWithoutExtension(sOldFile), Path.GetFileNameWithoutExtension(sOldFile) + newFileSuffix);
-                    ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sNewFile;
-                    ObjSqlDataSet.Tables[0].Rows[0]["ToDate"] = batchRunDate;
-                    //Now pass this object to another report for report genaration using component one.
-                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
-                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
-                        ReportPath = BuildWorkBook(ObjSqlDataSet);
-                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
-                        ReportPath = BuildCSV(ObjSqlDataSet);
-                }
-
-                //return ReportPath;
-                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
-            }
-            catch (Exception ex)
-            {
-                _logger.ErrorFormat("Exception occured while generating Daily Pension Unpaid Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
-                throw;
-            }
+            workSheetTemplate.Name = workSheetTemplate.Name.Replace("{" + fileNDateFormat[1] + "}", DateTime.Now.ToString(fileNDateFormat[1]));
         }
 
-        /// <summary>
-        /// This function returns the next businses date if any holiday comes in between curremt and next business date
-        /// </summary>
-        /// <param name="batchRunDate"></param>
-        /// <returns></returns>
-        public string CheckHolidayRule(string batchRunDate)
-        {
-            return _ObjdailyPensionUnpaidForPackage.CheckHolidayRule(batchRunDate);
-        }
 
-        /// <summary>
-        /// This function is used to update the currency sign in dynamic section header 
-        /// </summary>
-        public override void CleanUpTouchUpSection(ref C1XLBook workBook, ref XLSheet workSheet, string sheet, string section, ref int rowInsertCount, ref int colInsertCount, DataSet dataSet, DataTable dtSection, int sectionRepeatCount, DataTable dtHeaderSection = null, List<string> dBDynamicColumns = null, int? sheetIndex = null)
-        {
-            if (sheet == "Sheet1" && section == "Section2")
-            {
-                var sectionKey = sheet + section;
-                var getSectionPosition = reportSections[sectionKey].SectionValue.Split(','); // Get starting Row and Column position from config collection.
-                int startRow = Convert.ToInt32(getSectionPosition[(int)Cell.Row]);
-                int endRow = (getSectionPosition.Length > 2 ? Convert.ToInt32(getSectionPosition[2]) : 0);
-                int sectionRowCount = rowInsertCount - (endRow - startRow);
-
-                string currencySymbol = reportConfigKeys.ContainsKey("CurrencyFormatKey") ? reportConfigKeys["CurrencyFormatKey"] : string.Empty;
-
-                if (!string.IsNullOrEmpty(currencySymbol))
-                {
-                    for (int i = rowInsertCount; i >= sectionRowCount - 1; i--)
-                    {
-                        if (workSheet[i, 2].Text.ToUpper().Contains("USD"))
-                        {
-                            XLStyle rowStyle = new XLStyle(workBook);
-                            rowStyle = workSheet[i, 3].Style.Clone();
-                            rowStyle.Format = currencySymbol;
-                            workSheet[i, 3].Style = rowStyle;
-                        }
-                    }
-                }
-
-                //Adding page break after the second section
-                workSheet.Rows[rowInsertCount].PageBreak = true;
-
-            }
-        }
         #endregion
     }
 
 }
 
 
-'XLStyle' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'PageBreak' and no accessible extension method 'PageBreak' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
+
+
+'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+
+
