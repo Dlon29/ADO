@@ -1,260 +1,135 @@
 using STBUSA.Excel.Util.C1Compatibility;
-using System.Collections.Generic;
-using System.Data;
-using static MoBetterReports.CustomerReports.BusinessLogic.C1ReportGenerationLogic;
-
-namespace MoBetterReports.CustomerReports.BusinessLogic
-{
-    public abstract class C1ReportGeneration
-    {
-        public abstract void WriteReportHeader(int secNo, DataTable dtReportHeader, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate);
-        public abstract void WriteSection2(int secNo, DataTable dtAccount, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate);
-        public abstract void WriteSection3(int secNo, DataTable dtAccount, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate);
-        public abstract Dictionary<int, XLCell> GetConfiguration(XLSheet workSheetConfig);
-        public abstract List<DBTempHeader> GetDBColumnFromConfig(XLCell xLCell, XLSheet xLConfigSheet);
-        public abstract Dictionary<string, Sections> GetSectionsFromConfig(XLCell xLCell, XLSheet xLConfigSheet);
-        public abstract string GetExcelColumnName(int columnNumber);
-    }
-}
-
-
-
-
-
-
-using STBUSA.Excel.Util.C1Compatibility;
+using Common.Logging;
+using MoBetterReports.CustomerReports.DataAccess;
+using MoBetterReports.Shared.Infrastructure;
+using MoBetterReports.Shared.Report;
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.SqlClient;
+using System.Drawing;
+using System.IO;
 using System.Linq;
 
 namespace MoBetterReports.CustomerReports.BusinessLogic
 {
-    public class C1ReportGenerationLogic : C1ReportGeneration
+    public class CBJMonitoringReportBLL : ReportBuilder, IGenerateCustomerReportBLL
     {
-        /// <summary>
-        /// This method write a report header based on configuration read from config sheet
-        /// </summary>
-        /// <param name="secNo">section no for retriving data from DB config based on section</param>
-        /// <param name="dtReportHeader">Data table contains report header data</param>
-        /// <param name="configSections">It contains section wise configuration</param>
-        /// <param name="dbColumns">It contains the information about database columns</param>
-        /// <param name="workSheetTemplate">worksheet template which we need to write the data and generate the excel</param>
-        public override void WriteReportHeader(int secNo, DataTable dtReportHeader, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate)
+        private static ILog _logger = LogManager.GetLogger(typeof(CBJMonitoringReportBLL));
+        private ICustomerReportDataDAL _ObjCBJMonitoringReportDAL;
+
+        public CBJMonitoringReportBLL(CBJMonitoringReportDAL ObjCBJMonitoringReportDAL)
         {
-                //Header Section 1
-                string section = "Section" + secNo;
-                var getSection1Position = configSections[section].SectionValue.Split(',');  // Get starting Row and Column position from config collection.
-                int Sec1row = Convert.ToInt32(getSection1Position[(int)Cell.Row]), Sec1column = Convert.ToInt32(getSection1Position[(int)Cell.Column]);
-                var section1 = dbColumns.Where(p => p.Section == configSections[section].SectionName).ToList(); //Retrive the Section 1 from DB columns collection
+            _ObjCBJMonitoringReportDAL = ObjCBJMonitoringReportDAL;
+        }
 
-                DBTempHeader dBTempHeader;
-                for (int i = 0; i < dtReportHeader.Rows.Count; i++)
+        #region Report Generation Logic
+        /// <summary>
+        /// This method will generate CBJ Monitoring report using component one and will return the path of report generated
+        /// </summary>
+        /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
+        /// <param name="batchRunDate">Date for which report is to be generated</param>
+        /// <returns></returns>
+        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, string fileType, string source, SourceInfo sourceInfo, int appID, List<ReportRequestParams> requestParams)
+        {
+            try
+            {
+                string ReportPath = null;
+                ReportSource = (Source)Convert.ToInt32(source);
+                FileType = fileType;
+                if (ReportSource == Source.Package)
+                { PackagePath = sourceInfo.SourceInformation; }
+
+                DataSet ObjSqlDataSet = new DataSet();
+
+                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
                 {
-                    for (int j = 0; j < section1.Count; j++)
+                    //Note: Getting template file name and package filene
+                    if (_ObjCBJMonitoringReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
                     {
-                        dBTempHeader = new DBTempHeader();
-                        dBTempHeader.DBColumn = section1[j].DBColumn;
-                        dBTempHeader.DBNullValue = section1[j].DBNullValue;
-
-                        var getSection1DynamicPosition = section1[j].Location.Split(',');
-                        Sec1row = Convert.ToInt32(getSection1DynamicPosition[(int)Cell.Row]);
-                        Sec1column = Convert.ToInt32(getSection1DynamicPosition[(int)Cell.Column]);
-
-                        workSheetTemplate[Sec1row, Sec1column].SetValue((string.IsNullOrWhiteSpace(Convert.ToString(dtReportHeader.Rows[i][dBTempHeader.DBColumn])) == false ? dtReportHeader.Rows[i][dBTempHeader.DBColumn] : dBTempHeader.DBNullValue), workSheetTemplate.GetCell(Sec1row, Sec1column).Style);
+                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
                     }
                 }
-        }
-
-        /// <summary>
-        /// This method write a report header based on configuration read from config sheet
-        /// </summary>
-        /// <param name="secNo">section no for retriving data from DB config based on section</param>
-        /// <param name="dtSection2">Data table contains section 2 data</param>
-        /// <param name="configSections">It contains section wise configuration</param>
-        /// <param name="dbColumns">It contains the information about database columns</param>
-        /// <param name="workSheetTemplate">worksheet template which we need to write the data and generate the excel</param>
-        public override void WriteSection2(int secNo, DataTable dtSection2, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate)
-        {
-            //Data Section 2
-            string section = "Section" + secNo;
-            var getSection2Position = configSections[section].SectionValue.Split(','); // Get starting Row and Column position from config collection.
-            int Sec2row = Convert.ToInt32(getSection2Position[(int)Cell.Row]), Sec2column = Convert.ToInt32(getSection2Position[(int)Cell.Column]);
-            var section2 = dbColumns.Where(p => p.Section == configSections[section].SectionName).ToList(); //Retrive the Section 2 from DB columns collection.
-
-            XLStyle xLStyle;
-            DBTempHeader dBTempHeader;
-            for (int i = 0; i < dtSection2.Rows.Count; i++)
-            {
-                for (int j = 0; j < section2.Count; j++)
+                else if (_ObjCBJMonitoringReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
                 {
-                    dBTempHeader = new DBTempHeader();
-                    dBTempHeader.DBColumn = section2[j].DBColumn;
-                    dBTempHeader.DBNullValue = section2[j].DBNullValue;
-
-                    var colIndex = Convert.ToInt32(section2[j].Index);
-
-                    workSheetTemplate.Rows[Sec2row].Height = workSheetTemplate.Rows[Convert.ToInt32(getSection2Position[(int)Cell.Row])].Height;
-                    xLStyle = workSheetTemplate.GetCell(Convert.ToInt32(getSection2Position[(int)Cell.Row]), colIndex).Style;
-                    xLStyle.BorderRight = XLLineStyleEnum.Thin;
-                    workSheetTemplate[Sec2row, colIndex].SetValue((string.IsNullOrWhiteSpace(Convert.ToString(dtSection2.Rows[i][dBTempHeader.DBColumn])) == false ? dtSection2.Rows[i][dBTempHeader.DBColumn] : dBTempHeader.DBNullValue), xLStyle);
-                }
-                workSheetTemplate.Rows.Insert(Sec2row + 1);
-                Sec2row++;
-            }
-            workSheetTemplate.Rows.RemoveAt(Sec2row);
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="secNo"></param>
-        /// <param name="dtAccount"></param>
-        /// <param name="configSections"></param>
-        /// <param name="dbColumns"></param>
-        /// <param name="workSheetTemplate"></param>
-        public override void WriteSection3(int secNo, DataTable dtAccount, Dictionary<string, Sections> configSections, List<DBTempHeader> dbColumns, ref XLSheet workSheetTemplate)
-        {
-            throw new NotImplementedException();
-        }
-
-        #region Helpers
-        /// <summary>
-        /// This method read the main configuration from config sheet
-        /// </summary>
-        /// <param name="workSheetConfig">worksheet for config</param>
-        /// <returns>This method returns main config with type dict</returns>
-        public override Dictionary<int, XLCell> GetConfiguration(XLSheet workSheetConfig)
-        {
-            Dictionary<int, XLCell> sheetConfig = new Dictionary<int, XLCell>();
-
-            sheetConfig.Add((int)ConfigSectionKey.SectionPosition, workSheetConfig.GetCell(1, 1));
-            sheetConfig.Add((int)ConfigSectionKey.DBColPosition, workSheetConfig.GetCell(2, 1));
-
-            return sheetConfig;
-        }
-
-        /// <summary>
-        /// This method read the database configuration from config sheet
-        /// </summary>
-        /// <param name="xLCell">Cell position to read for DB Configuration</param>
-        /// <param name="xLConfigSheet">DB configuration</param>
-        /// <returns>This method returns the DB config with type dict</returns>
-        public override List<DBTempHeader> GetDBColumnFromConfig(XLCell xLCell, XLSheet xLConfigSheet)
-        {
-            List<DBTempHeader> dbColPosition = new List<DBTempHeader>();
-
-            var colPosition = xLCell.Text.Split(',');
-            int fromRowIndex = Convert.ToInt32(colPosition[0]), toRowIndex = Convert.ToInt32(colPosition[1]), fromColumnIndex = Convert.ToInt32(colPosition[2]), toColumnIndex = Convert.ToInt32(colPosition[3]);
-            int count = 0;
-            for (int i = fromRowIndex; i <= toRowIndex; i++)
-            {
-                DBTempHeader dBTempHeader = new DBTempHeader();
-                count = 0;
-                for (int j = fromColumnIndex; j <= toColumnIndex; j++)
-                {
-                    count++;
-                    if (count == 1)
-                        dBTempHeader.Section = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
-                    else if (count == 2)
-                        dBTempHeader.DBColumn = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
-                    else if (count == 3)
-                        dBTempHeader.Index = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
-                    else if (count == 4)
-                        dBTempHeader.DBNullValue = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
-                    else if (count == 5)
-                        dBTempHeader.Location = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
+                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
+                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
+                        ReportPath = BuildWorkBook(ObjSqlDataSet);
+                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
+                        ReportPath = BuildCSV(ObjSqlDataSet);
                 }
 
-                dbColPosition.Add(dBTempHeader);
+                //return ReportPath;
+                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
             }
-
-            return dbColPosition;
+            catch (Exception ex)
+            {
+                _logger.ErrorFormat("Exception occured while generating CBJ Balance Monitoring Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                throw new Exception(string.IsNullOrEmpty(ReportGenerationExceptions(ex.Message)) ? ex.Message : ReportGenerationExceptions(ex.Message), ex);
+            }
         }
 
         /// <summary>
-        /// This method read the section configuration from config sheet
+        /// This function is used to update the formula for excel formatting
         /// </summary>
-        /// <param name="xLCell">Cell position to read for Section Configuration</param>
-        /// <param name="xLConfigSheet">Section Configuration</param>
-        /// <returns>This method returns the section config with type dict</returns>
-        public override Dictionary<string, Sections> GetSectionsFromConfig(XLCell xLCell, XLSheet xLConfigSheet)
+        public override void CleanUpTouchUpSection(ref C1XLBook workBook, ref XLSheet workSheet, string sheet, string section, ref int rowInsertCount, ref int colInsertCount, DataSet dataSet, DataTable dtSection, int sectionRepeatCount, DataTable dtHeaderSection = null, List<string> dBDynamicColumns = null, int? sheetIndex = null)
         {
-            Dictionary<string, Sections> sections = new Dictionary<string, Sections>();
-
-            var colPosition = xLCell.Text.Split(',');
-            int fromRowIndex = Convert.ToInt32(colPosition[0]), toRowIndex = Convert.ToInt32(colPosition[1]), fromColumnIndex = Convert.ToInt32(colPosition[2]), toColumnIndex = Convert.ToInt32(colPosition[3]);
-            int count = 0;
-            for (int i = fromRowIndex; i <= toRowIndex; i++)
+            if (section == "Section6")
             {
-                Sections section = new Sections();
-                count = 0;
-                for (int j = fromColumnIndex; j <= toColumnIndex; j++)
+                var sectionKey = sheet + section;
+                var getSectionPosition = reportSections[sectionKey].SectionValue.Split(','); // Get starting Row and Column position from config collection.
+                int secRow = Convert.ToInt32(getSectionPosition[(int)Cell.Row]);
+                int secColumn = Convert.ToInt32(getSectionPosition[(int)Cell.Column]);
+
+                int formulaStartRow = rowInsertCount + secRow + 3; // Increment row index by 3. Updating formula after section 6 and section 6 contains 3 rows.
+                var resultSetNo = reportSections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section).Select(p => p.Value.SectionResultSetNo).ToList();
+                DataTable dataTable = dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 3]; // getting dataTable for Account becuase formula updation is based on No of account in the resultset. 
+
+                var getAcctSectionPosition = reportSections[sheet + "Section5"].SectionValue.Split(',');
+                int acctSecStartRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]) + 1;
+                int acctSecEndRow = rowInsertCount + secRow - 1;
+
+                string formula = null;
+                for (int i = 0; i < dataTable.Rows.Count; i++)
                 {
-                    count++;
-                    if (count == 1)
-                        section.SectionName = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
-                    else if (count == 2)
-                        section.SectionValue = ((xLConfigSheet.GetCell(i, j) != null) ? xLConfigSheet.GetCell(i, j).Text : null);
+                    formula = formula + ",SUMPRODUCT(--(" + GetExcelColumnName(secColumn) + acctSecStartRow + ":" + GetExcelColumnName(secColumn) + acctSecEndRow + "<" + GetExcelColumnName(secColumn + 1) + acctSecStartRow + ":" + GetExcelColumnName(secColumn + 1) + acctSecEndRow + "))";
+                    secColumn += 3; // Increment columnIndex by 3 to pointing to next account.
                 }
-                sections.Add(section.SectionName, section);
+
+                formula = formula.TrimStart(','); // removing first comma from formula string.
+                workSheet[formulaStartRow, 0].Formula = "IF(SUM(" + formula + ")>0,\"LIMIT EXCEEDED\",\"\")";
+
+
+                // Conditional Formattings
+                int startRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]);
+                int endRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]) + rowInsertCount;
+                int columnIndex = Convert.ToInt32(getSectionPosition[(int)Cell.Column]) + 1;
+
+                var conditionalFormat1 = new XLConditionalFormatting();
+                for (int i = 0; i < dataTable.Rows.Count; i++)
+                {
+                    conditionalFormat1.Ranges.Add(new XLRange(startRow, columnIndex, endRow, columnIndex));
+                    columnIndex += 3; // Increment columnIndex by 3 to pointing to next account.
+                }
+                conditionalFormat1.Rules.Add(workSheet.ConditionalFormattings[0].Rules[0]);
+
+                var conditionalFormat2 = new XLConditionalFormatting();
+                conditionalFormat2.Ranges.Add(new XLRange(startRow, Convert.ToInt32(getAcctSectionPosition[(int)Cell.Column]), endRow, Convert.ToInt32(getAcctSectionPosition[(int)Cell.Column])));
+
+                var rule = new XLConditionalFormattingRule();
+                rule.Type = XLConditionalFormattingType.Expression;
+                rule.Operator = XLConditionalFormattingOperator.NoComparision;
+                rule.FirstFormula = reportConfigKeys["CondFormtRule1"].Replace("[RowNo]", Convert.ToString((formulaStartRow + 1)));
+                rule.SecondFormula = null;
+                rule.Pattern = new XLPatternFormatting() { BackColor = Color.Red };
+                conditionalFormat2.Rules.Add(rule);
+
+                workSheet.ConditionalFormattings.Add(conditionalFormat1);
+                workSheet.ConditionalFormattings.Add(conditionalFormat2);
             }
-
-            return sections;
         }
-
-        /// <summary>
-        /// This method is used to Get the Excel column name using column index
-        /// </summary>
-        /// <param name="columnNumber">column number/index to get the column name</param>
-        /// <returns>This method returns the column name based on column number/index</returns>
-        public override string GetExcelColumnName(int columnNumber)
-        {
-            int dividend = columnNumber + 1;
-            string columnName = String.Empty;
-            int modulo;
-
-            while (dividend > 0)
-            {
-                modulo = (dividend - 1) % 26;
-                columnName = Convert.ToChar(65 + modulo).ToString() + columnName;
-                dividend = (int)((dividend - modulo) / 26);
-            }
-
-            return columnName;
-        }
-
-        //Property class to read DB config
-        public class DBTempHeader
-        {
-            public string Section { get; set; }
-            public string DBColumn { get; set; }
-            public string Index { get; set; }
-            public string DBNullValue { get; set; }
-            public string Location { get; set; }
-        }
-
-        //Property class to read section config
-        public class Sections
-        {
-            public string SectionName { get; set; }
-            public string SectionValue { get; set; }
-        }
-
-        //enumeration for config
-        public enum ConfigSectionKey
-        {
-            SectionPosition = 1,
-            DBColPosition = 2
-        }
-
-        //enumeration for Excel Cell
-        public enum Cell
-        {
-            Row = 0,
-            Column = 1
-        }
-
         #endregion
+
     }
+
 }
