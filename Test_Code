@@ -1,53 +1,186 @@
-public struct XLConditionalFormattingType
+using STBUSA.Excel.Util.C1Compatibility;
+using Common.Logging;
+using MoBetterReports.CustomerReports.DataAccess;
+using MoBetterReports.Shared.Infrastructure;
+using MoBetterReports.Shared.Report;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+
+namespace MoBetterReports.CustomerReports.BusinessLogic
 {
-    private readonly NativeXLConditionalFormattingType _value;
-
-    private XLConditionalFormattingType(NativeXLConditionalFormattingType value)
+    public class DailyPensionUnpaidBLL : ReportBuilderDynamicSection, IGenerateCustomerReportBLL
     {
-        _value = value;
+        private static ILog _logger = LogManager.GetLogger(typeof(DailyPensionUnpaidBLL));
+        private ICustomerReportDataDAL _ObjDailyPensionUnpaidReportDAL;
+        private DailyPensionUnpaidReportDAL _ObjdailyPensionUnpaidForPackage;
+
+        public DailyPensionUnpaidBLL(DailyPensionUnpaidReportDAL ObjDailyPensionUnpaidReportDAL)
+        {
+            _ObjDailyPensionUnpaidReportDAL = ObjDailyPensionUnpaidReportDAL;
+            _ObjdailyPensionUnpaidForPackage = ObjDailyPensionUnpaidReportDAL;
+        }
+
+        #region Report Generation Logic
+        /// <summary>
+        /// This method will generate Daily Pension Unpaid Report using component one and will return the path of report generated
+        /// </summary>
+        /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
+        /// <param name="batchRunDate">Date for which report is to be generated</param>
+        /// <returns></returns>
+        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, string fileType, string source, SourceInfo sourceInfo, int appID, List<ReportRequestParams> requestParams)
+        {
+            try
+            {
+                string ReportPath = null;
+                ReportSource = (Source)Convert.ToInt32(source);
+                FileType = fileType;
+                if (ReportSource == Source.Package)
+                { PackagePath = sourceInfo.SourceInformation; }
+
+                DataSet ObjSqlDataSet = new DataSet();
+
+                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
+                {
+                    //Note: Getting template file name and package filene
+                    if (_ObjDailyPensionUnpaidReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
+                    {
+                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
+                    }
+                }
+                else if (_ObjDailyPensionUnpaidReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                {
+                    //Now pass this object to another report for report genaration using component one.
+                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
+                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
+                        ReportPath = BuildWorkBook(ObjSqlDataSet);
+                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
+                        ReportPath = BuildCSV(ObjSqlDataSet);
+                }
+
+                //return ReportPath;
+                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorFormat("Exception occured while generating Daily Pension Unpaid Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// This method will generate Daily Pension Unpaid Report for package only using component one and will return the path of report generated
+        /// </summary>
+        /// <param name="reportSetupID"></param>
+        /// <param name="batchRunDate"></param>
+        /// <param name="currBusDate"></param>
+        /// <param name="fileType"></param>
+        /// <param name="newFileSuffix"></param>
+        /// <param name="source"></param>
+        /// <param name="sourceInfo"></param>
+        /// <param name="appID"></param>
+        /// <param name="requestParams"></param>
+        /// <returns>Package Path with file package file name</returns>
+        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, DateTime currBusDate, string fileType, string newFileSuffix, string source, SourceInfo sourceInfo = null, int appID = 1, List<ReportRequestParams> requestParams = null)
+        {
+            try
+            {
+                string ReportPath = null;
+                ReportSource = (Source)Convert.ToInt32(source);
+                FileType = fileType;
+                PackagePath = sourceInfo.SourceInformation;
+
+                DataSet ObjSqlDataSet = new DataSet();
+                string sNewFile = "", sOldFile = "";
+
+                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
+                {
+                    //Note: Getting template file name and package filene
+                    if (_ObjDailyPensionUnpaidReportDAL.GetReportInformation(reportSetupID, currBusDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
+                    {
+                        sOldFile = ObjSqlDataSet.Tables[0].Rows[0]["FileName"].ToString();
+                        sNewFile = sOldFile.Replace(Path.GetFileNameWithoutExtension(sOldFile), Path.GetFileNameWithoutExtension(sOldFile) + newFileSuffix);
+                        ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sNewFile;
+                        ObjSqlDataSet.Tables[0].Rows[0]["ToDate"] = batchRunDate;
+                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, currBusDate, source);
+                    }
+                }
+                else if (_ObjDailyPensionUnpaidReportDAL.GetReportData(reportSetupID, currBusDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                {
+                    sOldFile = ObjSqlDataSet.Tables[0].Rows[0]["FileName"].ToString();
+                    sNewFile = sOldFile.Replace(Path.GetFileNameWithoutExtension(sOldFile), Path.GetFileNameWithoutExtension(sOldFile) + newFileSuffix);
+                    ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sNewFile;
+                    ObjSqlDataSet.Tables[0].Rows[0]["ToDate"] = batchRunDate;
+                    //Now pass this object to another report for report genaration using component one.
+                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
+                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
+                        ReportPath = BuildWorkBook(ObjSqlDataSet);
+                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
+                        ReportPath = BuildCSV(ObjSqlDataSet);
+                }
+
+                //return ReportPath;
+                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorFormat("Exception occured while generating Daily Pension Unpaid Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// This function returns the next businses date if any holiday comes in between curremt and next business date
+        /// </summary>
+        /// <param name="batchRunDate"></param>
+        /// <returns></returns>
+        public string CheckHolidayRule(string batchRunDate)
+        {
+            return _ObjdailyPensionUnpaidForPackage.CheckHolidayRule(batchRunDate);
+        }
+
+        /// <summary>
+        /// This function is used to update the currency sign in dynamic section header 
+        /// </summary>
+        public override void CleanUpTouchUpSection(ref C1XLBook workBook, ref XLSheet workSheet, string sheet, string section, ref int rowInsertCount, ref int colInsertCount, DataSet dataSet, DataTable dtSection, int sectionRepeatCount, DataTable dtHeaderSection = null, List<string> dBDynamicColumns = null, int? sheetIndex = null)
+        {
+            if (sheet == "Sheet1" && section == "Section2")
+            {
+                var sectionKey = sheet + section;
+                var getSectionPosition = reportSections[sectionKey].SectionValue.Split(','); // Get starting Row and Column position from config collection.
+                int startRow = Convert.ToInt32(getSectionPosition[(int)Cell.Row]);
+                int endRow = (getSectionPosition.Length > 2 ? Convert.ToInt32(getSectionPosition[2]) : 0);
+                int sectionRowCount = rowInsertCount - (endRow - startRow);
+
+                string currencySymbol = reportConfigKeys.ContainsKey("CurrencyFormatKey") ? reportConfigKeys["CurrencyFormatKey"] : string.Empty;
+
+                if (!string.IsNullOrEmpty(currencySymbol))
+                {
+                    for (int i = rowInsertCount; i >= sectionRowCount - 1; i--)
+                    {
+                        if (workSheet[i, 2].Text.ToUpper().Contains("USD"))
+                        {
+                            XLStyle rowStyle = new XLStyle(workBook);
+                            rowStyle = workSheet[i, 3].Style.Clone();
+                            rowStyle.Format = currencySymbol;
+                            workSheet[i, 3].Style = rowStyle;
+                        }
+                    }
+                }
+
+                //Adding page break after the second section
+                workSheet.Rows[rowInsertCount].PageBreak = true;
+
+            }
+        }
+        #endregion
     }
 
-    public static readonly XLConditionalFormattingType Expression =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Expression);
-
-    public static implicit operator NativeXLConditionalFormattingType(
-        XLConditionalFormattingType value)
-    {
-        return value._value;
-    }
-
-    public static implicit operator XLConditionalFormattingType(
-        NativeXLConditionalFormattingType value)
-    {
-        return new XLConditionalFormattingType(value);
-    }
 }
 
 
-
-
-public struct XLConditionalFormattingOperator
-{
-    private readonly NativeXLConditionalFormattingOperator _value;
-
-    private XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator value)
-    {
-        _value = value;
-    }
-
-    public static readonly XLConditionalFormattingOperator NoComparison =
-        new XLConditionalFormattingOperator(
-            NativeXLConditionalFormattingOperator.NoComparision);
-
-    public static implicit operator NativeXLConditionalFormattingOperator(
-        XLConditionalFormattingOperator value)
-    {
-        return value._value;
-    }
-
-    public static implicit operator XLConditionalFormattingOperator(
-        NativeXLConditionalFormattingOperator value)
-    {
-        return new XLConditionalFormattingOperator(value);
-    }
-}
+'XLStyle' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
+'XLRow' does not contain a definition for 'PageBreak' and no accessible extension method 'PageBreak' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
