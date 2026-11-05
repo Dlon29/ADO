@@ -1,5 +1,3 @@
-The type or namespace name 'C1XLBook' could not be found (are you missing a using directive or an assembly reference?)
-
-There is no argument given that corresponds to the required parameter 'format' of 'C1XLBook.Load(string, FileFormat)'
-
-
+'XLCell' does not contain a definition for 'SetValue' and no accessible extension method 'SetValue' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
+'XLCell' does not contain a definition for 'SetValue' and no accessible extension method 'SetValue' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
+'XLRows' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'XLRows' could be found (are you missing a using directive or an assembly reference?)
