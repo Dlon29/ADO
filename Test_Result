@@ -1,3 +1,12 @@
-'XLCell' does not contain a definition for 'SetValue' and no accessible extension method 'SetValue' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'SetValue' and no accessible extension method 'SetValue' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLRows' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'XLRows' could be found (are you missing a using directive or an assembly reference?)
+'XLCell' does not contain a definition for 'Formula' and no accessible extension method 'Formula' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
+The type or namespace name 'XLConditionalFormatting' could not be found (are you missing a using directive or an assembly reference?)
+The type or namespace name 'XLRange' could not be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+The type or namespace name 'XLConditionalFormatting' could not be found (are you missing a using directive or an assembly reference?)
+The type or namespace name 'XLRange' could not be found (are you missing a using directive or an assembly reference?)
+The type or namespace name 'XLConditionalFormattingRule' could not be found (are you missing a using directive or an assembly reference?)
+The name 'XLConditionalFormattingType' does not exist in the current context
+The name 'XLConditionalFormattingOperator' does not exist in the current context
+The type or namespace name 'XLPatternFormatting' could not be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
