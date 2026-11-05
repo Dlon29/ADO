@@ -2,50 +2,13 @@ public struct XLConditionalFormattingType
 {
     private readonly NativeXLConditionalFormattingType _value;
 
-    private XLConditionalFormattingType(
-        NativeXLConditionalFormattingType value)
+    private XLConditionalFormattingType(NativeXLConditionalFormattingType value)
     {
         _value = value;
     }
 
-    public static readonly XLConditionalFormattingType AboveAverage =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.AboveAverage);
-
-    public static readonly XLConditionalFormattingType BelowAverage =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.BelowAverage);
-
-    public static readonly XLConditionalFormattingType Bottom10 =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Bottom10);
-
-    public static readonly XLConditionalFormattingType Bottom10Percent =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Bottom10Percent);
-
-    public static readonly XLConditionalFormattingType CellIs =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.CellIs);
-
-    public static readonly XLConditionalFormattingType ContainsText =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.ContainsText);
-
-    public static readonly XLConditionalFormattingType DuplicateValues =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.DuplicateValues);
-
-    public static readonly XLConditionalFormattingType EndsWith =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.EndsWith);
-
     public static readonly XLConditionalFormattingType Expression =
         new XLConditionalFormattingType(NativeXLConditionalFormattingType.Expression);
-
-    public static readonly XLConditionalFormattingType TimePeriod =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.TimePeriod);
-
-    public static readonly XLConditionalFormattingType Top10 =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Top10);
-
-    public static readonly XLConditionalFormattingType Top10Percent =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Top10Percent);
-
-    public static readonly XLConditionalFormattingType Unknown =
-        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Unknown);
 
     public static implicit operator NativeXLConditionalFormattingType(
         XLConditionalFormattingType value)
@@ -58,13 +21,7 @@ public struct XLConditionalFormattingType
     {
         return new XLConditionalFormattingType(value);
     }
-
-    public override string ToString()
-    {
-        return _value.ToString();
-    }
 }
-
 
 
 
@@ -73,43 +30,14 @@ public struct XLConditionalFormattingOperator
 {
     private readonly NativeXLConditionalFormattingOperator _value;
 
-    private XLConditionalFormattingOperator(
-        NativeXLConditionalFormattingOperator value)
+    private XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator value)
     {
         _value = value;
     }
 
-    public static readonly XLConditionalFormattingOperator Between =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.Between);
-
-    public static readonly XLConditionalFormattingOperator Equal =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.Equal);
-
-    public static readonly XLConditionalFormattingOperator GreaterThan =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.GreaterThan);
-
-    public static readonly XLConditionalFormattingOperator GreaterThanOrEqual =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.GreaterThanOrEqual);
-
-    public static readonly XLConditionalFormattingOperator LessThan =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.LessThan);
-
-    public static readonly XLConditionalFormattingOperator LessThanOrEqual =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.LessThanOrEqual);
-
-    // ComponentOne's native spelling is NoComparision.
-    // Keep both names available for compatibility.
     public static readonly XLConditionalFormattingOperator NoComparison =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NoComparision);
-
-    public static readonly XLConditionalFormattingOperator NoComparision =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NoComparision);
-
-    public static readonly XLConditionalFormattingOperator NotBetween =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NotBetween);
-
-    public static readonly XLConditionalFormattingOperator NotEqual =
-        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NotEqual);
+        new XLConditionalFormattingOperator(
+            NativeXLConditionalFormattingOperator.NoComparision);
 
     public static implicit operator NativeXLConditionalFormattingOperator(
         XLConditionalFormattingOperator value)
@@ -122,26 +50,4 @@ public struct XLConditionalFormattingOperator
     {
         return new XLConditionalFormattingOperator(value);
     }
-
-    public override string ToString()
-    {
-        return _value.ToString();
-    }
 }
-
-
-
-
-
-public XLConditionalFormattingType Type
-{
-    get { return _rule.Type; }
-    set { _rule.Type = value; }
-}
-
-public XLConditionalFormattingOperator Operator
-{
-    get { return _rule.Operator; }
-    set { _rule.Operator = value; }
-}
-
