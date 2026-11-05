@@ -1,12 +1,2 @@
-'XLCell' does not contain a definition for 'Formula' and no accessible extension method 'Formula' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLConditionalFormatting' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLRange' could not be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLConditionalFormatting' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLRange' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLConditionalFormattingRule' could not be found (are you missing a using directive or an assembly reference?)
-The name 'XLConditionalFormattingType' does not exist in the current context
-The name 'XLConditionalFormattingOperator' does not exist in the current context
-The type or namespace name 'XLPatternFormatting' could not be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'ConditionalFormattings' and no accessible extension method 'ConditionalFormattings' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+Cannot implicitly convert type 'STBUSA.Excel.Util.C1Compatibility.XLConditionalFormattingType' to 'C1.C1Excel.XLConditionalFormattingType'. An explicit conversion exists (are you missing a cast?)
+Cannot implicitly convert type 'STBUSA.Excel.Util.C1Compatibility.XLConditionalFormattingOperator' to 'C1.C1Excel.XLConditionalFormattingOperator'. An explicit conversion exists (are you missing a cast?)
