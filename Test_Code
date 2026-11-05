@@ -1,32 +1,27 @@
 using STBUSA.Excel.Util.C1Compatibility;
 using Common.Logging;
-using MoBetter.DataAccessUtility;
 using MoBetterReports.CustomerReports.DataAccess;
-using MoBetterReports.Shared.Business;
 using MoBetterReports.Shared.Infrastructure;
 using MoBetterReports.Shared.Report;
-using STBUSA.Crystal;
 using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Data;
-using System.Data.SqlClient;
+using System.IO;
 
 namespace MoBetterReports.CustomerReports.BusinessLogic
 {
-    public class InvoiceDetailsRepoReportBLL : ReportBuilder, IGenerateCustomerReportBLL
+    public class ManufacturedDivExcelBLL : ReportBuilder, IGenerateManufacturedDivReportBLL
     {
-        private static ILog _logger = LogManager.GetLogger(typeof(InvoiceDetailsRepoReportBLL));
-        private ICustomerReportDataDAL _ObjInvoiceDetailsRepoReportDAL;
-
-        public InvoiceDetailsRepoReportBLL(InvoiceDetailsRepoReportDAL ObjInvoiceDetailsRepoReportDAL)
+        private static ILog _logger = LogManager.GetLogger(typeof(ManufacturedDivExcelBLL));
+        private ICustomerReportDataDAL _ObjManufacturedDivExcelDAL;
+        string zipFolderName = null;
+        public ManufacturedDivExcelBLL(ManufacturedDivExcelDAL ObjManufacturedDivExcelDAL)
         {
-            _ObjInvoiceDetailsRepoReportDAL = ObjInvoiceDetailsRepoReportDAL;
+            _ObjManufacturedDivExcelDAL = ObjManufacturedDivExcelDAL;
         }
-
         #region Report Generation Logic
         /// <summary>
-        /// This method will generate Repo Invoice Details Report using component one and will return the path of report generated
+        /// This method will generate Manufactured Dividend Excel Report using component one and will return the path of report generated
         /// </summary>
         /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
         /// <param name="batchRunDate">Date for which report is to be generated</param>
@@ -46,15 +41,14 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
                 if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
                 {
                     //Note: Getting template file name and package filene
-                    if (_ObjInvoiceDetailsRepoReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
+                    if (_ObjManufacturedDivExcelDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
                     {
-                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate,source);
+                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
                     }
                 }
-                else if (_ObjInvoiceDetailsRepoReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                else if (_ObjManufacturedDivExcelDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
                 {
-                    //string FileType = String.Empty;
-                    //fileType = ObjSqlDataSet.Tables[0].Rows[0]["FileType"].ToString(); NOTE: File type can also be fetched from DB
+                    //Now pass this object to another report for report genaration using component one.
                     bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
                     if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
                         ReportPath = BuildWorkBook(ObjSqlDataSet);
@@ -67,31 +61,89 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
             }
             catch (Exception ex)
             {
-                _logger.ErrorFormat("Exception occured while generating Repo Invoice Details Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                _logger.ErrorFormat("Exception occured while generating Manufactured Dividend Excel Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
                 throw;
             }
         }
 
-        public override void RenameWorksheet(ref XLSheet workSheetTemplate, string sheetName)
+        /// <summary>
+        /// This method will generate Manufactured Dividend Excel Report using component one and will return the path of report generated
+        /// </summary>
+        /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
+        /// <param name="batchRunDate">Date for which report is to be generated</param>
+        /// <param name="fileType">File Type for report to be generated</param>
+        /// <param name="sqlDataSet">data set contains the info about manufactured dividend report</param>
+        /// <param name="source">sourace of report (Package or UI)</param>
+        /// <param name="sourceInfo">info about the source</param>
+        /// <param name="appID"></param>
+        /// <param name="requestParams"></param>
+        /// <returns></returns>
+        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, string fileType, DataSet sqlDataSet, string folderName, string source, SourceInfo sourceInfo, int appID, List<ReportRequestParams> requestParams)
         {
-            base.RenameWorksheet(ref workSheetTemplate, sheetName);
+            try
+            {
+                string ReportPath = null;
+                ReportSource = (Source)Convert.ToInt32(source);
+                FileType = fileType;
+                if (ReportSource == Source.Package)
+                { PackagePath = sourceInfo.SourceInformation; }
 
-            var fileNDateFormat = workSheetTemplate.Name.Split('{', '}');
+                DataSet ObjSqlDataSet = new DataSet();
 
-            workSheetTemplate.Name = workSheetTemplate.Name.Replace("{" + fileNDateFormat[1] + "}", DateTime.Now.ToString(fileNDateFormat[1]));
+                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
+                {
+                    ReportPath = BuildPDF(sqlDataSet, reportSetupID, batchRunDate);
+                }
+                else if (_ObjManufacturedDivExcelDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                {
+                    //Now pass this object to another report for report genaration using component one.
+                    zipFolderName = Path.GetFileNameWithoutExtension(folderName);
+                    ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sqlDataSet.Tables[0].Rows[0]["FileName"];
+                    ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"] = sqlDataSet.Tables[0].Rows[0]["TemplateFileName"];
+                    ObjSqlDataSet.Tables[0].Columns.Remove("Zip");
+                    ObjSqlDataSet.Tables[0].Columns.Remove("Code");
+                    ObjSqlDataSet.AcceptChanges();
+                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
+                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
+                        ReportPath = BuildWorkBook(ObjSqlDataSet);
+                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
+                        ReportPath = BuildCSV(ObjSqlDataSet);
+                }
+
+                //return ReportPath;
+                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
+            }
+            catch (Exception ex)
+            {
+                _logger.ErrorFormat("Exception occured while generating Manufactured Dividend Excel Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                throw;
+            }
         }
 
+        /// <summary>
+        /// This function is used to get Path for Manufactured Dividend reports
+        /// </summary>
+        /// <returns>Returns the File Path to store Manufactured Dividend reports file</returns>
+        public override string GetReportConfirmationPath(string folderName)
+        {
+            var confPath = base.GetReportConfirmationPath();
+            return confPath + zipFolderName + "\\";
+        }
 
+        /// <summary>
+        /// This function is used to remove the extra worksheet from report file
+        /// </summary>
+        /// <param name="workBookTemplate">workbook object</param>
+        /// <param name="sheetNo">sheet no to remove</param>
+        public override void RemoveWorksheet(ref C1XLBook workBookTemplate, int sheetNo)
+        {
+            base.RemoveWorksheet(ref workBookTemplate, sheetNo);
+            workBookTemplate.Sheets.RemoveAt(0);
+        }
         #endregion
     }
-
 }
 
 
-
-
-'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'Name' and no accessible extension method 'Name' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-
+'XLSheets' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
 
