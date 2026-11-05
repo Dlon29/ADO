@@ -6,22 +6,23 @@ using MoBetterReports.Shared.Report;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.IO;
 
 namespace MoBetterReports.CustomerReports.BusinessLogic
 {
-    public class ManufacturedDivExcelBLL : ReportBuilder, IGenerateManufacturedDivReportBLL
+    public class TeachersCollPerReportBLL : ReportBuilder, IGenerateCustomerReportBLL
     {
-        private static ILog _logger = LogManager.GetLogger(typeof(ManufacturedDivExcelBLL));
-        private ICustomerReportDataDAL _ObjManufacturedDivExcelDAL;
-        string zipFolderName = null;
-        public ManufacturedDivExcelBLL(ManufacturedDivExcelDAL ObjManufacturedDivExcelDAL)
+        private static ILog _logger = LogManager.GetLogger(typeof(TeachersCollPerReportBLL));
+        private ICustomerReportDataDAL _ObjTeachersCollPerReportDAL;
+
+        public TeachersCollPerReportBLL(TeachersCollPerReportDAL ObjTeachersCollPerReportDAL)
         {
-            _ObjManufacturedDivExcelDAL = ObjManufacturedDivExcelDAL;
+            _ObjTeachersCollPerReportDAL = ObjTeachersCollPerReportDAL;
         }
+
+
         #region Report Generation Logic
         /// <summary>
-        /// This method will generate Manufactured Dividend Excel Report using component one and will return the path of report generated
+        /// This method will generate teachers collateral percentage report using component one and will return the path of report generated
         /// </summary>
         /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
         /// <param name="batchRunDate">Date for which report is to be generated</param>
@@ -30,7 +31,7 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
         {
             try
             {
-                string ReportPath = null;
+                string ReportPath = string.Empty;
                 ReportSource = (Source)Convert.ToInt32(source);
                 FileType = fileType;
                 if (ReportSource == Source.Package)
@@ -41,12 +42,12 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
                 if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
                 {
                     //Note: Getting template file name and package filene
-                    if (_ObjManufacturedDivExcelDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
+                    if (_ObjTeachersCollPerReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
                     {
                         ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
                     }
                 }
-                else if (_ObjManufacturedDivExcelDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
+                else if (_ObjTeachersCollPerReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
                 {
                     //Now pass this object to another report for report genaration using component one.
                     bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
@@ -61,89 +62,45 @@ namespace MoBetterReports.CustomerReports.BusinessLogic
             }
             catch (Exception ex)
             {
-                _logger.ErrorFormat("Exception occured while generating Manufactured Dividend Excel Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
+                _logger.ErrorFormat("Exception occured while generating Teachers Collateral Percentage Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
                 throw;
             }
         }
 
-        /// <summary>
-        /// This method will generate Manufactured Dividend Excel Report using component one and will return the path of report generated
-        /// </summary>
-        /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
-        /// <param name="batchRunDate">Date for which report is to be generated</param>
-        /// <param name="fileType">File Type for report to be generated</param>
-        /// <param name="sqlDataSet">data set contains the info about manufactured dividend report</param>
-        /// <param name="source">sourace of report (Package or UI)</param>
-        /// <param name="sourceInfo">info about the source</param>
-        /// <param name="appID"></param>
-        /// <param name="requestParams"></param>
-        /// <returns></returns>
-        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, string fileType, DataSet sqlDataSet, string folderName, string source, SourceInfo sourceInfo, int appID, List<ReportRequestParams> requestParams)
+        public override void CopyCellsFromSourceToDest(XLSheet xLSheetSource, ref XLSheet xLSheetDest, string[] sourceLocation, string[] destinationLocation, ref int rowInsertCount, bool cut, int copyDestinationStyle = 0)
         {
-            try
+            base.CopyCellsFromSourceToDest(xLSheetSource, ref xLSheetDest, sourceLocation, destinationLocation, ref rowInsertCount, cut);
+
+            if (reportConfigKeys.ContainsKey("CopySectionMergeKey1"))
             {
-                string ReportPath = null;
-                ReportSource = (Source)Convert.ToInt32(source);
-                FileType = fileType;
-                if (ReportSource == Source.Package)
-                { PackagePath = sourceInfo.SourceInformation; }
-
-                DataSet ObjSqlDataSet = new DataSet();
-
-                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
-                {
-                    ReportPath = BuildPDF(sqlDataSet, reportSetupID, batchRunDate);
-                }
-                else if (_ObjManufacturedDivExcelDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
-                {
-                    //Now pass this object to another report for report genaration using component one.
-                    zipFolderName = Path.GetFileNameWithoutExtension(folderName);
-                    ObjSqlDataSet.Tables[0].Rows[0]["FileName"] = sqlDataSet.Tables[0].Rows[0]["FileName"];
-                    ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"] = sqlDataSet.Tables[0].Rows[0]["TemplateFileName"];
-                    ObjSqlDataSet.Tables[0].Columns.Remove("Zip");
-                    ObjSqlDataSet.Tables[0].Columns.Remove("Code");
-                    ObjSqlDataSet.AcceptChanges();
-                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
-                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
-                        ReportPath = BuildWorkBook(ObjSqlDataSet);
-                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
-                        ReportPath = BuildCSV(ObjSqlDataSet);
-                }
-
-                //return ReportPath;
-                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
+                string[] loc = reportConfigKeys["CopySectionMergeKey1"].Split(',');
+                xLSheetDest.MergedCells.Add(Convert.ToInt16(loc[0]), Convert.ToInt16(loc[1]), Convert.ToInt16(loc[2]), Convert.ToInt16(loc[3]));
+                xLSheetDest[Convert.ToInt16(loc[0]) + 1, 0].Style.BorderBottom = XLLineStyleEnum.Thin;
             }
-            catch (Exception ex)
+
+            if (reportConfigKeys.ContainsKey("CopySectionMergeKey2"))
             {
-                _logger.ErrorFormat("Exception occured while generating Manufactured Dividend Excel Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
-                throw;
+                string[] loc = reportConfigKeys["CopySectionMergeKey2"].Split(',');
+                xLSheetDest.MergedCells.Add(Convert.ToInt16(loc[0]), Convert.ToInt16(loc[1]), Convert.ToInt16(loc[2]), Convert.ToInt16(loc[3]));
+            }
+
+            //xLSheetDest[5, 0].Style.BorderBottom = XLLineStyleEnum.Thin;
+
+            for (int i = (Convert.ToInt16(sourceLocation[0]) + rowInsertCount); i <= (Convert.ToInt16(sourceLocation[2]) + rowInsertCount); i++)
+            {
+                //xLSheetDest.Rows.Remove(xLSheetDest.Rows[i]);
+                xLSheetDest.Rows.Remove(xLSheetDest.Rows[Convert.ToInt16(sourceLocation[0]) + rowInsertCount]);
             }
         }
 
-        /// <summary>
-        /// This function is used to get Path for Manufactured Dividend reports
-        /// </summary>
-        /// <returns>Returns the File Path to store Manufactured Dividend reports file</returns>
-        public override string GetReportConfirmationPath(string folderName)
-        {
-            var confPath = base.GetReportConfirmationPath();
-            return confPath + zipFolderName + "\\";
-        }
-
-        /// <summary>
-        /// This function is used to remove the extra worksheet from report file
-        /// </summary>
-        /// <param name="workBookTemplate">workbook object</param>
-        /// <param name="sheetNo">sheet no to remove</param>
-        public override void RemoveWorksheet(ref C1XLBook workBookTemplate, int sheetNo)
-        {
-            base.RemoveWorksheet(ref workBookTemplate, sheetNo);
-            workBookTemplate.Sheets.RemoveAt(0);
-        }
         #endregion
     }
 }
 
 
-'XLSheets' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
+
+
+'XLSheet' does not contain a definition for 'MergedCells' and no accessible extension method 'MergedCells' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+'XLSheet' does not contain a definition for 'MergedCells' and no accessible extension method 'MergedCells' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
+'XLRows' does not contain a definition for 'Remove' and no accessible extension method 'Remove' accepting a first argument of type 'XLRows' could be found (are you missing a using directive or an assembly reference?)
 
