@@ -1,343 +1,147 @@
-using NativeXLRange = C1.C1Excel.XLRange;
-using NativeXLConditionalFormatting = C1.C1Excel.XLConditionalFormatting;
-using NativeXLConditionalFormattingCollection = C1.C1Excel.XLConditionalFormattingCollection;
-using NativeXLConditionalFormattingRangeCollection = C1.C1Excel.XLConditionalFormattingRangeCollection;
-using NativeXLConditionalFormattingRule = C1.C1Excel.XLConditionalFormattingRule;
-using NativeXLConditionalFormattingRuleCollection = C1.C1Excel.XLConditionalFormattingRuleCollection;
-using NativeXLPatternFormatting = C1.C1Excel.XLPatternFormatting;
-using NativeXLConditionalFormattingType = C1.C1Excel.XLConditionalFormattingType;
-using NativeXLConditionalFormattingOperator = C1.C1Excel.XLConditionalFormattingOperator;
-
-
-
-
-public enum XLConditionalFormattingType
+public struct XLConditionalFormattingType
 {
-    AboveAverage,
-    BelowAverage,
-    Bottom10,
-    Bottom10Percent,
-    CellIs,
-    ContainsText,
-    DuplicateValues,
-    EndsWith,
-    Expression,
-    TimePeriod,
-    Top10,
-    Top10Percent,
-    Unknown
-}
+    private readonly NativeXLConditionalFormattingType _value;
 
-public enum XLConditionalFormattingOperator
-{
-    Between,
-    Equal,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual,
-    NoComparision,
-    NotBetween,
-    NotEqual
-}
-
-
-
-
-public XLConditionalFormattingCollection ConditionalFormattings
-{
-    get
+    private XLConditionalFormattingType(
+        NativeXLConditionalFormattingType value)
     {
-        return new XLConditionalFormattingCollection(
-            _sheet.ConditionalFormattings);
-    }
-}
-
-
-
-public string Formula
-{
-    get { return _cell.Formula; }
-    set { _cell.Formula = value; }
-}
-
-
-
-
-#region Conditional formatting
-
-public sealed class XLRange
-{
-    private readonly NativeXLRange _range;
-
-    internal NativeXLRange NativeRange
-    {
-        get { return _range; }
+        _value = value;
     }
 
-    public XLRange(int rowFirst, int colFirst, int rowLast, int colLast)
+    public static readonly XLConditionalFormattingType AboveAverage =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.AboveAverage);
+
+    public static readonly XLConditionalFormattingType BelowAverage =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.BelowAverage);
+
+    public static readonly XLConditionalFormattingType Bottom10 =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Bottom10);
+
+    public static readonly XLConditionalFormattingType Bottom10Percent =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Bottom10Percent);
+
+    public static readonly XLConditionalFormattingType CellIs =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.CellIs);
+
+    public static readonly XLConditionalFormattingType ContainsText =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.ContainsText);
+
+    public static readonly XLConditionalFormattingType DuplicateValues =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.DuplicateValues);
+
+    public static readonly XLConditionalFormattingType EndsWith =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.EndsWith);
+
+    public static readonly XLConditionalFormattingType Expression =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Expression);
+
+    public static readonly XLConditionalFormattingType TimePeriod =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.TimePeriod);
+
+    public static readonly XLConditionalFormattingType Top10 =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Top10);
+
+    public static readonly XLConditionalFormattingType Top10Percent =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Top10Percent);
+
+    public static readonly XLConditionalFormattingType Unknown =
+        new XLConditionalFormattingType(NativeXLConditionalFormattingType.Unknown);
+
+    public static implicit operator NativeXLConditionalFormattingType(
+        XLConditionalFormattingType value)
     {
-        _range = new NativeXLRange(
-            rowFirst,
-            colFirst,
-            rowLast,
-            colLast);
+        return value._value;
     }
 
-    internal XLRange(NativeXLRange range)
+    public static implicit operator XLConditionalFormattingType(
+        NativeXLConditionalFormattingType value)
     {
-        _range = range;
+        return new XLConditionalFormattingType(value);
+    }
+
+    public override string ToString()
+    {
+        return _value.ToString();
     }
 }
 
-public sealed class XLPatternFormatting
+
+
+
+
+public struct XLConditionalFormattingOperator
 {
-    private readonly NativeXLPatternFormatting _pattern;
+    private readonly NativeXLConditionalFormattingOperator _value;
 
-    internal NativeXLPatternFormatting NativePattern
+    private XLConditionalFormattingOperator(
+        NativeXLConditionalFormattingOperator value)
     {
-        get { return _pattern; }
+        _value = value;
     }
 
-    public XLPatternFormatting()
+    public static readonly XLConditionalFormattingOperator Between =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.Between);
+
+    public static readonly XLConditionalFormattingOperator Equal =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.Equal);
+
+    public static readonly XLConditionalFormattingOperator GreaterThan =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.GreaterThan);
+
+    public static readonly XLConditionalFormattingOperator GreaterThanOrEqual =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.GreaterThanOrEqual);
+
+    public static readonly XLConditionalFormattingOperator LessThan =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.LessThan);
+
+    public static readonly XLConditionalFormattingOperator LessThanOrEqual =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.LessThanOrEqual);
+
+    // ComponentOne's native spelling is NoComparision.
+    // Keep both names available for compatibility.
+    public static readonly XLConditionalFormattingOperator NoComparison =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NoComparision);
+
+    public static readonly XLConditionalFormattingOperator NoComparision =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NoComparision);
+
+    public static readonly XLConditionalFormattingOperator NotBetween =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NotBetween);
+
+    public static readonly XLConditionalFormattingOperator NotEqual =
+        new XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator.NotEqual);
+
+    public static implicit operator NativeXLConditionalFormattingOperator(
+        XLConditionalFormattingOperator value)
     {
-        _pattern = new NativeXLPatternFormatting();
+        return value._value;
     }
 
-    internal XLPatternFormatting(NativeXLPatternFormatting pattern)
+    public static implicit operator XLConditionalFormattingOperator(
+        NativeXLConditionalFormattingOperator value)
     {
-        _pattern = pattern;
+        return new XLConditionalFormattingOperator(value);
     }
 
-    public Color BackColor
+    public override string ToString()
     {
-        get { return _pattern.BackColor; }
-        set { _pattern.BackColor = value; }
-    }
-
-    public Color ForeColor
-    {
-        get { return _pattern.ForeColor; }
-        set { _pattern.ForeColor = value; }
+        return _value.ToString();
     }
 }
 
-public sealed class XLConditionalFormattingRule
+
+
+
+
+public XLConditionalFormattingType Type
 {
-    private readonly NativeXLConditionalFormattingRule _rule;
-
-    internal NativeXLConditionalFormattingRule NativeRule
-    {
-        get { return _rule; }
-    }
-
-    public XLConditionalFormattingRule()
-    {
-        _rule = new NativeXLConditionalFormattingRule();
-    }
-
-    internal XLConditionalFormattingRule(
-        NativeXLConditionalFormattingRule rule)
-    {
-        _rule = rule;
-    }
-
-    public XLConditionalFormattingType Type
-    {
-        get
-        {
-            return (XLConditionalFormattingType)Enum.Parse(
-                typeof(XLConditionalFormattingType),
-                _rule.Type.ToString());
-        }
-        set
-        {
-            _rule.Type =
-                (NativeXLConditionalFormattingType)Enum.Parse(
-                    typeof(NativeXLConditionalFormattingType),
-                    value.ToString());
-        }
-    }
-
-    public XLConditionalFormattingOperator Operator
-    {
-        get
-        {
-            return (XLConditionalFormattingOperator)Enum.Parse(
-                typeof(XLConditionalFormattingOperator),
-                _rule.Operator.ToString());
-        }
-        set
-        {
-            _rule.Operator =
-                (NativeXLConditionalFormattingOperator)Enum.Parse(
-                    typeof(NativeXLConditionalFormattingOperator),
-                    value.ToString());
-        }
-    }
-
-    public string FirstFormula
-    {
-        get { return _rule.FirstFormula; }
-        set { _rule.FirstFormula = value; }
-    }
-
-    public string SecondFormula
-    {
-        get { return _rule.SecondFormula; }
-        set { _rule.SecondFormula = value; }
-    }
-
-    public XLPatternFormatting Pattern
-    {
-        get
-        {
-            return _rule.Pattern == null
-                ? null
-                : new XLPatternFormatting(_rule.Pattern);
-        }
-        set
-        {
-            _rule.Pattern = value == null
-                ? null
-                : value.NativePattern;
-        }
-    }
+    get { return _rule.Type; }
+    set { _rule.Type = value; }
 }
 
-public sealed class XLConditionalFormattingRangeCollection
+public XLConditionalFormattingOperator Operator
 {
-    private readonly NativeXLConditionalFormattingRangeCollection _ranges;
-
-    internal XLConditionalFormattingRangeCollection(
-        NativeXLConditionalFormattingRangeCollection ranges)
-    {
-        _ranges = ranges;
-    }
-
-    public int Count
-    {
-        get { return _ranges.Count; }
-    }
-
-    public void Add(XLRange range)
-    {
-        if (range == null)
-            throw new ArgumentNullException("range");
-
-        _ranges.Add(range.NativeRange);
-    }
+    get { return _rule.Operator; }
+    set { _rule.Operator = value; }
 }
 
-public sealed class XLConditionalFormattingRuleCollection
-{
-    private readonly NativeXLConditionalFormattingRuleCollection _rules;
-
-    internal XLConditionalFormattingRuleCollection(
-        NativeXLConditionalFormattingRuleCollection rules)
-    {
-        _rules = rules;
-    }
-
-    public int Count
-    {
-        get { return _rules.Count; }
-    }
-
-    public XLConditionalFormattingRule this[int index]
-    {
-        get
-        {
-            NativeXLConditionalFormattingRule rule = _rules[index];
-
-            return rule == null
-                ? null
-                : new XLConditionalFormattingRule(rule);
-        }
-    }
-
-    public void Add(XLConditionalFormattingRule rule)
-    {
-        if (rule == null)
-            throw new ArgumentNullException("rule");
-
-        _rules.Add(rule.NativeRule);
-    }
-}
-
-public sealed class XLConditionalFormatting
-{
-    private readonly NativeXLConditionalFormatting _formatting;
-
-    internal NativeXLConditionalFormatting NativeFormatting
-    {
-        get { return _formatting; }
-    }
-
-    public XLConditionalFormatting()
-    {
-        _formatting = new NativeXLConditionalFormatting();
-    }
-
-    internal XLConditionalFormatting(
-        NativeXLConditionalFormatting formatting)
-    {
-        _formatting = formatting;
-    }
-
-    public XLConditionalFormattingRangeCollection Ranges
-    {
-        get
-        {
-            return new XLConditionalFormattingRangeCollection(
-                _formatting.Ranges);
-        }
-    }
-
-    public XLConditionalFormattingRuleCollection Rules
-    {
-        get
-        {
-            return new XLConditionalFormattingRuleCollection(
-                _formatting.Rules);
-        }
-    }
-}
-
-public sealed class XLConditionalFormattingCollection
-{
-    private readonly NativeXLConditionalFormattingCollection _formattings;
-
-    internal XLConditionalFormattingCollection(
-        NativeXLConditionalFormattingCollection formattings)
-    {
-        _formattings = formattings;
-    }
-
-    public int Count
-    {
-        get { return _formattings.Count; }
-    }
-
-    public XLConditionalFormatting this[int index]
-    {
-        get
-        {
-            NativeXLConditionalFormatting formatting = _formattings[index];
-
-            return formatting == null
-                ? null
-                : new XLConditionalFormatting(formatting);
-        }
-    }
-
-    public void Add(XLConditionalFormatting formatting)
-    {
-        if (formatting == null)
-            throw new ArgumentNullException("formatting");
-
-        _formattings.Add(formatting.NativeFormatting);
-    }
-}
-
-#endregion
