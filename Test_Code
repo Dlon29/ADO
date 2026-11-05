@@ -1,135 +1,343 @@
-using STBUSA.Excel.Util.C1Compatibility;
-using Common.Logging;
-using MoBetterReports.CustomerReports.DataAccess;
-using MoBetterReports.Shared.Infrastructure;
-using MoBetterReports.Shared.Report;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Data.SqlClient;
-using System.Drawing;
-using System.IO;
-using System.Linq;
+using NativeXLRange = C1.C1Excel.XLRange;
+using NativeXLConditionalFormatting = C1.C1Excel.XLConditionalFormatting;
+using NativeXLConditionalFormattingCollection = C1.C1Excel.XLConditionalFormattingCollection;
+using NativeXLConditionalFormattingRangeCollection = C1.C1Excel.XLConditionalFormattingRangeCollection;
+using NativeXLConditionalFormattingRule = C1.C1Excel.XLConditionalFormattingRule;
+using NativeXLConditionalFormattingRuleCollection = C1.C1Excel.XLConditionalFormattingRuleCollection;
+using NativeXLPatternFormatting = C1.C1Excel.XLPatternFormatting;
+using NativeXLConditionalFormattingType = C1.C1Excel.XLConditionalFormattingType;
+using NativeXLConditionalFormattingOperator = C1.C1Excel.XLConditionalFormattingOperator;
 
-namespace MoBetterReports.CustomerReports.BusinessLogic
+
+
+
+public enum XLConditionalFormattingType
 {
-    public class CBJMonitoringReportBLL : ReportBuilder, IGenerateCustomerReportBLL
+    AboveAverage,
+    BelowAverage,
+    Bottom10,
+    Bottom10Percent,
+    CellIs,
+    ContainsText,
+    DuplicateValues,
+    EndsWith,
+    Expression,
+    TimePeriod,
+    Top10,
+    Top10Percent,
+    Unknown
+}
+
+public enum XLConditionalFormattingOperator
+{
+    Between,
+    Equal,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    NoComparision,
+    NotBetween,
+    NotEqual
+}
+
+
+
+
+public XLConditionalFormattingCollection ConditionalFormattings
+{
+    get
     {
-        private static ILog _logger = LogManager.GetLogger(typeof(CBJMonitoringReportBLL));
-        private ICustomerReportDataDAL _ObjCBJMonitoringReportDAL;
-
-        public CBJMonitoringReportBLL(CBJMonitoringReportDAL ObjCBJMonitoringReportDAL)
-        {
-            _ObjCBJMonitoringReportDAL = ObjCBJMonitoringReportDAL;
-        }
-
-        #region Report Generation Logic
-        /// <summary>
-        /// This method will generate CBJ Monitoring report using component one and will return the path of report generated
-        /// </summary>
-        /// <param name="reportSetupID">CRMM Setup ID for the current report</param>
-        /// <param name="batchRunDate">Date for which report is to be generated</param>
-        /// <returns></returns>
-        public ReportPath GenerateReport(int reportSetupID, DateTime batchRunDate, string fileType, string source, SourceInfo sourceInfo, int appID, List<ReportRequestParams> requestParams)
-        {
-            try
-            {
-                string ReportPath = null;
-                ReportSource = (Source)Convert.ToInt32(source);
-                FileType = fileType;
-                if (ReportSource == Source.Package)
-                { PackagePath = sourceInfo.SourceInformation; }
-
-                DataSet ObjSqlDataSet = new DataSet();
-
-                if (fileType.ToUpper() == Filetype.pdf.ToString().ToUpper())
-                {
-                    //Note: Getting template file name and package filene
-                    if (_ObjCBJMonitoringReportDAL.GetReportInformation(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source, appID, new List<ReportRequestParams> { new ReportRequestParams { ParamName = "SQL_IDENTIFIER", ParamType = "string", ParamValue = "GET_CRMM_REPORT_DETAILS" } }))
-                    {
-                        ReportPath = BuildPDF(ObjSqlDataSet, reportSetupID, batchRunDate, source);
-                    }
-                }
-                else if (_ObjCBJMonitoringReportDAL.GetReportData(reportSetupID, batchRunDate, ref ObjSqlDataSet, fileType.ToUpper(), source))
-                {
-                    bool hasTemplate = ObjSqlDataSet.Tables[0].Columns.Contains("TemplateFileName") && !string.IsNullOrWhiteSpace(Convert.ToString(ObjSqlDataSet.Tables[0].Rows[0]["TemplateFileName"])) ? true : false;
-                    if (fileType.ToUpper() == Filetype.xlsx.ToString().ToUpper() || hasTemplate)
-                        ReportPath = BuildWorkBook(ObjSqlDataSet);
-                    else if (fileType.ToUpper() == Filetype.csv.ToString().ToUpper())
-                        ReportPath = BuildCSV(ObjSqlDataSet);
-                }
-
-                //return ReportPath;
-                return new Shared.Infrastructure.ReportPath { ReportFile = ReportFileName, ReportFolderPath = ReportFolderPath };
-            }
-            catch (Exception ex)
-            {
-                _logger.ErrorFormat("Exception occured while generating CBJ Balance Monitoring Report. ReportSetupID: {0}. Error: " + ex, reportSetupID.ToString());
-                throw new Exception(string.IsNullOrEmpty(ReportGenerationExceptions(ex.Message)) ? ex.Message : ReportGenerationExceptions(ex.Message), ex);
-            }
-        }
-
-        /// <summary>
-        /// This function is used to update the formula for excel formatting
-        /// </summary>
-        public override void CleanUpTouchUpSection(ref C1XLBook workBook, ref XLSheet workSheet, string sheet, string section, ref int rowInsertCount, ref int colInsertCount, DataSet dataSet, DataTable dtSection, int sectionRepeatCount, DataTable dtHeaderSection = null, List<string> dBDynamicColumns = null, int? sheetIndex = null)
-        {
-            if (section == "Section6")
-            {
-                var sectionKey = sheet + section;
-                var getSectionPosition = reportSections[sectionKey].SectionValue.Split(','); // Get starting Row and Column position from config collection.
-                int secRow = Convert.ToInt32(getSectionPosition[(int)Cell.Row]);
-                int secColumn = Convert.ToInt32(getSectionPosition[(int)Cell.Column]);
-
-                int formulaStartRow = rowInsertCount + secRow + 3; // Increment row index by 3. Updating formula after section 6 and section 6 contains 3 rows.
-                var resultSetNo = reportSections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section).Select(p => p.Value.SectionResultSetNo).ToList();
-                DataTable dataTable = dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 3]; // getting dataTable for Account becuase formula updation is based on No of account in the resultset. 
-
-                var getAcctSectionPosition = reportSections[sheet + "Section5"].SectionValue.Split(',');
-                int acctSecStartRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]) + 1;
-                int acctSecEndRow = rowInsertCount + secRow - 1;
-
-                string formula = null;
-                for (int i = 0; i < dataTable.Rows.Count; i++)
-                {
-                    formula = formula + ",SUMPRODUCT(--(" + GetExcelColumnName(secColumn) + acctSecStartRow + ":" + GetExcelColumnName(secColumn) + acctSecEndRow + "<" + GetExcelColumnName(secColumn + 1) + acctSecStartRow + ":" + GetExcelColumnName(secColumn + 1) + acctSecEndRow + "))";
-                    secColumn += 3; // Increment columnIndex by 3 to pointing to next account.
-                }
-
-                formula = formula.TrimStart(','); // removing first comma from formula string.
-                workSheet[formulaStartRow, 0].Formula = "IF(SUM(" + formula + ")>0,\"LIMIT EXCEEDED\",\"\")";
+        return new XLConditionalFormattingCollection(
+            _sheet.ConditionalFormattings);
+    }
+}
 
 
-                // Conditional Formattings
-                int startRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]);
-                int endRow = Convert.ToInt32(getAcctSectionPosition[(int)Cell.Row]) + rowInsertCount;
-                int columnIndex = Convert.ToInt32(getSectionPosition[(int)Cell.Column]) + 1;
 
-                var conditionalFormat1 = new XLConditionalFormatting();
-                for (int i = 0; i < dataTable.Rows.Count; i++)
-                {
-                    conditionalFormat1.Ranges.Add(new XLRange(startRow, columnIndex, endRow, columnIndex));
-                    columnIndex += 3; // Increment columnIndex by 3 to pointing to next account.
-                }
-                conditionalFormat1.Rules.Add(workSheet.ConditionalFormattings[0].Rules[0]);
+public string Formula
+{
+    get { return _cell.Formula; }
+    set { _cell.Formula = value; }
+}
 
-                var conditionalFormat2 = new XLConditionalFormatting();
-                conditionalFormat2.Ranges.Add(new XLRange(startRow, Convert.ToInt32(getAcctSectionPosition[(int)Cell.Column]), endRow, Convert.ToInt32(getAcctSectionPosition[(int)Cell.Column])));
 
-                var rule = new XLConditionalFormattingRule();
-                rule.Type = XLConditionalFormattingType.Expression;
-                rule.Operator = XLConditionalFormattingOperator.NoComparision;
-                rule.FirstFormula = reportConfigKeys["CondFormtRule1"].Replace("[RowNo]", Convert.ToString((formulaStartRow + 1)));
-                rule.SecondFormula = null;
-                rule.Pattern = new XLPatternFormatting() { BackColor = Color.Red };
-                conditionalFormat2.Rules.Add(rule);
 
-                workSheet.ConditionalFormattings.Add(conditionalFormat1);
-                workSheet.ConditionalFormattings.Add(conditionalFormat2);
-            }
-        }
-        #endregion
 
+#region Conditional formatting
+
+public sealed class XLRange
+{
+    private readonly NativeXLRange _range;
+
+    internal NativeXLRange NativeRange
+    {
+        get { return _range; }
     }
 
+    public XLRange(int rowFirst, int colFirst, int rowLast, int colLast)
+    {
+        _range = new NativeXLRange(
+            rowFirst,
+            colFirst,
+            rowLast,
+            colLast);
+    }
+
+    internal XLRange(NativeXLRange range)
+    {
+        _range = range;
+    }
 }
+
+public sealed class XLPatternFormatting
+{
+    private readonly NativeXLPatternFormatting _pattern;
+
+    internal NativeXLPatternFormatting NativePattern
+    {
+        get { return _pattern; }
+    }
+
+    public XLPatternFormatting()
+    {
+        _pattern = new NativeXLPatternFormatting();
+    }
+
+    internal XLPatternFormatting(NativeXLPatternFormatting pattern)
+    {
+        _pattern = pattern;
+    }
+
+    public Color BackColor
+    {
+        get { return _pattern.BackColor; }
+        set { _pattern.BackColor = value; }
+    }
+
+    public Color ForeColor
+    {
+        get { return _pattern.ForeColor; }
+        set { _pattern.ForeColor = value; }
+    }
+}
+
+public sealed class XLConditionalFormattingRule
+{
+    private readonly NativeXLConditionalFormattingRule _rule;
+
+    internal NativeXLConditionalFormattingRule NativeRule
+    {
+        get { return _rule; }
+    }
+
+    public XLConditionalFormattingRule()
+    {
+        _rule = new NativeXLConditionalFormattingRule();
+    }
+
+    internal XLConditionalFormattingRule(
+        NativeXLConditionalFormattingRule rule)
+    {
+        _rule = rule;
+    }
+
+    public XLConditionalFormattingType Type
+    {
+        get
+        {
+            return (XLConditionalFormattingType)Enum.Parse(
+                typeof(XLConditionalFormattingType),
+                _rule.Type.ToString());
+        }
+        set
+        {
+            _rule.Type =
+                (NativeXLConditionalFormattingType)Enum.Parse(
+                    typeof(NativeXLConditionalFormattingType),
+                    value.ToString());
+        }
+    }
+
+    public XLConditionalFormattingOperator Operator
+    {
+        get
+        {
+            return (XLConditionalFormattingOperator)Enum.Parse(
+                typeof(XLConditionalFormattingOperator),
+                _rule.Operator.ToString());
+        }
+        set
+        {
+            _rule.Operator =
+                (NativeXLConditionalFormattingOperator)Enum.Parse(
+                    typeof(NativeXLConditionalFormattingOperator),
+                    value.ToString());
+        }
+    }
+
+    public string FirstFormula
+    {
+        get { return _rule.FirstFormula; }
+        set { _rule.FirstFormula = value; }
+    }
+
+    public string SecondFormula
+    {
+        get { return _rule.SecondFormula; }
+        set { _rule.SecondFormula = value; }
+    }
+
+    public XLPatternFormatting Pattern
+    {
+        get
+        {
+            return _rule.Pattern == null
+                ? null
+                : new XLPatternFormatting(_rule.Pattern);
+        }
+        set
+        {
+            _rule.Pattern = value == null
+                ? null
+                : value.NativePattern;
+        }
+    }
+}
+
+public sealed class XLConditionalFormattingRangeCollection
+{
+    private readonly NativeXLConditionalFormattingRangeCollection _ranges;
+
+    internal XLConditionalFormattingRangeCollection(
+        NativeXLConditionalFormattingRangeCollection ranges)
+    {
+        _ranges = ranges;
+    }
+
+    public int Count
+    {
+        get { return _ranges.Count; }
+    }
+
+    public void Add(XLRange range)
+    {
+        if (range == null)
+            throw new ArgumentNullException("range");
+
+        _ranges.Add(range.NativeRange);
+    }
+}
+
+public sealed class XLConditionalFormattingRuleCollection
+{
+    private readonly NativeXLConditionalFormattingRuleCollection _rules;
+
+    internal XLConditionalFormattingRuleCollection(
+        NativeXLConditionalFormattingRuleCollection rules)
+    {
+        _rules = rules;
+    }
+
+    public int Count
+    {
+        get { return _rules.Count; }
+    }
+
+    public XLConditionalFormattingRule this[int index]
+    {
+        get
+        {
+            NativeXLConditionalFormattingRule rule = _rules[index];
+
+            return rule == null
+                ? null
+                : new XLConditionalFormattingRule(rule);
+        }
+    }
+
+    public void Add(XLConditionalFormattingRule rule)
+    {
+        if (rule == null)
+            throw new ArgumentNullException("rule");
+
+        _rules.Add(rule.NativeRule);
+    }
+}
+
+public sealed class XLConditionalFormatting
+{
+    private readonly NativeXLConditionalFormatting _formatting;
+
+    internal NativeXLConditionalFormatting NativeFormatting
+    {
+        get { return _formatting; }
+    }
+
+    public XLConditionalFormatting()
+    {
+        _formatting = new NativeXLConditionalFormatting();
+    }
+
+    internal XLConditionalFormatting(
+        NativeXLConditionalFormatting formatting)
+    {
+        _formatting = formatting;
+    }
+
+    public XLConditionalFormattingRangeCollection Ranges
+    {
+        get
+        {
+            return new XLConditionalFormattingRangeCollection(
+                _formatting.Ranges);
+        }
+    }
+
+    public XLConditionalFormattingRuleCollection Rules
+    {
+        get
+        {
+            return new XLConditionalFormattingRuleCollection(
+                _formatting.Rules);
+        }
+    }
+}
+
+public sealed class XLConditionalFormattingCollection
+{
+    private readonly NativeXLConditionalFormattingCollection _formattings;
+
+    internal XLConditionalFormattingCollection(
+        NativeXLConditionalFormattingCollection formattings)
+    {
+        _formattings = formattings;
+    }
+
+    public int Count
+    {
+        get { return _formattings.Count; }
+    }
+
+    public XLConditionalFormatting this[int index]
+    {
+        get
+        {
+            NativeXLConditionalFormatting formatting = _formattings[index];
+
+            return formatting == null
+                ? null
+                : new XLConditionalFormatting(formatting);
+        }
+    }
+
+    public void Add(XLConditionalFormatting formatting)
+    {
+        if (formatting == null)
+            throw new ArgumentNullException("formatting");
+
+        _formattings.Add(formatting.NativeFormatting);
+    }
+}
+
+#endregion
