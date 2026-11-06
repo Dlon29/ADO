@@ -1,1 +1,32 @@
-'XLRows' does not contain a definition for 'Remove' and no accessible extension method 'Remove' accepting a first argument of type 'XLRows' could be found (are you missing a using directive or an assembly reference?)
+public XLSheet Add(XLSheet sheet)
+{
+    if (sheet == null)
+        throw new ArgumentNullException("sheet");
+
+    NativeXLSheet addedSheet = _book.Sheets.Add(sheet.NativeSheet);
+
+    return addedSheet == null ? null : new XLSheet(addedSheet);
+}
+
+public bool Contains(string sheetName)
+{
+    return _book.Sheets.Contains(sheetName);
+}
+
+public void Remove(string sheetName)
+{
+    _book.Sheets.Remove(sheetName);
+}
+
+
+
+
+internal NativeXLSheet NativeSheet
+{
+    get { return _sheet; }
+}
+
+public XLSheet Clone()
+{
+    return new XLSheet(_sheet.Clone());
+}
