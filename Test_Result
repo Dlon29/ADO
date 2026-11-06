@@ -1,3 +1,13 @@
-Argument 1: cannot convert from 'string' to 'STBUSA.Excel.Util.C1Compatibility.XLSheet'
-'XLColumns' does not contain a definition for 'Count' and no accessible extension method 'Count' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'Count' and no accessible extension method 'Count' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
+public XLSheet Add(string sheetName)
+{
+    NativeXLSheet addedSheet = _book.Sheets.Add(sheetName);
+
+    return addedSheet == null ? null : new XLSheet(addedSheet);
+}
+
+
+
+public int Count
+{
+    get { return _columns.Count; }
+}
