@@ -1,3 +1,3 @@
-'XLSheet' does not contain a definition for 'SaveCsv' and no accessible extension method 'SaveCsv' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'FileFormat' does not contain a definition for 'OpenXmlTemplate'
-
+Argument 1: cannot convert from 'string' to 'STBUSA.Excel.Util.C1Compatibility.XLSheet'
+'XLColumns' does not contain a definition for 'Count' and no accessible extension method 'Count' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
+'XLColumns' does not contain a definition for 'Count' and no accessible extension method 'Count' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
