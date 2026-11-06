@@ -1,6 +1,4 @@
 using STBUSA.Excel.Util.C1Compatibility;
-using MoBetterReports.Shared.Business;
-using MoBetterReports.Shared.Infrastructure;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -9,185 +7,29 @@ using System.Linq;
 
 namespace MoBetterReports.Shared.Report
 {
-    public abstract class ReportBuilder : C1ReportGenerator
+    public class ReportBuilderDynamicSheet : ReportBuilder
     {
-
-        /*
-        /// <summary>
-        /// This method will includes actual business logic to write the excel report using Component One.
-        /// </summary>
-        /// <param name="dataSet">Dataset includes all the data to generate the excel</param>
-        /// <returns>This method returns the shared path for generated report</returns>
-        public virtual string BuildWorkBook(DataSet dataSet)
+        private class SheetSeprator
         {
-            string confPath = null;
-
-            //string incFilePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..\\"));
-            //string templateFilePath = ConfigurationSettings.AppSettings["ReportTemplatePath"];
-            ////Get Template file name from DB
-            //string templatefileName = dataSet.Tables[0].Rows[0]["TemplateFileName"].ToString();
-            ////string templatefileFullName = Path.Combine(incFilePath, templateFilePath, "On_Loan_Balance_Report_Template.xlsx");
-            //string templatefileFullName = Path.Combine(incFilePath, templateFilePath, templatefileName);
-            ////get File name from DB
-            ////string fileName = "OnLoanBalanceReport.xlsx";
-            //string fileName = dataSet.Tables[0].Rows[0]["FileName"].ToString();
-            //string confFilePath = ConfigurationSettings.AppSettings["ReportConfirmationPath"]; // Shared path for storing the report file
-            
-
-            string fileName = String.Empty, templatefileFullName = String.Empty, confFilePath = String.Empty;
-
-            LoadPaths(dataSet.Tables[0], ref fileName, ref templatefileFullName, ref confFilePath);
-
-            #region Workbook
-
-            C1XLBook workBookTemplate = new C1XLBook();
-            workBookTemplate.Load(templatefileFullName);
-
-            if (!Directory.Exists(confFilePath))
-            {
-                Directory.CreateDirectory(confFilePath);
-            }
-
-            #region Worksheets
-
-
-            XLSheet workSheetConfig = workBookTemplate.Sheets[0];
-
-            Dictionary<int, XLCell> config = GetConfiguration(workSheetConfig);
-            Dictionary<string, Sections> sections = GetSectionsFromConfig(config[(int)ConfigSectionKey.SectionPosition], workSheetConfig);
-            List<DBTempHeader> dBColumns = GetDBColumnFromConfig(config[(int)ConfigSectionKey.DBColPosition], workSheetConfig);
-            Dictionary<string, string> configKeys = GetConfigKeyFromConfig(config[(int)ConfigSectionKey.ConfigKeyPosition], workSheetConfig);
-            List<string> dBDynamicHeaders = null;
-
-            // DataTable dtReportHeader = dataSet.Tables[0];
-            // DataTable dtSection2 = dataSet.Tables[1];
-
-            var Sheets = sections.Select(p => p.Value.SectionOfSheet).Distinct().ToList();
-
-            //Note: Remove optional worksheet.
-            if (dataSet.Tables[0].Columns.Contains("OptionlWS1") && dataSet.Tables[0].Rows[0]["OptionlWS1"].ToString() == "0")
-            {
-                if (Sheets.Count == 2)
-                {
-                    Sheets.Remove(Sheets.Last());
-                    workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
-                }
-                else {
-                    Sheets.Remove(Sheets[Sheets.Count-2]);
-                    workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 2);
-                }
-            }
-            if (dataSet.Tables[0].Columns.Contains("OptionlWS2") && dataSet.Tables[0].Rows[0]["OptionlWS2"].ToString() == "0")
-            {
-                Sheets.Remove(Sheets.Last());
-                workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
-            }
-
-            foreach (string sheet in Sheets)
-            {
-                int sheetNo = Convert.ToInt16(sheet.Substring(5));
-                XLSheet workSheetTemplate = workBookTemplate.Sheets[sheetNo];
-                int rowInsertCount = 0;
-                int colInsertCount = 0;
-
-                var section = sections.Where(s => s.Value.SectionOfSheet == sheet).Select(p => p.Value.SectionName).Distinct().ToList();
-
-                //for (int i = 0; i < section.Count; i++)
-                //{
-                //    var sectionType = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
-                //    var resultSetNo = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo);
-
-                //    if (sectionType == SectionType.Header.ToString())
-                //    {
-                //        WriteReportHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInserCount);
-                //    }
-
-                //    if (sectionType == SectionType.Table.ToString())
-                //    {
-                //        WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInserCount);
-                //    }
-                //}
-
-                for (int i = 0; i < section.Count; i++)
-                {
-                    var sectionType = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
-                    var resultSetNo = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo);
-
-
-
-                    if (sectionType == SectionType.Header.ToString())
-                    {
-                        WriteReportHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
-                    }
-                    else if (sectionType == SectionType.Table.ToString())
-                    {
-                        WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref rowInsertCount);
-                    }
-                    if (sectionType == SectionType.Label.ToString())
-                    {
-                        WriteLabelSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
-                    }
-                    else if (sectionType == SectionType.DynamicTable.ToString())
-                    {
-                        WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref rowInsertCount, dBDynamicHeaders);
-                    }
-                    else if (sectionType == SectionType.GroupTable.ToString())
-                    {
-                        WriteSectionForGroup(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref rowInsertCount);
-                    }
-                    else if (sectionType == SectionType.DynamicGroupTable.ToString())
-                    {
-                        WriteSectionForGroup(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref rowInsertCount, dBDynamicHeaders);
-                    }
-                    else if (sectionType == SectionType.DynamicHeader.ToString())
-                    {
-                        dBDynamicHeaders = WriteDynamicColHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref colInsertCount);
-                    }
-                }
-
-            }
-
-            #endregion
-
-            workBookTemplate.Sheets.RemoveAt(0);
-            workBookTemplate.Save(confFilePath + fileName);
-
-            //ProtectWorkbook(fileName, confFilePath);
-
-            #endregion Workbook
-
-            confPath = confFilePath + fileName;
-            return confPath;
+            public string Sheet { get; set; }
+            public string SheetName { get; set; }
+            public string Seprator { get; set; }
         }
-        */
+
         /// <summary>
         /// This method will includes actual business logic to write the excel report using Component One.
         /// </summary>
         /// <param name="dataSet">Dataset includes all the data to generate the excel</param>
         /// <returns>This method returns the shared path for generated report</returns>
-        public virtual string BuildWorkBook(DataSet dataSet)
+        public override string BuildWorkBook(DataSet dataSet)
         {
-            string confPath = null;
-
-            /*
-            string incFilePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..\\"));
-            string templateFilePath = ConfigurationSettings.AppSettings["ReportTemplatePath"];
-            //Get Template file name from DB
-            string templatefileName = dataSet.Tables[0].Rows[0]["TemplateFileName"].ToString();
-            //string templatefileFullName = Path.Combine(incFilePath, templateFilePath, "On_Loan_Balance_Report_Template.xlsx");
-            string templatefileFullName = Path.Combine(incFilePath, templateFilePath, templatefileName);
-            //get File name from DB
-            //string fileName = "OnLoanBalanceReport.xlsx";
-            string fileName = dataSet.Tables[0].Rows[0]["FileName"].ToString();
-            string confFilePath = ConfigurationSettings.AppSettings["ReportConfirmationPath"]; // Shared path for storing the report file
-            */
-
-            string fileName = String.Empty, templatefileFullName = String.Empty, confFilePath = String.Empty;
-
             try
             {
-                LoadPaths(dataSet.Tables[0], ref fileName, ref templatefileFullName, ref confFilePath);
+                string confPath = null;
 
+                string fileName = String.Empty, templatefileFullName = String.Empty, confFilePath = String.Empty;
+
+                LoadPaths(dataSet.Tables[0], ref fileName, ref templatefileFullName, ref confFilePath);
 
                 #region Workbook
 
@@ -218,140 +60,240 @@ namespace MoBetterReports.Shared.Report
                 // DataTable dtReportHeader = dataSet.Tables[0];
                 // DataTable dtSection2 = dataSet.Tables[1];
 
+                //var Sheets = sections.Select(p => p.Value.SectionOfSheet).Distinct().ToList();
+
                 var Sheets = sections.Select(p => p.Value.SectionOfSheet).Distinct().ToList();
 
-                RemoveOptionalWorksheet(dataSet, workBookTemplate, Sheets, 1);
+                string[] dynamicSheetNo = configKeys["DynamicSheets"].Split(',');//Note:Getting list of dynamic sheets
 
-                foreach (string sheet in Sheets)
+                //Note: Remove optional worksheet.
+                if (dataSet.Tables[0].Columns.Contains("OptionlWS1") && dataSet.Tables[0].Rows[0]["OptionlWS1"].ToString() == "0")
                 {
-                    int sheetNo = Convert.ToInt16(sheet.Substring(5));
-                    XLSheet workSheetTemplate = workBookTemplate.Sheets[sheetNo];
-                    RenameWorksheet(ref workSheetTemplate, null);
-
-                    int rowInsertCount = 0;
-                    int colInsertCount = 0;
-
-                    var section = sections.Where(s => s.Value.SectionOfSheet == sheet).Select(p => p.Value.SectionName).Distinct().ToList();
-
-                    //for (int i = 0; i < section.Count; i++)
-                    //{
-                    //    var sectionType = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
-                    //    var resultSetNo = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo);
-
-                    //    if (sectionType == SectionType.Header.ToString())
-                    //    {
-                    //        WriteReportHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInserCount);
-                    //    }
-
-                    //    if (sectionType == SectionType.Table.ToString())
-                    //    {
-                    //        WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInserCount);
-                    //    }
-                    //}
-
-                    for (int i = 0; i < section.Count; i++)
+                    if (Sheets.Count == 2)
                     {
-                        var sectionType = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
-                        var resultSetNo = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo).ToList();
-
-                        if (sectionType == SectionType.Header.ToString())
-                        {
-                            WriteReportHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
-                        }
-                        else if (sectionType == SectionType.Table.ToString())
-                        {
-                            WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
-                        }
-                        if (sectionType == SectionType.Label.ToString())
-                        {
-                            WriteLabelSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
-                        }
-                        else if (sectionType == SectionType.DynamicTable.ToString())
-                        {
-                            WriteSection(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders);
-                        }
-                        else if (sectionType == SectionType.GroupTable.ToString())
-                        {
-                            WriteSectionForGroup(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
-                        }
-                        else if (sectionType == SectionType.DynamicGroupTable.ToString())
-                        {
-                            WriteSectionForGroup(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders);
-                        }
-                        else if (sectionType == SectionType.DynamicHeader.ToString())
-                        {
-                            dBDynamicHeaders = WriteDynamicColHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref colInsertCount);
-                        }
-                        else if (sectionType == SectionType.PivotHeader.ToString())
-                        {
-                            dBDynamicHeaders = WritePivotHeader(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref colInsertCount);
-                        }
-                        else if (sectionType == SectionType.PivotTable.ToString())
-                        {
-                            var pivotHeaderResultSetNo = sections.Where(s => s.Value.SectionOfSheet == sheet && s.Value.SectionName == section[i]).Select(p => p.Value.PivotHeaderResultSetNo);
-                            WriteSectionForPivotGroup(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], dataSet.Tables[Convert.ToInt16(pivotHeaderResultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders);
-                            CleanUpTouchUpSection(ref workBookTemplate, ref workSheetTemplate, sheet, section[i], ref rowInsertCount, ref colInsertCount, dataSet, dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], 0, dataSet.Tables[Convert.ToInt16(pivotHeaderResultSetNo.First()) - 1], dBDynamicHeaders);
-                        }
-                        else if (sectionType == SectionType.CopySection.ToString())
-                        {
-                            WriteCopySection(sheet, section[i], Convert.ToInt16(resultSetNo.First()), sections, dBColumns, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
-                        }
-                        else if (sectionType == SectionType.VerticalTable.ToString())
-                        {
-                            WriteSectionVertically(sheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
-                        }
-
-                        //Tochup Section
-                        if (sectionType != SectionType.PivotTable.ToString())
-                        {
-                            CleanUpTouchUpSection(ref workBookTemplate, ref workSheetTemplate, sheet, section[i], ref rowInsertCount, ref colInsertCount, dataSet, dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], 0, null, dBDynamicHeaders);
-                        }
+                        Sheets.Remove(Sheets.Last());
+                        workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
                     }
+                    else
+                    {
+                        Sheets.Remove(Sheets[Sheets.Count - 2]);
+                        workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 2);
+                    }
+                    //Removing Dynamic sheet from dynamic sheet list
+                    dynamicSheetNo = dynamicSheetNo.Where(val => val != "2").ToArray();
 
-                    CleanUpTouchUpSheet(ref workBookTemplate, ref workSheetTemplate, sheet, dataSet);
+                }
+                if (dataSet.Tables[0].Columns.Contains("OptionlWS2") && dataSet.Tables[0].Rows[0]["OptionlWS2"].ToString() == "0")
+                {
+
+                    Sheets.Remove(Sheets.Last());
+                    workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
+                    //Removing Dynamic sheet from dynamic sheet list
+                    dynamicSheetNo = dynamicSheetNo.Where(val => val != "3").ToArray();
 
                 }
 
+                int dynamicSheetIndex = 0;//Note: This is the index of dynamicSheet in dynamicSheetNo
+                foreach (string staticSheet in Sheets)//Note: Loop through each Sheet
+                {
+                    int staticSheetNo = Convert.ToInt16(staticSheet.Substring(5));
+
+                    if (dynamicSheetNo.Contains(Convert.ToString(staticSheetNo))) //Note: Section for Dynamic Sheet
+                    {
+                        IsDynamicSheet = true;
+                        dynamicSheetIndex++;
+                        int dynamicSheetHeaderRS = Convert.ToInt32(sections.Where(s => s.Value.SectionOfSheet == staticSheet && s.Value.SectionName == "Section1").Select(p => p.Value.SectionResultSetNo).First()) - 1;
+                        var sheetSeprators = new List<SheetSeprator>();
+                        for (int sheetNo = 0; sheetNo < dataSet.Tables[dynamicSheetHeaderRS].Rows.Count; sheetNo++)
+                        {
+                            //Note: Taking sheet information from first result set and adding into a list.
+                            var sheetSeprator = new SheetSeprator();
+                            sheetSeprator.Sheet = "Sheet" + (sheetNo + 1);
+                            sheetSeprator.SheetName = dataSet.Tables[dynamicSheetHeaderRS].Rows[sheetNo][configKeys["DynamicSheetNameKey"]].ToString();
+                            sheetSeprator.Seprator = dataSet.Tables[dynamicSheetHeaderRS].Rows[sheetNo][configKeys["DynamicSheetKey"]].ToString();
+                            sheetSeprators.Add(sheetSeprator);
+
+                            var sheet = sheetSeprator.Sheet;
+                            int sheetIndex = workBookTemplate.Sheets.Count;
+
+                            //Note: Adding dynamic sheets 
+                            /* This code does not copies the style well.
+                            XLSheet xLSheet = workBookTemplate.Sheets[staticSheetNo].Clone();
+                            xLSheet.Name = sheetSeprator.SheetName;
+                            workBookTemplate.Sheets.Add(xLSheet);*/
+
+                            /*Copying all the default data from first sheet to current dynamic sheet. */
+                            workBookTemplate.Sheets.Add(sheetSeprator.SheetName);
+
+
+
+                            for (int row = 0; row <= workBookTemplate.Sheets[staticSheetNo].Rows.Count - 1; row++)//Note: get the max number of rows and columns from Section Configuration RowStart and Col End
+                            {
+                                workBookTemplate.Sheets[sheetIndex].Rows[row].Height = workBookTemplate.Sheets[staticSheetNo].Rows[row].Height;
+                                for (int col = 0; col <= workBookTemplate.Sheets[staticSheetNo].Columns.Count - 1; col++)
+                                {
+                                    workBookTemplate.Sheets[sheetIndex].Columns[col].Width = workBookTemplate.Sheets[staticSheetNo].Columns[col].Width;
+                                    if (!String.IsNullOrWhiteSpace(workBookTemplate.Sheets[staticSheetNo][row, col].Formula))
+                                    {
+                                        workBookTemplate.Sheets[sheetIndex][row, col].Formula = workBookTemplate.Sheets[staticSheetNo][row, col].Formula;
+                                    }
+                                    else
+                                    {
+                                        workBookTemplate.Sheets[sheetIndex][row, col].Value = workBookTemplate.Sheets[staticSheetNo][row, col].Value;
+                                    }
+
+                                    workBookTemplate.Sheets[sheetIndex][row, col].Style = workBookTemplate.Sheets[staticSheetNo][row, col].Style;
+                                }
+                            }
+
+                            /*Apply Merging on dynamic sheet*/
+                            ApplyMerging((XLSheet)workBookTemplate.Sheets[sheetIndex], (XLSheet)workBookTemplate.Sheets[staticSheetNo], 0, (workBookTemplate.Sheets[staticSheetNo].Columns.Count - 1), 0);
+
+                        }
+
+
+
+
+                        for (int sheets = 0; sheets < sheetSeprators.Count; sheets++)
+                        {
+                            var sheet = "Sheet" + dynamicSheetNo[dynamicSheetIndex - 1];//Getting the static name if the dynamic sheet 
+
+                            int sheetIndex = workBookTemplate.Sheets.Count - sheetSeprators.Count + sheets;
+
+                            //Load sheet from sheets collection
+                            XLSheet workSheetTemplate = workBookTemplate.Sheets[sheetIndex];
+                            //workSheetTemplate.Name = sheetSeprators[sheets].SheetName;
+                            RenameWorksheet(ref workSheetTemplate, (sheetSeprators[sheets].SheetName.Length <= 30 ? sheetSeprators[sheets].SheetName : sheetSeprators[sheets].SheetName.Substring(0, 30))); //Taking only "Daily Repo Balance - " and additional 9 char from AcctShortName as excel taking only 31 char forsheet name.
+
+                            int rowInsertCount = 0;
+                            int colInsertCount = 0;
+
+                            //Note: Taking sheet 1 default to get the sections for dynamic sheets.
+
+                            var section = sections.Where(s => s.Value.SectionOfSheet == sheet).Select(p => p.Value.SectionName).Distinct().ToList();
+                            //look through the sections in dynamic sheet. Sections information are retrieved from Actual sheet using sheet variable.
+                            for (int i = 0; i < section.Count; i++)
+                            {
+                                var sectionType = sections.Where(s => s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
+                                var resultSetNo = sections.Where(s => s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo);
+
+                                var dtBySeprator = new DataTable();
+
+                                if (dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1].Rows.Count > 0)
+                                {
+                                    var drBySeprator = dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1].AsEnumerable()
+                                       .Where(r => r.Field<string>(configKeys["DynamicSheetKey"]) == sheetSeprators[sheets].Seprator);
+                                    dtBySeprator = drBySeprator.Any() ? drBySeprator.CopyToDataTable() : dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1].Clone();
+                                }
+
+                                if (sectionType == SectionType.Header.ToString())
+                                {
+                                    WriteReportHeader(sheet, section[i], dtBySeprator, sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
+                                }
+                                else if (sectionType == SectionType.Table.ToString())
+                                {
+                                    WriteSection(sheet, section[i], dtBySeprator, sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, null, sheetIndex);
+                                }
+                                if (sectionType == SectionType.Label.ToString())
+                                {
+                                    WriteLabelSection(sheet, section[i], dtBySeprator, sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
+                                }
+                                else if (sectionType == SectionType.DynamicTable.ToString())
+                                {
+                                    WriteSection(sheet, section[i], dtBySeprator, sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders, sheetIndex);
+                                }
+                                else if (sectionType == SectionType.GroupTable.ToString())
+                                {
+                                    WriteSectionForGroup(sheet, section[i], dtBySeprator, sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, null, sheetIndex);
+                                }
+                                else if (sectionType == SectionType.DynamicGroupTable.ToString())
+                                {
+                                    WriteSectionForGroup(sheet, section[i], dtBySeprator, sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders, sheetIndex);
+                                }
+                                else if (sectionType == SectionType.DynamicHeader.ToString())
+                                {
+                                    dBDynamicHeaders = WriteDynamicColHeader(sheet, section[i], dtBySeprator, sections, dBColumns, configKeys, ref workSheetTemplate, ref colInsertCount);
+                                }
+                                else if (sectionType == SectionType.CopySection.ToString())
+                                {
+                                    WriteCopySection(sheet, section[i], Convert.ToInt16(resultSetNo.First()), sections, dBColumns, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
+                                }
+                                CleanUpTouchUpSection(ref workBookTemplate, ref workSheetTemplate, sheet, section[i], ref rowInsertCount, ref colInsertCount, dataSet, dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], 0, null, dBDynamicHeaders);
+                            }
+
+                            //Touchup section
+                            CleanUpTouchUpSheet(ref workBookTemplate, ref workSheetTemplate, sheet, dataSet);
+                        }
+
+                    }
+                    else//Note Section for Static sheet
+                    {
+                        IsDynamicSheet = false;
+                        XLSheet workSheetTemplate = workBookTemplate.Sheets[staticSheetNo];
+                        int rowInsertCount = 0;
+                        int colInsertCount = 0;
+
+                        var section = sections.Where(s => s.Value.SectionOfSheet == staticSheet).Select(p => p.Value.SectionName).Distinct().ToList();
+
+                        for (int i = 0; i < section.Count; i++)
+                        {
+                            var sectionType = sections.Where(s => s.Value.SectionOfSheet == staticSheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionType).FirstOrDefault();
+                            var resultSetNo = sections.Where(s => s.Value.SectionOfSheet == staticSheet && s.Value.SectionName == section[i]).Select(p => p.Value.SectionResultSetNo);
+
+
+
+                            if (sectionType == SectionType.Header.ToString())
+                            {
+                                WriteReportHeader(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
+                            }
+                            else if (sectionType == SectionType.Table.ToString())
+                            {
+                                WriteSection(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
+                            }
+                            if (sectionType == SectionType.Label.ToString())
+                            {
+                                WriteLabelSection(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, ref workSheetTemplate, ref rowInsertCount);
+                            }
+                            else if (sectionType == SectionType.DynamicTable.ToString())
+                            {
+                                WriteSection(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders);
+                            }
+                            else if (sectionType == SectionType.GroupTable.ToString())
+                            {
+                                WriteSectionForGroup(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount);
+                            }
+                            else if (sectionType == SectionType.DynamicGroupTable.ToString())
+                            {
+                                WriteSectionForGroup(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref workBookTemplate, ref rowInsertCount, dBDynamicHeaders);
+                            }
+                            else if (sectionType == SectionType.DynamicHeader.ToString())
+                            {
+                                dBDynamicHeaders = WriteDynamicColHeader(staticSheet, section[i], dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], sections, dBColumns, configKeys, ref workSheetTemplate, ref colInsertCount);
+                            }
+                            CleanUpTouchUpSection(ref workBookTemplate, ref workSheetTemplate, staticSheet, section[i], ref rowInsertCount, ref colInsertCount, dataSet, dataSet.Tables[Convert.ToInt16(resultSetNo.First()) - 1], 0, null, dBDynamicHeaders);
+                        }
+                        CleanUpTouchUpSheet(ref workBookTemplate, ref workSheetTemplate, staticSheet, dataSet);
+                    }
+
+                }
                 #endregion
 
                 CleanUpTouchUpWorkBook(ref workBookTemplate, dataSet);
 
-                RemoveOptionalWorksheet(dataSet, workBookTemplate, Sheets, 2);
+                //Removing the actual static sheets where were marked dynamic
+                for (int s = 0; s < dynamicSheetNo.Length; s++)
+                {
+                    workBookTemplate.Sheets.RemoveAt(Convert.ToInt16(dynamicSheetNo.Reverse().ToArray()[s]));
+                }
+
                 // workBookTemplate.Sheets.RemoveAt(0);
                 // Remove configration sheet from workbook
                 RemoveWorksheet(ref workBookTemplate, 0);
 
-                if (FileType == Filetype.csv.ToString())
+                if (CreateDir(Path.GetDirectoryName(confFilePath + fileName)) == true)
                 {
-                    workBookTemplate.Sheets[0].SaveCsv(confFilePath + fileName);
-                    //workBookTemplate.Save(confFilePath + fileName.Replace("csv", "xlsx"));
-                    //C1XLBook xLBook = new C1XLBook();
-                    //xLBook.Load(confFilePath + fileName.Replace("csv", "xlsx"));
-                    //xLBook.Sheets[0].SaveCsv(confFilePath + fileName);
+                    workBookTemplate.Save(confFilePath + fileName);
                 }
-                else if (FileType == Filetype.xls.ToString())
-                {
-                    if (CreateDir(Path.GetDirectoryName(confFilePath + fileName)) == true)
-                    {
-                        workBookTemplate.Save(confFilePath + fileName, FileFormat.Biff8);
-                    }
-                }
-                else if (FileType == Filetype.xml.ToString())
-                {
-                    if (CreateDir(Path.GetDirectoryName(confFilePath + fileName)) == true)
-                    {
-                        workBookTemplate.Save(confFilePath + fileName, FileFormat.OpenXmlTemplate);
-
-                    }
-                }
-                else
-                {
-                    if (CreateDir(Path.GetDirectoryName(confFilePath + fileName)) == true)
-                    {
-                        workBookTemplate.Save(confFilePath + fileName);
-                    }
-                }
-               
 
                 //ProtectWorkbook(fileName, confFilePath);
                 //Note: Protect File
@@ -383,7 +325,7 @@ namespace MoBetterReports.Shared.Report
 
                 #endregion Workbook
 
-                ReportFileName = (zipReport ? Path.ChangeExtension(fileName, "Zip") : fileName);
+                ReportFileName = fileName;
                 ReportFolderPath = confFilePath;
 
                 confPath = confFilePath + fileName;
@@ -394,148 +336,5 @@ namespace MoBetterReports.Shared.Report
                 throw new Exception(EX.Message + ReportGenerationExceptions(EX.Message), EX);
             }
         }
-
-        public void RemoveOptionalWorksheet(DataSet dataSet, C1XLBook workBookTemplate, List<string> Sheets, int deleteFrom)
-        {
-            //Note: Remove optional worksheet.
-            try
-            {
-                if (dataSet.Tables[0].Columns.Contains("OptionalWS1") && Convert.ToBoolean(dataSet.Tables[0].Rows[0]["OptionalWS1"]) == false)
-                {
-                    if (deleteFrom == 1)
-                    {
-                        if (Sheets.Count == 2)
-                        {
-                            Sheets.Remove(Sheets.Last());
-                        }
-                        else
-                        {
-                            Sheets.Remove(Sheets[Sheets.Count - 2]);
-                        }
-                    }
-
-                    if (deleteFrom == 2)
-                    {
-                        if ((workBookTemplate.Sheets.Count - 1) == 2)
-                        {
-                            workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
-                        }
-                        else
-                        {
-                            workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 2);
-                        }
-                    }
-                }
-                if (dataSet.Tables[0].Columns.Contains("OptionalWS2") && Convert.ToBoolean(dataSet.Tables[0].Rows[0]["OptionalWS2"]) == false)
-                {
-                    if (deleteFrom == 1)
-                    {
-                        Sheets.Remove(Sheets.Last());
-                    }
-                    else if (deleteFrom == 2)
-                    {
-                        workBookTemplate.Sheets.RemoveAt(workBookTemplate.Sheets.Count - 1);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// This method will includes actual business logic to write the CSV report using Component One.
-        /// </summary>
-        /// <param name="dataSet">Dataset includes all the data to generate the excel</param>
-        /// <returns>This method returns the shared path for generated report</returns>
-        public virtual string BuildCSV(DataSet dataSet)
-        {
-            try
-            {
-                string confPath = null;
-                string fileName = String.Empty, confFilePath = String.Empty;
-                LoadPathForCSV(dataSet.Tables[0], ref fileName, ref confFilePath);
-
-                if (CreateDir(Path.GetDirectoryName(confFilePath + fileName)) == true)
-                {
-                    ToCSV(dataSet, confFilePath + fileName);
-                }
-
-                ReportFileName = fileName;
-                ReportFolderPath = confFilePath;
-                confPath = confFilePath + fileName;
-
-                return confPath;
-            }
-            catch (Exception)
-            {
-
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// This method will includes actual business logic to generate PDF Report.
-        /// </summary>
-        /// <param name="dataTable">DataTable includes all the data to generate the report</param>
-        /// <param name="reportSetupID">ReportSetupID to Generate report</param>
-        /// <param name="batchRunDate">BatchRunDate to run the report</param>
-        /// <returns>This method returns the shared path for generated report</returns>
-        public virtual string BuildPDF(DataSet dataSet, int reportSetupID, DateTime batchRunDate, string source = "0", bool IsGeneric = false, List<ReportRequestParams> requestParams = null)
-        {
-            try
-            {
-                string confPath = null, sXportPath = null;
-                bool reportSuccess = false;
-                ReportDriver reportDriver = new ReportDriver();
-
-                string fileName = String.Empty, templatefileFullName = String.Empty, confFilePath = String.Empty;
-
-                LoadPaths(dataSet.Tables[0], ref fileName, ref templatefileFullName, ref confFilePath);
-
-                sXportPath = confFilePath + fileName;
-                //string _strXMLAcctSet = "<root><acct ID=\"1\" /><acct ID=\"2\" /><acct ID=\"3\" /><acct ID=\"4\" /><acct ID=\"5\" /><acct ID=\"6\" /><acct ID=\"7\" /></root>";
-
-                if (CreateDir(Path.GetDirectoryName(sXportPath)) == true)
-                {
-                    reportSuccess = reportDriver.PrintReport(reportSetupID, batchRunDate, templatefileFullName, sXportPath, source, IsGeneric, requestParams);
-                }
-                //reportSuccess = reportDriver.PrintReport(reportSetupID, DateTime.Now, templatefileFullName, sXportPath);
-
-                if (!reportSuccess)
-                {
-                    string ErrStr = null;
-                    if (reportDriver.Errors.Count > 0)
-                    {
-                        ErrStr = reportDriver.Errors[0].Message;
-                    }
-                    throw new Exception(ErrStr); //"Error in creating report: " + ReportTitle) ;
-                }
-
-                bool protectFile = (dataSet.Tables[0].Columns.Contains("Code") && dataSet.Tables[0].Rows[0]["Code"].ToString() != "") ? true : false;
-                bool zipReport = (dataSet.Tables[0].Columns.Contains("Zip") && dataSet.Tables[0].Rows[0]["Zip"].ToString() != "") ? Convert.ToBoolean(Convert.ToInt16(dataSet.Tables[0].Rows[0]["Zip"])) : false;
-
-                //Note: Protect File and Zip File
-                if (zipReport)
-                {
-                    string password = (protectFile ? dataSet.Tables[0].Rows[0]["Code"].ToString() : string.Empty);
-                    CompressFileNFolder(confFilePath, fileName, password);
-                }
-
-                ReportFileName = (zipReport ? Path.ChangeExtension(fileName, "Zip") : fileName);
-                ReportFolderPath = confFilePath;
-
-                confPath = sXportPath;
-
-                return confPath;
-            }
-            catch (Exception)
-            {
-                throw;
-            }
-        }
-
     }
 }
