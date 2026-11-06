@@ -1,979 +1,228 @@
-using C1.C1Excel;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Printing;
-using NativeC1XLBook = C1.C1Excel.C1XLBook;
-using NativeFileFormat = C1.C1Excel.FileFormat;
-using NativeXLAlignHorzEnum = C1.C1Excel.XLAlignHorzEnum;
-using NativeXLAlignVertEnum = C1.C1Excel.XLAlignVertEnum;
-using NativeXLCell = C1.C1Excel.XLCell;
-using NativeXLCellRange = C1.C1Excel.XLCellRange;
-using NativeXLCellRangeCollection = C1.C1Excel.XLCellRangeCollection;
-using NativeXLColumn = C1.C1Excel.XLColumn;
-using NativeXLColumnCollection = C1.C1Excel.XLColumnCollection;
-using NativeXLConditionalFormatting = C1.C1Excel.XLConditionalFormatting;
-using NativeXLConditionalFormattingCollection = C1.C1Excel.XLConditionalFormattingCollection;
-using NativeXLConditionalFormattingOperator = C1.C1Excel.XLConditionalFormattingOperator;
-using NativeXLConditionalFormattingRangeCollection = C1.C1Excel.XLConditionalFormattingRangeCollection;
-using NativeXLConditionalFormattingRule = C1.C1Excel.XLConditionalFormattingRule;
-using NativeXLConditionalFormattingRuleCollection = C1.C1Excel.XLConditionalFormattingRuleCollection;
-using NativeXLConditionalFormattingType = C1.C1Excel.XLConditionalFormattingType;
-using NativeXLLineStyleEnum = C1.C1Excel.XLLineStyleEnum;
-using NativeXLNamedRange = C1.C1Excel.XLNamedRange;
-using NativeXLNamedRangeCollection = C1.C1Excel.XLNamedRangeCollection;
-using NativeXLPatternFormatting = C1.C1Excel.XLPatternFormatting;
-using NativeXLPrintSettings = C1.C1Excel.XLPrintSettings;
-//MoBetter API
-using NativeXLRange = C1.C1Excel.XLRange;
-using NativeXLRangeType = C1.C1Excel.XLRangeType;
-using NativeXLReferenceType = C1.C1Excel.XLReferenceType;
-using NativeXLRow = C1.C1Excel.XLRow;
-using NativeXLRowCollection = C1.C1Excel.XLRowCollection;
-using NativeXLSheet = C1.C1Excel.XLSheet;
-using NativeXLStyle = C1.C1Excel.XLStyle;
-
-namespace STBUSA.Excel.Util.C1Compatibility
+public enum XLLineStyleEnum
 {
-    #region Compatibility enums
-
-    public enum FileFormat { Biff8, OpenXml, OpenXmlMacro, OpenXmlTemplate }
-    public enum XLAlignHorzEnum { Left, Center, Right }
-    public enum XLAlignVertEnum { Top, Center, Bottom }
-    public enum XLLineStyleEnum { None, Thin }
-    public enum XLReferenceType { Absolute, Relative }
-    public enum XLRangeType { Formula, Value }
-
-    //MoBetter API
-    public struct XLConditionalFormattingType
-    {
-        private readonly NativeXLConditionalFormattingType _value;
-
-        private XLConditionalFormattingType(NativeXLConditionalFormattingType value)
-        {
-            _value = value;
-        }
-
-        public static readonly XLConditionalFormattingType Expression =
-            new XLConditionalFormattingType(NativeXLConditionalFormattingType.Expression);
-
-        public static implicit operator NativeXLConditionalFormattingType(
-            XLConditionalFormattingType value)
-        {
-            return value._value;
-        }
-
-        public static implicit operator XLConditionalFormattingType(
-            NativeXLConditionalFormattingType value)
-        {
-            return new XLConditionalFormattingType(value);
-        }
-    }
-
-    public struct XLConditionalFormattingOperator
-    {
-        private readonly NativeXLConditionalFormattingOperator _value;
-
-        private XLConditionalFormattingOperator(NativeXLConditionalFormattingOperator value)
-        {
-            _value = value;
-        }
-
-        public static readonly XLConditionalFormattingOperator NoComparision =
-            new XLConditionalFormattingOperator(
-                NativeXLConditionalFormattingOperator.NoComparision);
-
-        public static implicit operator NativeXLConditionalFormattingOperator(
-            XLConditionalFormattingOperator value)
-        {
-            return value._value;
-        }
-
-        public static implicit operator XLConditionalFormattingOperator(
-            NativeXLConditionalFormattingOperator value)
-        {
-            return new XLConditionalFormattingOperator(value);
-        }
-    }
-
-    #endregion    
-
-    #region Workbook and worksheets
-
-    public sealed class C1XLBook : IDisposable
-    {
-        private readonly NativeC1XLBook _book;
-        private bool _disposed;
-
-        public C1XLBook() { _book = new NativeC1XLBook(); }
-
-        internal NativeC1XLBook NativeBook
-        {
-            get { EnsureNotDisposed(); return _book; }
-        }
-
-        public void Load(string path)
-        {
-            EnsureNotDisposed();
-            _book.Load(path);
-        }
-
-        public void Load(string path, FileFormat format)
-        {
-            EnsureNotDisposed();
-            _book.Load(path, ToNativeFormat(format));
-        }
-
-        public void Save(string path)
-        {
-            EnsureNotDisposed();
-            _book.Save(path);
-        }
-
-        public void Save(string path, FileFormat format)
-        {
-            EnsureNotDisposed();
-            _book.Save(path, ToNativeFormat(format));
-        }
-
-        public XLSheets Sheets
-        {
-            get { EnsureNotDisposed(); return new XLSheets(_book); }
-        }
-
-        public XLNamedRangeCollection NamedRanges
-        {
-            get
-            {
-                EnsureNotDisposed();
-                return _book.NamedRanges == null ? null : new XLNamedRangeCollection(_book.NamedRanges);
-            }
-        }
-
-        private static NativeFileFormat ToNativeFormat(FileFormat format)
-        {
-            switch (format)
-            {
-                case FileFormat.Biff8: return NativeFileFormat.Biff8;
-                case FileFormat.OpenXml: return NativeFileFormat.OpenXml;
-                case FileFormat.OpenXmlMacro: return NativeFileFormat.OpenXmlMacro;
-                    //MoBetter API
-                case FileFormat.OpenXmlTemplate: return NativeFileFormat.OpenXmlTemplate;
-                default: throw new ArgumentOutOfRangeException("format");
-            }
-        }
-
-        private void EnsureNotDisposed()
-        {
-            if (_disposed) throw new ObjectDisposedException("C1XLBook");
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _book.Dispose();
-            _disposed = true;
-        }
-    }
-
-    public sealed class XLSheets
-    {
-        private readonly NativeC1XLBook _book;
-        internal XLSheets(NativeC1XLBook book) { _book = book; }
-        public int Count { get { return _book.Sheets.Count; } }
-        public XLSheet this[int index]
-        {
-            get
-            {
-                NativeXLSheet sheet = _book.Sheets[index];
-                return sheet == null ? null : new XLSheet(sheet);
-            }
-        }
-        //MoBetter API
-        public void RemoveAt(int index)
-        {
-            _book.Sheets.RemoveAt(index);
-        }
-
-        //MoBetter API
-        public XLSheet Add(XLSheet sheet)
-        {
-            if (sheet == null)
-                throw new ArgumentNullException("sheet");
-
-            NativeXLSheet addedSheet = _book.Sheets.Add(sheet.NativeSheet);
-
-            return addedSheet == null ? null : new XLSheet(addedSheet);
-        }
-        //MoBetter API
-        public XLSheet Add(string sheetName)
-        {
-            NativeXLSheet addedSheet = _book.Sheets.Add(sheetName);
-
-            return addedSheet == null ? null : new XLSheet(addedSheet);
-        }
-        //MoBetter API
-        public bool Contains(string sheetName)
-        {
-            return _book.Sheets.Contains(sheetName);
-        }
-
-        public void Remove(string sheetName)
-        {
-            _book.Sheets.Remove(sheetName);
-        }        
-    }
-
-    public sealed class XLSheet
-    {
-        private readonly NativeXLSheet _sheet;
-        internal XLSheet(NativeXLSheet sheet) { _sheet = sheet; }
-
-        public int Scale { get { return _sheet.Scale; } set { _sheet.Scale = value; } }
-        //MoBetter API
-        public string Name { get { return _sheet.Name; } set { _sheet.Name = value; } }
-        public XLRows Rows { get { return new XLRows(_sheet.Rows); } }
-        public XLColumns Columns { get { return new XLColumns(_sheet.Columns); } }
-        public XLPrintSettings PrintSettings { get { return new XLPrintSettings(_sheet.PrintSettings); } }
-        //Mobetter API
-        public XLCellRangeCollection MergedCells
-        {
-            get { return new XLCellRangeCollection(_sheet.MergedCells); }
-        }
-
-        //MoBetter API
-        public XLConditionalFormattingCollection ConditionalFormattings
-        {
-            get
-            {
-                return new XLConditionalFormattingCollection(
-                    _sheet.ConditionalFormattings);
-            }
-        }
-        //MoBetter API
-        internal NativeXLSheet NativeSheet
-        {
-            get { return _sheet; }
-        }
-        //MoBetter API
-        public XLSheet Clone()
-        {
-            return new XLSheet(_sheet.Clone());
-        }
-
-        public XLCell this[int row, int column]
-        {
-            get
-            {
-                NativeXLCell cell = _sheet[row, column];
-                return cell == null ? null : new XLCell(cell);
-            }
-        }
-
-        public XLCell GetCell(int row, int column)
-        {
-            NativeXLCell cell = _sheet.GetCell(row, column);
-            return cell == null ? null : new XLCell(cell);
-        }
-        //MoBetterAPI
-        public void SaveCsv(string fileName) { _sheet.SaveCsv(fileName); }
-    }
-
-    #endregion
-
-    #region Cells and styles
-
-    public sealed class XLCell
-    {
-        private readonly NativeXLCell _cell;
-        internal XLCell(NativeXLCell cell) { _cell = cell; }
-
-        public string Text { get { return _cell.Text; } }
-        public object Value { get { return _cell.Value; } set { _cell.Value = value; } }
-        public XLStyle Style
-        {
-            get { return _cell.Style == null ? null : new XLStyle(_cell.Style); }
-            set { _cell.Style = value == null ? null : value.NativeStyle; }
-        }
-        //MoBetter API
-        public string Formula
-        {
-            get { return _cell.Formula; }
-            set { _cell.Formula = value; }
-        }
-
-        //MoBetter API
-        public void SetValue(object value, XLStyle style)
-        {
-            _cell.SetValue(value, style == null ? null : style.NativeStyle);
-        }
-    }
-
-    public sealed class XLStyle
-    {
-        private readonly NativeXLStyle _style;
-        internal NativeXLStyle NativeStyle { get { return _style; } }
-
-        public XLStyle(C1XLBook workbook)
-        {
-            if (workbook == null) throw new ArgumentNullException("workbook");
-            _style = new NativeXLStyle(workbook.NativeBook);
-        }
-
-        internal XLStyle(NativeXLStyle style) { _style = style; }
-
-        //MoBetter API
-        public XLStyle Clone() { return new XLStyle(_style.Clone()); }
-
-        public Color ForeColor { get { return _style.ForeColor; } set { _style.ForeColor = value; } }
-        public Color BackColor { get { return _style.BackColor; } set { _style.BackColor = value; } }
-        public Font Font { get { return _style.Font; } set { _style.Font = value; } }
-        public bool WordWrap { get { return _style.WordWrap; } set { _style.WordWrap = value; } }
-        public string Format { get { return _style.Format; } set { _style.Format = value; } }
-
-        public XLAlignHorzEnum AlignHorz
-        {
-            get { return (XLAlignHorzEnum)Enum.Parse(typeof(XLAlignHorzEnum), _style.AlignHorz.ToString()); }
-            set { _style.AlignHorz = (NativeXLAlignHorzEnum)Enum.Parse(typeof(NativeXLAlignHorzEnum), value.ToString()); }
-        }
-        public XLAlignVertEnum AlignVert
-        {
-            get { return (XLAlignVertEnum)Enum.Parse(typeof(XLAlignVertEnum), _style.AlignVert.ToString()); }
-            set { _style.AlignVert = (NativeXLAlignVertEnum)Enum.Parse(typeof(NativeXLAlignVertEnum), value.ToString()); }
-        }
-        public XLLineStyleEnum BorderBottom
-        {
-            get { return (XLLineStyleEnum)Enum.Parse(typeof(XLLineStyleEnum), _style.BorderBottom.ToString()); }
-            set { _style.BorderBottom = ToNativeLine(value); }
-        }
-        public XLLineStyleEnum BorderTop
-        {
-            get { return (XLLineStyleEnum)Enum.Parse(typeof(XLLineStyleEnum), _style.BorderTop.ToString()); }
-            set { _style.BorderTop = ToNativeLine(value); }
-        }
-        public XLLineStyleEnum BorderLeft
-        {
-            get { return (XLLineStyleEnum)Enum.Parse(typeof(XLLineStyleEnum), _style.BorderLeft.ToString()); }
-            set { _style.BorderLeft = ToNativeLine(value); }
-        }
-        public XLLineStyleEnum BorderRight
-        {
-            get { return (XLLineStyleEnum)Enum.Parse(typeof(XLLineStyleEnum), _style.BorderRight.ToString()); }
-            set { _style.BorderRight = ToNativeLine(value); }
-        }
-
-        private static NativeXLLineStyleEnum ToNativeLine(XLLineStyleEnum value)
-        {
-            return (NativeXLLineStyleEnum)Enum.Parse(typeof(NativeXLLineStyleEnum), value.ToString());
-        }
-    }
-
-    #endregion
-
-    #region Rows and columns
-
-    public sealed class XLRows
-    {
-        private readonly NativeXLRowCollection _rows;
-
-        internal XLRows(NativeXLRowCollection rows)
-        {
-            _rows = rows;
-        }
-
-        public int Count
-        {
-            get { return _rows.Count; }
-        }
-
-        public XLRow this[int index]
-        {
-            get
-            {
-                NativeXLRow row = _rows[index];
-                return row == null ? null : new XLRow(row);
-            }
-        }
-
-        public void Add()
-        {
-            _rows.Add();
-        }
-
-        //MoBetter API
-        public XLRow Insert(int index)
-        {
-            NativeXLRow row = _rows.Insert(index);
-            return row == null ? null : new XLRow(row);
-        }
-
-        public void RemoveAt(int index)
-        {
-            _rows.RemoveAt(index);
-        }
-
-        //MoBetterAPI
-        public XLRow Remove(XLRow row)
-        {
-            if (row == null)
-                throw new ArgumentNullException("row");
-
-            NativeXLRow removedRow = _rows.Remove(row.NativeRow);
-
-            return removedRow == null ? null : new XLRow(removedRow);
-        }
-    }
-
-    public sealed class XLRow
-    {
-        private readonly NativeXLRow _row;
-
-        internal XLRow(NativeXLRow row)
-        {
-            _row = row;
-        }
-
-        //MoBetterAPI
-        internal NativeXLRow NativeRow
-        {
-            get { return _row; }
-        }
-
-        public int Height
-        {
-            get { return _row.Height; }
-            set { _row.Height = value; }
-        }
-
-        public bool PageBreak
-        {
-            get { return _row.PageBreak; }
-            set { _row.PageBreak = value; }
-        }
-    }
-
-    public sealed class XLColumns
-    {
-        private readonly NativeXLColumnCollection _columns;
-
-        internal XLColumns(NativeXLColumnCollection columns)
-        {
-            _columns = columns;
-        }
-
-        //MoBetter API
-        public int Count
-        {
-            get { return _columns.Count; }
-        }
-
-        public XLColumn this[int index]
-        {
-            get
-            {
-                NativeXLColumn column = _columns[index];
-                return column == null ? null : new XLColumn(column);
-            }
-        }
-    }
-
-    public sealed class XLColumn
-    {
-        private readonly NativeXLColumn _column;
-
-        internal XLColumn(NativeXLColumn column)
-        {
-            _column = column;
-        }
-
-        public int Width
-        {
-            get { return _column.Width; }
-            set { _column.Width = value; }
-        }
-    }
-
-    #endregion
-
-    #region Print settings
-
-    public sealed class XLPrintSettings
-    {
-        private readonly NativeXLPrintSettings _settings;
-
-        internal XLPrintSettings(NativeXLPrintSettings settings)
-        {
-            _settings = settings;
-        }
-
-        public bool Landscape
-        {
-            get { return _settings.Landscape; }
-            set { _settings.Landscape = value; }
-        }
-
-        public double MarginBottom
-        {
-            get { return _settings.MarginBottom; }
-            set { _settings.MarginBottom = value; }
-        }
-
-        public double MarginFooter
-        {
-            get { return _settings.MarginFooter; }
-            set { _settings.MarginFooter = value; }
-        }
-
-        public double MarginLeft
-        {
-            get { return _settings.MarginLeft; }
-            set { _settings.MarginLeft = value; }
-        }
-
-        public double MarginRight
-        {
-            get { return _settings.MarginRight; }
-            set { _settings.MarginRight = value; }
-        }
-
-        public double MarginTop
-        {
-            get { return _settings.MarginTop; }
-            set { _settings.MarginTop = value; }
-        }
-
-        public double MarginHeader
-        {
-            get { return _settings.MarginHeader; }
-            set { _settings.MarginHeader = value; }
-        }
-
-        public bool ScaleWithDocument
-        {
-            get { return _settings.ScaleWithDocument; }
-            set { _settings.ScaleWithDocument = value; }
-        }
-
-        public PaperKind PaperKind
-        {
-            get { return _settings.PaperKind; }
-            set { _settings.PaperKind = value; }
-        }
-
-        public int FitPagesAcross
-        {
-            get { return _settings.FitPagesAcross; }
-            set { _settings.FitPagesAcross = value; }
-        }
-
-        public int FitPagesDown
-        {
-            get { return _settings.FitPagesDown; }
-            set { _settings.FitPagesDown = value; }
-        }
-    }
-
-    #endregion
-
-    #region Named ranges and cell ranges
-
-    public sealed class XLNamedRangeCollection : IEnumerable<XLNamedRange>
-    {
-        private readonly NativeXLNamedRangeCollection _ranges;
-        internal XLNamedRangeCollection(NativeXLNamedRangeCollection ranges) { _ranges = ranges; }
-        public int Count { get { return _ranges.Count; } }
-        public void Add(string name, XLCellRange range)
-        {
-            if (range == null) throw new ArgumentNullException("range");
-            _ranges.Add(name, range.NativeRange);
-        }
-        public IEnumerator<XLNamedRange> GetEnumerator()
-        {
-            foreach (NativeXLNamedRange range in _ranges)
-                yield return range == null ? null : new XLNamedRange(range);
-        }
-        IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
-    }
-
-    public sealed class XLNamedRange
-    {
-        private readonly NativeXLNamedRange _range;
-        internal XLNamedRange(NativeXLNamedRange range) { _range = range; }
-        public string Name { get { return _range.Name; } }
-        public bool IsEmpty { get { return _range.IsEmpty; } }
-        public XLCellRangeCollection CellRanges { get { return new XLCellRangeCollection(_range.CellRanges); } }
-    }
-
-    public sealed class XLCellRangeCollection : IEnumerable<XLCellRange>
-    {        
-        private readonly NativeXLCellRange[] _ranges;
-
-        // Mobetter API
-        private readonly NativeXLCellRangeCollection _collection;
-        
-        internal XLCellRangeCollection(NativeXLCellRange[] ranges)
-        {
-            _ranges = ranges ?? new NativeXLCellRange[0];
-            _collection = null;
-        }
-
-        // Mobetter API
-        internal XLCellRangeCollection(
-            NativeXLCellRangeCollection collection)
-        {
-            if (collection == null)
-                throw new ArgumentNullException("collection");
-
-            _collection = collection;
-            _ranges = null;
-        }
-
-        public int Count
-        {
-            get
-            {
-                return _collection != null
-                    ? _collection.Count
-                    : _ranges.Length;
-            }
-        }
-
-        public XLCellRange this[int index]
-        {
-            get
-            {
-                NativeXLCellRange range = _collection != null
-                    ? _collection[index]
-                    : _ranges[index];
-
-                return range == null ? null : new XLCellRange(range);
-            }
-        }
-
-        // Mobetter API
-        public XLCellRange Add(
-            int rowIndex,
-            int colIndex,
-            int rowCount,
-            int colCount)
-        {
-            if (_collection == null)
-            {
-                throw new NotSupportedException(
-                    "Adding ranges is supported only for worksheet merged cells.");
-            }
-
-            NativeXLCellRange range = _collection.Add(
-                rowIndex,
-                colIndex,
-                rowCount,
-                colCount);
-
-            return range == null ? null : new XLCellRange(range);
-        }
-
-        public IEnumerator<XLCellRange> GetEnumerator()
-        {
-            for (int i = 0; i < Count; i++)
-            {
-                yield return this[i];
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-    }
-
-    public sealed class XLCellRange
-    {
-        private readonly NativeXLCellRange _range;
-        internal NativeXLCellRange NativeRange { get { return _range; } }
-
-        public XLCellRange(int sheetFrom, int sheetTo, int rowFrom, int rowTo,
-            int columnFrom, int columnTo, XLReferenceType rowFromType,
-            XLReferenceType rowToType, XLReferenceType columnFromType,
-            XLReferenceType columnToType)
-        {
-            _range = new NativeXLCellRange(sheetFrom, sheetTo, rowFrom, rowTo,
-                columnFrom, columnTo, ToNativeReference(rowFromType),
-                ToNativeReference(rowToType), ToNativeReference(columnFromType),
-                ToNativeReference(columnToType));
-        }
-
-        internal XLCellRange(NativeXLCellRange range) { _range = range; }
-        public int ColumnTo { get { return _range.ColumnTo; } set { _range.ColumnTo = value; } }
-        public int RowTo { get { return _range.RowTo; } set { _range.RowTo = value; } }
-        public XLRangeType RangeType
-        {
-            set { _range.RangeType = (NativeXLRangeType)Enum.Parse(typeof(NativeXLRangeType), value.ToString()); }
-        }
-        private static NativeXLReferenceType ToNativeReference(XLReferenceType value)
-        {
-            return (NativeXLReferenceType)Enum.Parse(typeof(NativeXLReferenceType), value.ToString());
-        }
-    }
-
-    #endregion
+    None,
+    Thin,
+    Medium,
+    Dashed,
+    Dotted,
+    Thick,
+    Double,
+    Hair,
+    MediumDashed,
+    ThinDashDotted,
+    MediumDashDotted,
+    ThinDashDotDotted,
+    MediumDashDotDotted,
+    SlantedMediumDashDotted
 }
 
-//MoBetter API
-#region Conditional formatting
 
-public sealed class XLRange
+
+public void CopyFormula(
+    int sourceRow,
+    int sourceColumn,
+    int destinationRow,
+    int destinationColumn)
 {
-    private readonly NativeXLRange _range;
+    _sheet.CopyFormula(
+        sourceRow,
+        sourceColumn,
+        destinationRow,
+        destinationColumn);
+}
 
-    internal NativeXLRange NativeRange
+
+
+public int IndexOf(string sheetName)
+{
+    return _book.Sheets.IndexOf(sheetName);
+}
+
+
+
+
+public XLColumn Insert(int index)
+{
+    NativeXLColumn column = _columns.Insert(index);
+
+    return column == null ? null : new XLColumn(column);
+}
+
+public XLColumn RemoveAt(int index)
+{
+    NativeXLColumn column = _columns.RemoveAt(index);
+
+    return column == null ? null : new XLColumn(column);
+}
+
+
+
+public XLCell Clone()
+{
+    return new XLCell(_cell.Clone());
+}
+
+
+
+
+public object Value
+{
+    get
     {
-        get { return _range; }
+        object value = _cell.Value;
+
+        NativeXLPictureShape picture =
+            value as NativeXLPictureShape;
+
+        return picture == null
+            ? value
+            : new XLPictureShape(picture);
     }
-
-    public XLRange(int rowFirst, int colFirst, int rowLast, int colLast)
+    set
     {
-        _range = new NativeXLRange(
-            rowFirst,
-            colFirst,
-            rowLast,
-            colLast);
-    }
+        XLPictureShape picture = value as XLPictureShape;
 
-    internal XLRange(NativeXLRange range)
-    {
-        _range = range;
+        _cell.Value = picture == null
+            ? value
+            : (object)picture.NativeShape;
     }
 }
 
-public sealed class XLPatternFormatting
+
+
+
+public sealed class XLPictureShape
 {
-    private readonly NativeXLPatternFormatting _pattern;
+    private readonly NativeXLPictureShape _shape;
 
-    internal NativeXLPatternFormatting NativePattern
+    internal NativeXLPictureShape NativeShape
     {
-        get { return _pattern; }
+        get { return _shape; }
     }
 
-    public XLPatternFormatting()
+    public XLPictureShape(
+        Image image,
+        int x,
+        int y,
+        int width,
+        int height)
     {
-        _pattern = new NativeXLPatternFormatting();
+        if (image == null)
+            throw new ArgumentNullException("image");
+
+        _shape = new NativeXLPictureShape(
+            image,
+            x,
+            y,
+            width,
+            height);
     }
 
-    internal XLPatternFormatting(NativeXLPatternFormatting pattern)
+    internal XLPictureShape(NativeXLPictureShape shape)
     {
-        _pattern = pattern;
-    }
+        if (shape == null)
+            throw new ArgumentNullException("shape");
 
-    public Color BackColor
-    {
-        get { return _pattern.BackColor; }
-        set { _pattern.BackColor = value; }
-    }
-
-    public Color ForeColor
-    {
-        get { return _pattern.ForeColor; }
-        set { _pattern.ForeColor = value; }
+        _shape = shape;
     }
 }
 
-public sealed class XLConditionalFormattingRule
+
+
+public Color BorderColorBottom
 {
-    private readonly NativeXLConditionalFormattingRule _rule;
-
-    internal NativeXLConditionalFormattingRule NativeRule
-    {
-        get { return _rule; }
-    }
-
-    public XLConditionalFormattingRule()
-    {
-        _rule = new NativeXLConditionalFormattingRule();
-    }
-
-    internal XLConditionalFormattingRule(
-        NativeXLConditionalFormattingRule rule)
-    {
-        _rule = rule;
-    }
-
-    //MoBetter API
-    public XLConditionalFormattingType Type
-    {
-        get { return _rule.Type; }
-        set { _rule.Type = value; }
-    }
-
-    //MoBetter API
-    public XLConditionalFormattingOperator Operator
-    {
-        get { return _rule.Operator; }
-        set { _rule.Operator = value; }
-    }
-
-    public string FirstFormula
-    {
-        get { return _rule.FirstFormula; }
-        set { _rule.FirstFormula = value; }
-    }
-
-    public string SecondFormula
-    {
-        get { return _rule.SecondFormula; }
-        set { _rule.SecondFormula = value; }
-    }
-
-    public XLPatternFormatting Pattern
-    {
-        get
-        {
-            return _rule.Pattern == null
-                ? null
-                : new XLPatternFormatting(_rule.Pattern);
-        }
-        set
-        {
-            _rule.Pattern = value == null
-                ? null
-                : value.NativePattern;
-        }
-    }
+    get { return _style.BorderColorBottom; }
+    set { _style.BorderColorBottom = value; }
 }
 
-public sealed class XLConditionalFormattingRangeCollection
+public Color BorderColorTop
 {
-    private readonly NativeXLConditionalFormattingRangeCollection _ranges;
-
-    internal XLConditionalFormattingRangeCollection(
-        NativeXLConditionalFormattingRangeCollection ranges)
-    {
-        _ranges = ranges;
-    }
-
-    public int Count
-    {
-        get { return _ranges.Count; }
-    }
-
-    public void Add(XLRange range)
-    {
-        if (range == null)
-            throw new ArgumentNullException("range");
-
-        _ranges.Add(range.NativeRange);
-    }
+    get { return _style.BorderColorTop; }
+    set { _style.BorderColorTop = value; }
 }
 
-public sealed class XLConditionalFormattingRuleCollection
+
+
+
+public XLRow Clone()
 {
-    private readonly NativeXLConditionalFormattingRuleCollection _rules;
-
-    internal XLConditionalFormattingRuleCollection(
-        NativeXLConditionalFormattingRuleCollection rules)
-    {
-        _rules = rules;
-    }
-
-    public int Count
-    {
-        get { return _rules.Count; }
-    }
-
-    public XLConditionalFormattingRule this[int index]
-    {
-        get
-        {
-            NativeXLConditionalFormattingRule rule = _rules[index];
-
-            return rule == null
-                ? null
-                : new XLConditionalFormattingRule(rule);
-        }
-    }
-
-    public void Add(XLConditionalFormattingRule rule)
-    {
-        if (rule == null)
-            throw new ArgumentNullException("rule");
-
-        _rules.Add(rule.NativeRule);
-    }
+    return new XLRow(_row.Clone());
 }
 
-public sealed class XLConditionalFormatting
+
+
+public XLRow Insert(int index, XLRow row)
 {
-    private readonly NativeXLConditionalFormatting _formatting;
+    if (row == null)
+        throw new ArgumentNullException("row");
 
-    internal NativeXLConditionalFormatting NativeFormatting
-    {
-        get { return _formatting; }
-    }
+    NativeXLRow insertedRow = _rows.Insert(
+        index,
+        row.NativeRow);
 
-    public XLConditionalFormatting()
-    {
-        _formatting = new NativeXLConditionalFormatting();
-    }
-
-    internal XLConditionalFormatting(
-        NativeXLConditionalFormatting formatting)
-    {
-        _formatting = formatting;
-    }
-
-    public XLConditionalFormattingRangeCollection Ranges
-    {
-        get
-        {
-            return new XLConditionalFormattingRangeCollection(
-                _formatting.Ranges);
-        }
-    }
-
-    public XLConditionalFormattingRuleCollection Rules
-    {
-        get
-        {
-            return new XLConditionalFormattingRuleCollection(
-                _formatting.Rules);
-        }
-    }
+    return insertedRow == null
+        ? null
+        : new XLRow(insertedRow);
 }
 
-public sealed class XLConditionalFormattingCollection
+
+
+public XLCellRange Add(XLCellRange range)
 {
-    private readonly NativeXLConditionalFormattingCollection _formattings;
+    if (range == null)
+        throw new ArgumentNullException("range");
 
-    internal XLConditionalFormattingCollection(
-        NativeXLConditionalFormattingCollection formattings)
+    if (_collection == null)
     {
-        _formattings = formattings;
+        throw new NotSupportedException(
+            "Adding ranges is supported only for worksheet merged cells.");
     }
 
-    public int Count
-    {
-        get { return _formattings.Count; }
-    }
+    NativeXLCellRange addedRange =
+        _collection.Add(range.NativeRange);
 
-    public XLConditionalFormatting this[int index]
-    {
-        get
-        {
-            NativeXLConditionalFormatting formatting = _formattings[index];
-
-            return formatting == null
-                ? null
-                : new XLConditionalFormatting(formatting);
-        }
-    }
-
-    public void Add(XLConditionalFormatting formatting)
-    {
-        if (formatting == null)
-            throw new ArgumentNullException("formatting");
-
-        _formattings.Add(formatting.NativeFormatting);
-    }
+    return addedRange == null
+        ? null
+        : new XLCellRange(addedRange);
 }
 
-#endregion
+
+
+public XLCellRange(
+    int rowFrom,
+    int rowTo,
+    int columnFrom,
+    int columnTo)
+{
+    _range = new NativeXLCellRange(
+        rowFrom,
+        rowTo,
+        columnFrom,
+        columnTo);
+}
+
+
+
+public int RowFrom
+{
+    get { return _range.RowFrom; }
+}
+
+public int ColumnFrom
+{
+    get { return _range.ColumnFrom; }
+}
+
+public int RowCount
+{
+    get { return _range.RowCount; }
+}
+
+public int ColumnCount
+{
+    get { return _range.ColumnCount; }
+}
+
+
+
+
