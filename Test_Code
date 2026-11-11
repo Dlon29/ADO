@@ -102,3 +102,12 @@ namespace CAPS
 
     }
 }
+
+
+
+
+
+The type or namespace name 'RabbitMQAdminServiceClient' could not be found (are you missing a using directive or an assembly reference?)
+The name 'RabbitMQAdmin' does not exist in the current context
+The type or namespace name 'RabbitMQAdminServiceClient' could not be found (are you missing a using directive or an assembly reference?)
+The name 'RabbitMQAdmin' does not exist in the current context
