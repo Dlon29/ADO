@@ -1,33 +1,137 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using SMTBUSA.Messaging.Producer;
 
-// Add the RabbitMQAdmin namespace imports required by these types.
-// Use the actual namespaces from your existing references.
-
-namespace SMTBUSA.Messaging
+using RabbitMQ.Client;
+using Common.Logging;
+namespace SMTBUSA.Messaging.Producer
 {
-    public class RabbitMQMessagePublisher
+    public class MQProducer : MQBase
     {
-        public void PostMessage(
-            string logId,
-            string mqSection,
-            string mqId)
+        private static ILog _logger = LogManager.GetLogger(typeof(MQProducer));
+
+        #region Constructor
+        public MQProducer(string hostName, int portNumber, string userName, string passWord, string vHost) : base(hostName, portNumber, userName, passWord, vHost) 
         {
-            var rabbitMQAdminService =
-                RabbitMQAdmin.Client.ServiceProxyFactory.Instance
-                    .CreateRabbitMQAdminServiceProxy();
-
-            Dictionary<string, RabbitMQSettings> settings =
-                rabbitMQAdminService
-                    .GetAndInitializeRabbitMQSettingsListBySection(mqSection);
-
-            RabbitMQClient requestQueue =
-                new RabbitMQClient(settings[mqId]);
-
-            requestQueue.PostMQMessage(logId);
+            this.PostMessageRetry = 1;
+            this.Exchange_Type = ExchangeType.Direct;
         }
+        #endregion 
+
+        public int PostMessageRetry { get; set; }        
+
+        public void PostMQMessage(PostMsgRequest request)
+        {
+            if (request.ExchangeName == null || request.ExchangeName.Length == 0)
+            {
+                throw new ApplicationException("Exchange name is missing on the request.");
+            }
+            if (request.QueueName == null || request.QueueName.Length == 0)
+            {
+                throw new ApplicationException("Queue is missing on the request."); 
+            }
+
+            this.ExchangeName = request.ExchangeName;
+            this.QueueName = request.QueueName;
+            this.RoutingKey = request.RoutingKey;
+            
+            int retry = this.PostMessageRetry;
+
+            while (retry > 0)
+            {
+                try
+                {
+                    ConnectionFactory connectionFactory = new ConnectionFactory()
+                                                            {
+                                                                HostName = this.HostName,
+                                                                Port = this.Port,
+                                                                UserName = this.UserName,
+                                                                Password = this.Password,
+                                                                VirtualHost = this.VHost, 
+                                                                RequestedHeartbeat = new TimeSpan(0, 0, this.HeartBeat)
+                    };
+
+                    using (IConnection conn = connectionFactory.CreateConnection())
+                    {
+                        this.CreateDefaultDeadLetterQueue(conn);
+
+                        using (IModel channel = conn.CreateModel())
+                        {
+                            channel.ExchangeDeclare(this.ExchangeName, this.Exchange_Type, IsDurable, IsAutoDelete, null);
+                            channel.QueueDeclare(this.QueueName, this.IsDurable, this.IsExclusive, this.IsAutoDelete, RabbitMQArgumentsFactory.GetQueueArguments(this));
+                            channel.QueueBind(this.QueueName, this.ExchangeName, this.RoutingKey);
+                            byte[] msgBytes = Encoding.UTF8.GetBytes(request.Body.ToString());  //TODO: we should serialize the payload 
+                            IBasicProperties prop = channel.CreateBasicProperties();
+                            prop.DeliveryMode = Convert.ToByte(request.DeliveryMode);
+
+                            AppendCustomMessageProperties(request, prop);
+
+                            if (request.ContentType != null)
+                            {
+                                prop.ContentType = request.ContentType;
+                            }
+                            channel.BasicPublish(this.ExchangeName, this.RoutingKey, false, prop, msgBytes);
+                            channel.Close();
+                        }
+                        conn.Close();
+                    }
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    retry--;
+                    if ( retry == 0 ) throw ex;
+                }
+            }
+        }
+
+        private static void AppendCustomMessageProperties(PostMsgRequest request, IBasicProperties prop)
+        {
+            try
+            {
+                if (request.HeaderProperties != null)
+                {
+                    if (prop.Headers == null) { prop.Headers = new Dictionary<string,object>(); }
+                    List<string> keys = request.HeaderProperties.Keys.Cast<string>().ToList();
+                    keys.ForEach(key => prop.Headers.Add(key, request.HeaderProperties[key]));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw ex;
+            }
+        }
+
+
+        [Obsolete("To be deprecated. This has been moved to the RabbitMQClient class.")]
+        private void CreateDefaultDeadLetterQueue(IConnection conn)
+        {
+            if (!this.IsDurable)
+            {
+                return;
+            }
+
+            try
+            {
+                using (IModel deadLetterChannel = conn.CreateModel())
+                {
+                    deadLetterChannel.ExchangeDeclare(this.DeadLetterExchange, this.Exchange_Type, true, false, null);
+                    deadLetterChannel.QueueDeclare(this.DeadLetterQueue, this.IsDurable, false, false, null);
+                    deadLetterChannel.QueueBind(this.DeadLetterQueue, this.DeadLetterExchange, this.RoutingKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex);
+                throw ex;
+            }
+        }
+
     }
 }
-
 
 
 
@@ -38,28 +142,21 @@ namespace SMTBUSA.Messaging
 
 
 using System;
-using SMTBUSA.Messaging;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
-namespace SLIC.BusinessLogic.Messaging
+namespace SMTBUSA.Messaging.Producer
 {
-    public class MQHandler
+    public class PostMsgRequest
     {
-        public MQHandler()
-        {
-        }
-
-        public void PostMessage(
-            string pstrLogid,
-            string pstrMqSection,
-            string pstrMqId)
-        {
-            RabbitMQMessagePublisher publisher =
-                new RabbitMQMessagePublisher();
-
-            publisher.PostMessage(
-                pstrLogid,
-                pstrMqSection,
-                pstrMqId);
-        }
+        public string ExchangeName { get; set; }
+        public string QueueName { get; set; }
+        public object Body { get; set; }
+        public string ContentType { get; set; }
+        public DeliveryModeEnum DeliveryMode { get; set; }
+        public string RoutingKey { get; set; }
+        public IDictionary<object, object> HeaderProperties { get; set; }
     }
 }
+
