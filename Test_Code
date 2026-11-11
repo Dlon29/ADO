@@ -1,38 +1,104 @@
-
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Common.Logging;
+//using RabbitMQAdmin.Client;
+using SMTBUSA.Messaging;
 
-namespace SMTBUSA.Messaging
+namespace CAPS
 {
-    public class RabbitMQAdminMessagePublisher
+    public class MessageQueue
     {
-        public void PostMessage(
-            string pstrLogid,
-            string pstrMqSection,
-            string pstrMqId)
+        #region static readonly variables declarations
+        private const string rabbitMQSection = "giRabbitMQ";
+        private static RabbitMQClient _rabbitMQClientGIIn = null;
+        #endregion
+
+        #region Private Variables
+        private static ILog _logger = LogManager.GetLogger(typeof(MessageQueue));
+        #endregion
+
+        #region InitializeRabbitMQ service
+       /// <summary>
+        /// This method is used to intialize RabbitMQ admin service and test loop back method.
+       /// </summary>
+       /// <param name="sectionName"></param>
+       /// <param name="queueName"></param>
+       /// <returns></returns>
+        public static bool InitializeRabbitMQSettings(string sectionName, string queueName)
         {
-            var rabbitMQAdminService =
-                RabbitMQAdmin.Client.ServiceProxyFactory.Instance
-                    .CreateRabbitMQAdminServiceProxy();
+            bool isLoopBackSuccess_GI = false;
+            try
+            {
+                RabbitMQAdminServiceClient rbqAdminService = RabbitMQAdmin.Client.ServiceProxyFactory.Instance.CreateRabbitMQAdminServiceProxy();
+                List<RabbitMQSettings> rabbitMQSettingsList = rbqAdminService.GetAndInitializeRabbitMQSettingsListBySection(rabbitMQSection);
 
-            // Retrieve RabbitMQ settings as a List
-            List<RabbitMQSettings> ftpRabbitMQSettingsList =
-                rabbitMQAdminService
-                    .GetAndInitializeRabbitMQSettingsListBySection(
-                        pstrMqSection);
+                Dictionary<string, RabbitMQSettings> rabbitMQSettingsDict = rabbitMQSettingsList.ToDictionary(rbMQSettings => rbMQSettings.BindingID);
+                isLoopBackSuccess_GI = QueueLoopBackTest(rabbitMQSettingsDict[queueName]);
+            }
+            catch (Exception e)
+            {
+                _logger.Error("Error occurred in InitializeRabbitMQSettings - MessageQueue", e);
+                throw e;
+            }
 
-            // Convert List into Dictionary using BindingID as the key
-            Dictionary<string, RabbitMQSettings> ftpRabbitMQSettingsDict =
-                ftpRabbitMQSettingsList.ToDictionary(
-                    settings => settings.BindingID);
+            return isLoopBackSuccess_GI;
 
-            // Retrieve the required RabbitMQ configuration
-            RabbitMQClient requestQueue =
-                new RabbitMQClient(
-                    ftpRabbitMQSettingsDict[pstrMqId]);
-
-            // Publish the message
-            requestQueue.PostMQMessage(pstrLogid);
         }
+        #endregion
+
+        #region Queue Methods
+       /// <summary>
+        /// This method ckecks loopback method of RabbitMQ.
+       /// </summary>
+       /// <param name="objRabbitMQSettings"></param>
+       /// <returns></returns>
+        public static bool QueueLoopBackTest(RabbitMQSettings objRabbitMQSettings)
+        {
+            bool isChkSuccess = false;
+            try
+            {
+                HealthCheck queueCheck = new HealthCheck(objRabbitMQSettings.HostName, objRabbitMQSettings.PortNumber, objRabbitMQSettings.Username, objRabbitMQSettings.Password, objRabbitMQSettings.VHost);
+                queueCheck.ExchangeName = objRabbitMQSettings.ExchangeName;
+                queueCheck.QueueName = objRabbitMQSettings.QueueName;
+                isChkSuccess = queueCheck.LoopBack();
+
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("Error occurred in QueueLoopBackTest - MessageQueue", ex);
+                throw ex;
+            }
+            return isChkSuccess;
+        }
+
+        /// <summary>
+        /// This method posts GI message in TRACR GI queue.
+        /// </summary>
+        /// <param name="queueMessage"></param>
+        /// <param name="queueName"></param>
+        /// <returns></returns>
+        public static bool PostGIMessageInQueue(string queueMessage, string queueName)
+        {
+            bool isSuccess = false;
+            try
+            {
+                RabbitMQAdminServiceClient rbqAdminService = RabbitMQAdmin.Client.ServiceProxyFactory.Instance.CreateRabbitMQAdminServiceProxy();
+                List<RabbitMQSettings> rabbitMQSettingsList = rbqAdminService.GetAndInitializeRabbitMQSettingsListBySection(rabbitMQSection);
+
+                Dictionary<string, RabbitMQSettings> rabbitMQSettingsDict = rabbitMQSettingsList.ToDictionary(rbMQSettings => rbMQSettings.BindingID);
+                RabbitMQClient _rabbitMQClientGIIn = new RabbitMQClient(rabbitMQSettingsDict[queueName]);
+                _rabbitMQClientGIIn.PostMQMessage(queueMessage);
+                isSuccess = true;
+            }
+            catch (Exception e)
+            {
+                _logger.Error("Error occurred in PostGIMessageInQueue - MessageQueue", e);
+                throw e;
+            }
+            return isSuccess;
+        }        
+        #endregion
+
     }
 }
