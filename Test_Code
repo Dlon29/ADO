@@ -1,225 +1,38 @@
-using System;
+
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Runtime.Serialization;
-using SMTBUSA.Messaging.Configuration;
-using System.Configuration;
 
 namespace SMTBUSA.Messaging
 {
-    [DataContract]
-    public class RabbitMQSettings
+    public class RabbitMQAdminMessagePublisher
     {
-        [DataMember]
-        public string BindingID { get; set; }
-
-        #region Connection Properties
-        [DataMember]
-        public string HostName { get; set; }
-
-        [DataMember]
-        public int PortNumber { get; set; }
-
-        [DataMember]
-        public string Password { get; set; }
-
-        [DataMember]
-        public string Username { get; set; }
-
-        [DataMember]
-        public string VHost { get; set; }
-        #endregion 
-
-        #region Exchange Properties
-        [DataMember]
-        public string ExchangeName { get; set; }
-
-        [DataMember]
-        public string ExchangeType { get; set; }
-
-        [DataMember]
-        public bool IsDurable { get; set; }
-
-        [DataMember]
-        public bool IsAutoDelete { get; set; }
-        #endregion 
-
-        #region Queue Properties
-        [DataMember]
-        public string QueueName { get; set; }
-
-        [DataMember]
-        public string RoutingKey { get; set; }
-
-        [DataMember]
-        public bool IsExclusive { get; set; }
-
-        [DataMember]
-        public int QueueTimeout { get; set; }
-
-        [DataMember]
-        public int PollingInterval { get; set; }
-        #endregion
-
-        #region Constructor
-        public RabbitMQSettings()
+        public void PostMessage(
+            string pstrLogid,
+            string pstrMqSection,
+            string pstrMqId)
         {
-            this.ExchangeType = "direct";
+            var rabbitMQAdminService =
+                RabbitMQAdmin.Client.ServiceProxyFactory.Instance
+                    .CreateRabbitMQAdminServiceProxy();
+
+            // Retrieve RabbitMQ settings as a List
+            List<RabbitMQSettings> ftpRabbitMQSettingsList =
+                rabbitMQAdminService
+                    .GetAndInitializeRabbitMQSettingsListBySection(
+                        pstrMqSection);
+
+            // Convert List into Dictionary using BindingID as the key
+            Dictionary<string, RabbitMQSettings> ftpRabbitMQSettingsDict =
+                ftpRabbitMQSettingsList.ToDictionary(
+                    settings => settings.BindingID);
+
+            // Retrieve the required RabbitMQ configuration
+            RabbitMQClient requestQueue =
+                new RabbitMQClient(
+                    ftpRabbitMQSettingsDict[pstrMqId]);
+
+            // Publish the message
+            requestQueue.PostMQMessage(pstrLogid);
         }
-        #endregion 
-
-        #region Factory Methods
-        public static RabbitMQSettings Create(RabbitMQBinding rabbitMQBinding, RabbitMQConfigurationSection configurationSection)
-        {
-            try
-            {
-                RabbitMQSettings rabbitMQSettings = null;
-
-                RabbitMQConnection rabbitMQConnection = configurationSection.Connections[rabbitMQBinding.Connection] as RabbitMQConnection;
-                if (rabbitMQConnection == null)
-                {
-                    throw new KeyNotFoundException(string.Format("Unable to locate RabbitMQ connection. Connection: {0}", rabbitMQBinding.Connection));
-                }
-
-                RabbitMQExchange rabbitMQExchange = configurationSection.Exchanges[rabbitMQBinding.Exchange] as RabbitMQExchange;
-                if (rabbitMQExchange == null)
-                {
-                    throw new KeyNotFoundException(string.Format("Unable to locate RabbitMQ exchange. Exchange: {0}", rabbitMQBinding.Exchange));
-                }
-
-                RabbitMQQueue rabbitMQQueue = configurationSection.Queues[rabbitMQBinding.Queue] as RabbitMQQueue;
-                if (rabbitMQQueue == null)
-                {
-                    throw new KeyNotFoundException(string.Format("Unable to locate RabbitMQ queue. Queue: {0}", rabbitMQBinding.Queue));
-                }
-
-                rabbitMQSettings = new RabbitMQSettings()
-                {
-                    BindingID = rabbitMQBinding.BindingID,
-                    HostName = rabbitMQConnection.Host,
-                    PortNumber = rabbitMQConnection.Port,
-                    VHost = rabbitMQConnection.VHost,
-                    Username = rabbitMQConnection.User,
-                    Password = rabbitMQConnection.Password,
-                    ExchangeName = rabbitMQExchange.Name,
-                    ExchangeType = rabbitMQExchange.Type,
-                    IsDurable = rabbitMQExchange.IsDurable,
-                    IsAutoDelete = rabbitMQExchange.IsAutoDelete,
-                    QueueName = rabbitMQQueue.Name,
-                    QueueTimeout = rabbitMQQueue.QueueTimeout,
-                    PollingInterval = rabbitMQQueue.PollingInterval, 
-                    IsExclusive = rabbitMQQueue.IsExclusive,
-                    RoutingKey = rabbitMQBinding.RoutingKey
-                };
-
-                return rabbitMQSettings;
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-        }
-
-        public static RabbitMQSettings Create(string bindingID, RabbitMQConfigurationSection configurationSection)
-        {
-            try
-            {
-                RabbitMQBinding rabbitMQBinding = configurationSection.Bindings[bindingID] as RabbitMQBinding;
-                if (rabbitMQBinding == null)
-                {
-                    throw new KeyNotFoundException( string.Format("Unable to locate specified binding. BindingID: {0}" , bindingID));
-                }
-
-                RabbitMQSettings rabbitMQSettings = Create(rabbitMQBinding, configurationSection);
-                return rabbitMQSettings;
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-        }
-
-        public static RabbitMQSettings CreateByDeadLetterBindingID(string bindingID, RabbitMQConfigurationSection configurationSection)
-        {
-            try
-            {
-                RabbitMQBinding rabbitMQBinding = configurationSection.DeadLetters[bindingID] as RabbitMQBinding;
-                if (rabbitMQBinding == null)
-                {
-                    throw new KeyNotFoundException(string.Format("Unable to locate specified deadletter binding. BindingID: {0}", bindingID));
-                }
-
-                RabbitMQSettings rabbitMQSettings = Create(rabbitMQBinding, configurationSection);
-                return rabbitMQSettings;
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-        }
-
-
-        public static List<RabbitMQSettings> CreateList(string sectionName)
-        {
-            try
-            {
-                RabbitMQConfigurationSection configurationSection = ConfigurationManager.GetSection(sectionName) as RabbitMQConfigurationSection;
-                if (configurationSection == null) { throw new NullReferenceException(string.Format("Unable to parse configuration section. SectionName: {0}", sectionName)); }
-
-                List<RabbitMQBinding> bindings = configurationSection.Bindings.Cast<RabbitMQBinding>().ToList();
-                List<RabbitMQSettings> rabbitMQSettingsList = bindings
-                                        .Select((RabbitMQBinding rabbitMQBinding) => RabbitMQSettings.Create(rabbitMQBinding.BindingID, configurationSection))
-                                        .ToList();
-                return rabbitMQSettingsList;
-            }
-            catch
-            {
-                throw;
-            }
-        }
-
-        public static List<RabbitMQSettings> CreateListForDeadLetters(string sectionName)
-        {
-            try
-            {
-                RabbitMQConfigurationSection configurationSection = ConfigurationManager.GetSection(sectionName) as RabbitMQConfigurationSection;
-                if (configurationSection == null) { throw new NullReferenceException(string.Format("Unable to parse configuration section. SectionName: {0}", sectionName)); }
-
-                List<RabbitMQBinding> bindings = configurationSection.DeadLetters.Cast<RabbitMQBinding>().ToList();
-                List<RabbitMQSettings> rabbitMQSettingsList = bindings
-                                        .Select((RabbitMQBinding rabbitMQBinding) => RabbitMQSettings.CreateByDeadLetterBindingID(rabbitMQBinding.BindingID, configurationSection))
-                                        .ToList();
-                return rabbitMQSettingsList;
-            }
-            catch
-            {
-                throw;
-            }
-        }
-
-
-        public static Dictionary<string, RabbitMQSettings> CreateDictionary(string sectionName)
-        {
-            try
-            {
-                RabbitMQConfigurationSection configurationSection = ConfigurationManager.GetSection(sectionName) as RabbitMQConfigurationSection;
-
-                if (configurationSection == null) { throw new NullReferenceException(string.Format("Unable to parse configuration section. SectionName: {0}", sectionName)); }
-
-                Dictionary<string, RabbitMQSettings> rabbitMQDictionary = new Dictionary<string, RabbitMQSettings>();
-                List <RabbitMQBinding> bindings = configurationSection.Bindings.Cast<RabbitMQBinding>().ToList();
-                rabbitMQDictionary = bindings
-                                        .Select((RabbitMQBinding rabbitMQBinding) => RabbitMQSettings.Create(rabbitMQBinding.BindingID, configurationSection))
-                                        .ToDictionary((RabbitMQSettings rabbitMQSettings) => rabbitMQSettings.BindingID);
-                return rabbitMQDictionary;
-            }
-            catch 
-            {
-                throw;
-            }
-
-        }
-        #endregion 
     }
 }
