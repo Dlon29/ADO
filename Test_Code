@@ -1,74 +1,65 @@
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLColumns' does not contain a definition for 'RemoveAt' and no accessible extension method 'RemoveAt' accepting a first argument of type 'XLColumns' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLSheets' does not contain a definition for 'IndexOf' and no accessible extension method 'IndexOf' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLStyle' does not contain a definition for 'BorderColorBottom' and no accessible extension method 'BorderColorBottom' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
-'XLStyle' does not contain a definition for 'BorderColorTop' and no accessible extension method 'BorderColorTop' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-There is no argument given that corresponds to the required parameter 'columnFrom' of 'XLCellRange.XLCellRange(int, int, int, int, int, int, XLReferenceType, XLReferenceType, XLReferenceType, XLReferenceType)'
-There is no argument given that corresponds to the required parameter 'colIndex' of 'XLCellRangeCollection.Add(int, int, int, int)'
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLLineStyleEnum' does not contain a definition for 'Medium'
-'XLLineStyleEnum' does not contain a definition for 'Dashed'
-'XLLineStyleEnum' does not contain a definition for 'Dotted'
-'XLLineStyleEnum' does not contain a definition for 'Thick'
-'XLLineStyleEnum' does not contain a definition for 'Double'
-'XLLineStyleEnum' does not contain a definition for 'Hair'
-'XLLineStyleEnum' does not contain a definition for 'MediumDashed'
-'XLLineStyleEnum' does not contain a definition for 'ThinDashDotted'
-'XLLineStyleEnum' does not contain a definition for 'MediumDashDotted'
-'XLLineStyleEnum' does not contain a definition for 'ThinDashDotDotted'
-'XLLineStyleEnum' does not contain a definition for 'MediumDashDotDotted'
-'XLLineStyleEnum' does not contain a definition for 'SlantedMediumDashDotted'
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-'XLStyle' does not contain a definition for 'BorderColorBottom' and no accessible extension method 'BorderColorBottom' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
-'XLStyle' does not contain a definition for 'BorderColorTop' and no accessible extension method 'BorderColorTop' accepting a first argument of type 'XLStyle' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-There is no argument given that corresponds to the required parameter 'columnFrom' of 'XLCellRange.XLCellRange(int, int, int, int, int, int, XLReferenceType, XLReferenceType, XLReferenceType, XLReferenceType)'
-There is no argument given that corresponds to the required parameter 'colIndex' of 'XLCellRangeCollection.Add(int, int, int, int)'
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLSheets' does not contain a definition for 'IndexOf' and no accessible extension method 'IndexOf' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'RowFrom' and no accessible extension method 'RowFrom' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'RowFrom' and no accessible extension method 'RowFrom' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'RowFrom' and no accessible extension method 'RowFrom' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'ColumnFrom' and no accessible extension method 'ColumnFrom' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'RowCount' and no accessible extension method 'RowCount' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLCellRange' does not contain a definition for 'ColumnCount' and no accessible extension method 'ColumnCount' accepting a first argument of type 'XLCellRange' could be found (are you missing a using directive or an assembly reference?)
-'XLSheets' does not contain a definition for 'IndexOf' and no accessible extension method 'IndexOf' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLSheets' does not contain a definition for 'IndexOf' and no accessible extension method 'IndexOf' accepting a first argument of type 'XLSheets' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLCell' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLCell' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-'XLRow' does not contain a definition for 'Clone' and no accessible extension method 'Clone' accepting a first argument of type 'XLRow' could be found (are you missing a using directive or an assembly reference?)
-'XLSheet' does not contain a definition for 'CopyFormula' and no accessible extension method 'CopyFormula' accepting a first argument of type 'XLSheet' could be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
-The type or namespace name 'XLPictureShape' could not be found (are you missing a using directive or an assembly reference?)
+using System.Collections.Generic;
+
+// Add the RabbitMQAdmin namespace imports required by these types.
+// Use the actual namespaces from your existing references.
+
+namespace SMTBUSA.Messaging
+{
+    public class RabbitMQMessagePublisher
+    {
+        public void PostMessage(
+            string logId,
+            string mqSection,
+            string mqId)
+        {
+            var rabbitMQAdminService =
+                RabbitMQAdmin.Client.ServiceProxyFactory.Instance
+                    .CreateRabbitMQAdminServiceProxy();
+
+            Dictionary<string, RabbitMQSettings> settings =
+                rabbitMQAdminService
+                    .GetAndInitializeRabbitMQSettingsListBySection(mqSection);
+
+            RabbitMQClient requestQueue =
+                new RabbitMQClient(settings[mqId]);
+
+            requestQueue.PostMQMessage(logId);
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+using System;
+using SMTBUSA.Messaging;
+
+namespace SLIC.BusinessLogic.Messaging
+{
+    public class MQHandler
+    {
+        public MQHandler()
+        {
+        }
+
+        public void PostMessage(
+            string pstrLogid,
+            string pstrMqSection,
+            string pstrMqId)
+        {
+            RabbitMQMessagePublisher publisher =
+                new RabbitMQMessagePublisher();
+
+            publisher.PostMessage(
+                pstrLogid,
+                pstrMqSection,
+                pstrMqId);
+        }
+    }
+}
