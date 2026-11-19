@@ -1,33 +1,145 @@
-<?xml version="1.0" encoding="utf-8"?>
-<document>
-  <activerangestart row="5" column="1" tab="1" step="1"/>
-  <target id="CUSIP" index="0" />
-  <target id="SEDOL" index="1" />
-  <target id="ISIN" index="2" />
-  <target id="TickSymb" index="3" />
-  <target id="DivYield" index="4" />
-  <target id="NextExDate" index="5" />
-  <target id="NextRecDate" index="6" />
-  <target id="DivRate" index="7" />
-  <target id="Price" index="8" />
-  <target id="REBFEE" index="9" />
-  <target id="FaceAmount" index="10" />
-  <target id="ProductCategory" index="11" />
-  <target id="ProductCategoryLoanType" index="12" />
-  <target id="ProductCategoryLoanDuration" index="13" />
-  <target id="STTDivRate" index="14" />
-  <target id="DesiredSTTLevel" index="15" />
-  <target id="STTLevel" index="16" />
-  <target id="SettlementDate" index="17" />
-  <target id="STTEndDate" index="18" />
-  <target id="ScripEndDate" index="19" />
-  <target id="TermDate" index="20" />
-  <target id="Remarks" index="21" />
-  <target id="ResetDate" index="22" />
-  <target id="GotoRate" index="23" />
-  <target id="GotoTermDate" index="24" />
-  <target id="GotoRemarks" index="25" />
-  <target id="GotoProductCategory" index="26" />
-  <target id="GotoProductCategoryLoanType" index="27" />
-  <target id="GotoProductCategoryLoanDuration" index="28" />
-</document>
+private static void EnsureIsEquilendColumn(DataTable dt)
+{
+    if (dt == null || dt.Columns.Contains("IsEquilend")) return;
+    dt.Columns.Add(new DataColumn("IsEquilend", typeof(string)));
+    foreach (DataRow r in dt.Rows) r["IsEquilend"] = "N";
+}
+
+private static string ToEquilendId(object isEquilend)
+{
+    return Convert.ToString(isEquilend).Trim().ToUpper() == "Y" ? "1" : "0";
+}
+
+
+
+
+
+if (this.vwSelectedBaskets == null)
+{
+    DataTable dtClone = objDS.Tables[0].Clone();
+    EnsureIsEquilendColumn(dtClone);
+    this.vwSelectedBaskets = dtClone;
+}
+
+
+
+
+
+
+EnsureIsEquilendColumn(objDS.Tables[3]);   // OPEN/COPY
+this.vwSelectedBaskets = objDS.Tables[3];
+
+EnsureIsEquilendColumn(dt);                // UPLOAD and cancelled loans
+this.vwSelectedBaskets = dt;
+
+
+
+
+
+
+sb.Append(dr["GotoProductCategoryLoanDuration"]);
+sb.Append("|");
+sb.Append(dr["IsEquilend"]);       // index 30
+sb.Append(",");
+
+
+
+
+
+
+
+
+XmlDoc.Append("IsEquilend=");
+XmlDoc.Append("\"");
+XmlDoc.Append(innerList.Length > 30 ? innerList[30].Trim() : string.Empty);
+XmlDoc.Append("\" ");
+
+
+
+
+
+
+
+drNew["IsEquilend"] = "N";
+
+
+
+
+
+
+
+DropDownList ddlIsEquilend = (DropDownList)e.Item.Cells[(int)enumgrdSelectedBasketMapping.IsEquilend].FindControl("ddlIsEquilend");
+string isEq = Convert.ToString(((DataRowView)e.Item.DataItem).Row["IsEquilend"]).Trim().ToUpper();
+ddlIsEquilend.SelectedValue = (isEq == "Y") ? "Y" : "N";
+
+
+
+
+
+
+else if (cboID == "ddlIsEquilend")
+{
+    DropDownList ddlIsEquilend = (DropDownList)sender;
+    DataGridItem dgi = ddlIsEquilend.Parent.Parent as DataGridItem;
+
+    if (dgi != null && this.vwSelectedBaskets != null)
+    {
+        DataTable dtSelectedBaskets = this.vwSelectedBaskets as DataTable;
+        dtSelectedBaskets.Rows[dgi.ItemIndex]["IsEquilend"] = ddlIsEquilend.SelectedValue;
+        dtSelectedBaskets.AcceptChanges();
+        this.vwSelectedBaskets = dtSelectedBaskets;
+    }
+    ResetControl(CONTROL_EVENT_CHANGE);
+}
+
+
+
+
+
+
+
+
+DropDownList ddlIsEquilend = (DropDownList)dgi.FindControl("ddlIsEquilend");
+dt.Rows[dgi.ItemIndex]["IsEquilend"] = ddlIsEquilend.SelectedValue;
+
+
+
+
+
+
+
+
+// 1. with the other FindControl lines in the row loop
+DropDownList ddlIsEquilend = (DropDownList)dgi.Cells[(int)enumgrdSelectedBasketMapping.IsEquilend].FindControl("ddlIsEquilend");
+
+// 2. in the attribute loop, after the "IsPrePay" else-if
+else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "IsEquilend")
+{
+    XmlAttribute att = doc.CreateAttribute("IsEquilend");
+    att.Value = ddlIsEquilend.SelectedValue;
+    node.Attributes.Append(att);
+}
+
+// 3. in the first-row branch, after the "IsPrePay" line
+doc.DocumentElement.ChildNodes[0].Attributes["IsEquilend"].Value = ddlIsEquilend.SelectedValue;
+
+
+
+
+
+
+// in the attribute loop, after the "IsPrePay" else-if
+else if (doc.DocumentElement.ChildNodes[iXmlRowCount - 1].Attributes[i].Name == "EquilendId")
+{
+    XmlAttribute att = doc.CreateAttribute("EquilendId");
+    att.Value = ToEquilendId(drBasket[0]["IsEquilend"]);
+    node.Attributes.Append(att);
+}
+
+// in the first-row branch, after the "IsPrePay" line
+doc.DocumentElement.ChildNodes[0].Attributes["EquilendId"].Value = ToEquilendId(drBasket[0]["IsEquilend"]);
+
+
+
+
+
