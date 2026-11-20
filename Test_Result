@@ -1,34 +1,836 @@
-<?xml version="1.0" encoding="utf-8"?>
-<document>
-  <activerangestart row="5" column="1" tab="1" step="1"/>
-  <target id="CUSIP" index="0" />
-  <target id="SEDOL" index="1" />
-  <target id="ISIN" index="2" />
-  <target id="TickSymb" index="3" />
-  <target id="DivYield" index="4" />
-  <target id="NextExDate" index="5" />
-  <target id="NextRecDate" index="6" />
-  <target id="DivRate" index="7" />
-  <target id="Price" index="8" />
-  <target id="REBFEE" index="9" />
-  <target id="FaceAmount" index="10" />
-  <target id="ProductCategory" index="11" />
-  <target id="ProductCategoryLoanType" index="12" />
-  <target id="ProductCategoryLoanDuration" index="13" />
-  <target id="STTDivRate" index="14" />
-  <target id="DesiredSTTLevel" index="15" />
-  <target id="STTLevel" index="16" />
-  <target id="SettlementDate" index="17" />
-  <target id="STTEndDate" index="18" />
-  <target id="ScripEndDate" index="19" />
-  <target id="TermDate" index="20" />
-  <target id="Remarks" index="21" />
-  <target id="ResetDate" index="22" />
-  <target id="GotoRate" index="23" />
-  <target id="GotoTermDate" index="24" />
-  <target id="GotoRemarks" index="25" />
-  <target id="GotoProductCategory" index="26" />
-  <target id="GotoProductCategoryLoanType" index="27" />
-  <target id="GotoProductCategoryLoanDuration" index="28" />
-  <target id="IsEquilend" index="29" />
-</document>
+using System;
+using System.IO;
+using System.Xml;
+using System.Collections;
+
+using STBUSA.Excel.Util;
+using STBUSA.Excel.Util.Wrapper;
+using System.Data;
+using Common.Logging;
+
+namespace Lava.ParserTemplates
+{
+    /// <summary>
+    /// Summary description for SaleRecon.
+    /// </summary>
+    public class BasketConfigurationTemplate : MSExcelFileParser
+    {
+        #region Variables
+        private ILog log = LogManager.GetLogger(typeof(BasketConfigurationTemplate));
+
+        #region Error Logging variable declaration
+        private string ModuleName = "Corporate Action Notification Report";
+        private string MethodName = "";
+        private string ErrorMessageToLog = Common.GetMessage("Common", "ErrorMessageToLog");
+        #endregion 
+        #endregion
+
+        #region Methods
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="filePath"></param>
+        public BasketConfigurationTemplate(string filePath)
+            : base(filePath)
+        {
+        }
+
+        /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="fileDesc"></param>
+        public BasketConfigurationTemplate(ref FileInfo fileDesc)
+            : base(ref fileDesc)
+        {
+        }
+
+        /// <summary>
+        /// This method will parse the file
+        /// </summary>
+        public override void Parse()
+        {
+            MethodName = "Parse()";
+
+            try
+            {
+                base.Parse();
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Exc.Message);
+            }
+
+
+            int count = this._xmlParseTmpl.DocumentElement.ChildNodes.Count;
+            int activerow = 0, activecolumn = 0, tab = 0, step = 0;
+            int[] column = new int[count - 1];
+            Hashtable ht = new Hashtable();
+
+            try
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    XmlNode node = _xmlParseTmpl.DocumentElement.ChildNodes[i];
+                    switch (node.Name)
+                    {
+                        case "activerangestart":
+                            activerow = System.Convert.ToInt32(node.Attributes["row"].Value);
+                            activecolumn = System.Convert.ToInt32(node.Attributes["column"].Value);
+                            tab = System.Convert.ToInt32(node.Attributes["tab"].Value);
+                            step = System.Convert.ToInt32(node.Attributes["step"].Value);
+                            break;
+                        case "target":
+                            if (node.Attributes.Count <= 2)
+                            {
+                                ht.Add(node.Attributes["id"].Value, new Hashtable());
+                                ((Hashtable)ht[node.Attributes["id"].Value]).Add("index", System.Convert.ToInt32(node.Attributes["index"].Value));
+                            }
+                            else
+                            {
+                                ht.Add(node.Attributes["id"].Value, new Hashtable());
+                                ((Hashtable)ht[node.Attributes["id"].Value]).Add("index", System.Convert.ToInt32(node.Attributes["index"].Value));
+                                ((Hashtable)ht[node.Attributes["id"].Value]).Add("filter", node.Attributes["filter"].Value);
+                            }
+                            //column[index++] = System.Convert.ToInt32(node.Attributes["index"].Value);
+                            break;
+                    }
+                }
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Common.GetMessage("Common", "FailedToParseTemplate"));
+            }
+
+
+            object[] record;
+
+            try
+            {
+                _xmlDataOutput = new XmlTextWriter(base.OutputFile, System.Text.Encoding.UTF8);
+
+                _dtDataOutput = new DataTable();
+                _dtDataOutput.Columns.Add("CUSIP");
+                _dtDataOutput.Columns.Add("SEDOL");
+                _dtDataOutput.Columns.Add("ISIN");
+                _dtDataOutput.Columns.Add("TickSymb");
+                _dtDataOutput.Columns.Add("DivYield");
+                _dtDataOutput.Columns.Add("NextExDate");
+                _dtDataOutput.Columns.Add("NextRecDate");
+                _dtDataOutput.Columns.Add("DivRate");
+                _dtDataOutput.Columns.Add("Price");
+                _dtDataOutput.Columns.Add("REBFEE");
+                _dtDataOutput.Columns.Add("FaceAmount");
+                _dtDataOutput.Columns.Add("ProductCategory");
+                _dtDataOutput.Columns.Add("ProductCategoryLoanType");
+                _dtDataOutput.Columns.Add("ProductCategoryLoanDuration");
+                _dtDataOutput.Columns.Add("STTDivRate");
+                _dtDataOutput.Columns.Add("DesiredSTTLevel");
+                _dtDataOutput.Columns.Add("STTLevel");
+                _dtDataOutput.Columns.Add("SettlementDate");
+                _dtDataOutput.Columns.Add("AsOfDate");
+                _dtDataOutput.Columns.Add("STTEndDate");
+                _dtDataOutput.Columns.Add("ScripEndDate");
+                _dtDataOutput.Columns.Add("TermDate");
+                _dtDataOutput.Columns.Add("Remarks");
+                _dtDataOutput.Columns.Add("ResetDate");
+                _dtDataOutput.Columns.Add("GotoRate");
+                _dtDataOutput.Columns.Add("GotoTermDate");
+                _dtDataOutput.Columns.Add("GotoRemarks");
+                _dtDataOutput.Columns.Add("GotoProductCategory");
+                _dtDataOutput.Columns.Add("GotoProductCategoryLoanType");
+                _dtDataOutput.Columns.Add("GotoProductCategoryLoanDuration");
+
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Common.GetMessage("Common", "FailedToCreateOPFile"));
+            }
+
+            try
+            {
+                _xmlDataOutput.WriteStartDocument(true);
+                _xmlDataOutput.WriteStartElement("data");
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Common.GetMessage("Common", "FailedToWriteOPFile"));
+            }
+
+            WorkSheet w = null;
+            try
+            {
+                w = base.WorkBook.Sheets[tab];
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Common.GetMessage("Common", "FailedToReadFile"));
+            }
+
+            Range r = null, r1 = null;
+            DateTime dtValidDate = DateTime.Now;
+            Decimal dcValidNbr = Decimal.Zero;
+
+            try
+            {
+                //for (r1 = w.Cells[activerow, activecolumn + 1]; r1.Self != null && r1.Text.ToString().Trim() != ""; r1 = w.Cells[activerow += step, activecolumn + 1])
+                for (r1 = w.Cells[activerow, activecolumn]; r1.Self != null; r1 = w.Cells[activerow += step, activecolumn])
+                {
+                    record = new object[31];
+                    record[0] = true;
+
+                    foreach (object k in ht.Keys)
+                    {
+                        if (((Hashtable)ht[k]).Keys.Count <= 1)
+                        {
+                            r = w.Cells[activerow, activecolumn + Convert.ToInt32(((Hashtable)ht[k])["index"])];
+                            switch (k.ToString())
+                            {
+                                case "CUSIP":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[1] = r.Text.ToString().Trim();
+                                    break;
+                                case "SEDOL":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[2] = r.Text.ToString().Trim();
+                                    break;
+                                case "ISIN":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[3] = r.Text.ToString().Trim();
+                                    break;
+                                case "TickSymb":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[4] = r.Text.ToString().Trim();
+                                    break;
+                                case "DivYield":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[5] = r.Text.ToString().Trim();
+                                    else
+                                        record[5] = string.Empty;
+                                    break;
+                                case "NextExDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[6] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[6] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[6] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[6] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[6] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+                                case "NextRecDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[7] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[7] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[7] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[7] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[7] = string.Empty; // Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+                                case "DivRate":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[8] = r.Text.ToString().Trim();
+                                    else
+                                        record[8] = string.Empty;
+                                    break;
+                                case "Price":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[9] = r.Text.ToString().Trim();
+                                    else
+                                        record[9] = string.Empty;
+                                    break;
+                                case "REBFEE":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[10] = r.Text.ToString().Trim();
+                                    else
+                                        record[10] = string.Empty;
+                                    break;
+                                case "FaceAmount":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[11] = r.Text.ToString().Trim();
+                                    else
+                                        record[11] = string.Empty;
+                                    break;
+                                case "ProductCategory":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[12] = r.Text.ToString().Trim();
+                                    break;
+                                case "ProductCategoryLoanType":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[13] = r.Text.ToString().Trim();
+                                    break;
+                                case "ProductCategoryLoanDuration":
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[14] = r.Text.ToString().Trim();
+                                    break;
+                                case "STTDivRate":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[15] = r.Text.ToString().Trim();
+                                    else
+                                        record[15] = string.Empty;
+                                    break;
+                                case "DesiredSTTLevel":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[16] = r.Text.ToString().Trim();
+                                    else
+                                        record[16] = string.Empty;
+                                    break;
+                                case "STTLevel":
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[17] = r.Text.ToString().Trim();
+                                    else
+                                        record[17] = string.Empty;
+                                    break;
+                                case "SettlementDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[18] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[18] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[18] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[18] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[18] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "STTEndDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[20] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[20] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[20] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[20] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[20] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "ScripEndDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[21] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[21] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[21] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[21] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[21] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "TermDate":
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[22] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[22] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[22] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[22] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[22] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "Remarks":
+                                    if (r.Self == null)
+                                    {
+                                        record[23] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[23] = r.Text.ToString().Trim();
+                                    break;
+
+                                case "ResetDate":
+                                    if (r.Self == null)
+                                    {
+                                        record[24] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[24] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[24] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[24] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[24] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[24] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "GotoRate":
+                                    if (r.Self == null)
+                                    {
+                                        record[25] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Number);
+                                    if (Decimal.TryParse(r.Text.ToString().Trim(), out dcValidNbr))
+                                        record[25] = r.Text.ToString().Trim();
+                                    else
+                                        record[25] = string.Empty;
+                                    break;
+
+                                case "GotoTermDate":
+                                    if (r.Self == null)
+                                    {
+                                        record[26] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Date);
+                                    if (r.Text.ToString().Trim().Length > 0)
+                                    {
+                                        switch (r.Text.ToString().Trim().Length)
+                                        {
+                                            case 8:
+                                                if (r.Text.ToString().IndexOf("/") == -1)
+                                                {
+                                                    string date = r.Text.ToString().Trim().Substring(4, 2) + @"/" + r.Text.ToString().Trim().Substring(6) + @"/" + r.Text.ToString().Trim().Substring(0, 4);
+
+                                                    record[26] = Convert.ToDateTime(date);
+                                                }
+                                                else
+                                                    record[26] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                break;
+                                            default:
+                                                if (DateTime.TryParse(r.Text.ToString().Trim(), out dtValidDate))
+                                                    record[26] = Convert.ToDateTime(r.Text.ToString().Trim());
+                                                else
+                                                    record[26] = string.Empty;
+                                                break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        record[26] = string.Empty; //Convert.ToDateTime(DateTime.UtcNow.AddHours(-9.0).AddDays(3.0).ToShortDateString());
+                                    }
+                                    break;
+
+                                case "GotoRemarks":
+                                    if (r.Self == null)
+                                    {
+                                        record[27] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[27] = r.Text.ToString().Trim();
+                                    break;
+
+                                case "GotoProductCategory":
+                                    if (r.Self == null)
+                                    {
+                                        record[28] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[28] = r.Text.ToString().Trim();
+                                    break;
+
+                                case "GotoProductCategoryLoanType":
+                                    if (r.Self == null)
+                                    {
+                                        record[29] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[29] = r.Text.ToString().Trim();
+                                    break;
+
+                                case "GotoProductCategoryLoanDuration":
+                                    if (r.Self == null)
+                                    {
+                                        record[30] = string.Empty;
+                                        break;
+                                    }
+                                    r.Format(Range.RangeFormat.Text);
+                                    record[30] = r.Text.ToString().Trim();
+                                    break;
+                            }
+                            record[19] = string.Empty;
+                        }
+                        else
+                        {
+                            r = w.Cells[activerow, activecolumn + Convert.ToInt32(((Hashtable)ht[k])["index"])];
+                            if (r.Text.ToString().Trim() == ((Hashtable)ht[k])["filter"].ToString())
+                            {
+                                record[0] = false;
+                            }
+                        }
+                        r = null;
+                    }
+
+                    //record[1] = this.Parameters["@acctNbr"];                    
+                    DataRow dr = null;
+
+
+                    if (Convert.ToBoolean(record[0]))
+                    {
+                        _xmlDataOutput.WriteStartElement("root");
+                        dr = _dtDataOutput.NewRow();
+
+                        for (int i = 1; i < record.Length; i++)
+                        {
+                            dr[i - 1] = record[i].ToString();
+
+                            switch (i)
+                            {
+                                case 1:
+                                    _xmlDataOutput.WriteStartAttribute("CUSIP", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 2:
+                                    _xmlDataOutput.WriteStartAttribute("SEDOL", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 3:
+                                    _xmlDataOutput.WriteStartAttribute("ISIN", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 4:
+                                    _xmlDataOutput.WriteStartAttribute("TickSymb", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 5:
+                                    _xmlDataOutput.WriteStartAttribute("DivYield", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 6:
+                                    _xmlDataOutput.WriteStartAttribute("NextExDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 7:
+                                    _xmlDataOutput.WriteStartAttribute("NextRecDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 8:
+                                    _xmlDataOutput.WriteStartAttribute("DivRate", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 9:
+                                    _xmlDataOutput.WriteStartAttribute("Price", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 10:
+                                    _xmlDataOutput.WriteStartAttribute("REBFEE", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 11:
+                                    _xmlDataOutput.WriteStartAttribute("FaceAmount", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 12:
+                                    _xmlDataOutput.WriteStartAttribute("ProductCategory", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 13:
+                                    _xmlDataOutput.WriteStartAttribute("ProductCategoryLoanType", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 14:
+                                    _xmlDataOutput.WriteStartAttribute("ProductCategoryLoanDuration", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 15:
+                                    _xmlDataOutput.WriteStartAttribute("STTDivRate", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 16:
+                                    _xmlDataOutput.WriteStartAttribute("DesiredSTTLevel", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 17:
+                                    _xmlDataOutput.WriteStartAttribute("STTLevel", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 18:
+                                    _xmlDataOutput.WriteStartAttribute("SettlementDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 19:
+                                    _xmlDataOutput.WriteStartAttribute("AsOfDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 20:
+                                    _xmlDataOutput.WriteStartAttribute("STTEndDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 21:
+                                    _xmlDataOutput.WriteStartAttribute("ScripEndDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 22:
+                                    _xmlDataOutput.WriteStartAttribute("TermDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 23:
+                                    _xmlDataOutput.WriteStartAttribute("Remarks", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 24:
+                                    _xmlDataOutput.WriteStartAttribute("ResetDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 25:
+                                    _xmlDataOutput.WriteStartAttribute("GotoRate", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 26:
+                                    _xmlDataOutput.WriteStartAttribute("GotoTermDate", null);
+                                    _xmlDataOutput.WriteString(Convert.ToString(record[i]) != string.Empty ? Convert.ToDateTime(record[i]).ToShortDateString() : string.Empty);
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 27:
+                                    _xmlDataOutput.WriteStartAttribute("GotoRemarks", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 28:
+                                    _xmlDataOutput.WriteStartAttribute("GotoProductCategory", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 29:
+                                    _xmlDataOutput.WriteStartAttribute("GotoProductCategoryLoanType", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+                                case 30:
+                                    _xmlDataOutput.WriteStartAttribute("GotoProductCategoryLoanDuration", null);
+                                    _xmlDataOutput.WriteString(record[i].ToString());
+                                    _xmlDataOutput.WriteEndAttribute();
+                                    break;
+
+                            }
+                        }
+                        _xmlDataOutput.WriteEndElement();
+                        _dtDataOutput.Rows.Add(dr);
+                    }
+                    r1 = null;
+                }
+            }
+            catch (Exception Exc)
+            {
+                if (_fl != null)
+                    _fl.Dispose();
+
+                log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                throw new Exception(Common.GetMessage("Common", "InvalidFile"));
+            }
+            finally
+            {
+
+                r = null;
+                r1 = null;
+                w = null;
+                try
+                {
+                    _xmlDataOutput.WriteEndElement();
+                    _xmlDataOutput.WriteEndDocument();
+                    _xmlDataOutput.Flush();
+                }
+                catch (Exception Exc)
+                {
+                    if (_fl != null)
+                        _fl.Dispose();
+
+                    log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                    throw new Exception(Common.GetMessage("Common", "FailedToWriteOPFile"));
+                }
+
+                try
+                {
+                    _xmlDataOutput.Close();
+                    _xmlDataOutput.Dispose();
+                }
+                catch (Exception Exc)
+                {
+                    if (_fl != null)
+                        _fl.Dispose();
+
+                    log.Debug(string.Format(ErrorMessageToLog, ModuleName, MethodName, Exc));
+                    throw new Exception(Common.GetMessage("Common", "FailedToCloseFile"));
+                }
+            }
+
+        } 
+        #endregion
+    }
+}
